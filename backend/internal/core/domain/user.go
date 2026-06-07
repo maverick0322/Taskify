@@ -94,3 +94,9 @@ func (user *User) Email() string {
 func (user *User) Profile() UserProfile {
 	return user.profile
 }
+
+// PasswordHash safely exposes the hashed password for authentication comparisons
+// without allowing direct modification of the entity's state.
+func (user *User) PasswordHash() string {
+	return user.passwordHash
+}
