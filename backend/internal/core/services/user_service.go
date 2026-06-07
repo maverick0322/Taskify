@@ -44,22 +44,23 @@ func NewUserService(
 }
 
 func (s *userService) Register(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error) {
-	// 1. Check if user already exists
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && existingUser != nil {
 		// Log as Warn since it's a client error, not a system failure. Do not log the email to protect PII.
 		s.logger.Warn("registration attempt with existing email")
 		return nil, ErrUserAlreadyExists
 	}
+	if err != nil && !errors.Is(err, ports.ErrUserNotFound) {
+		s.logger.Error("failed to verify existing user during registration", "error", err)
+		return nil, ErrInternalProcessing
+	}
 
-	// 2. Hash password (Infrastructure concern, abstracted)
 	hashedPassword, err := s.hasher.Hash(plainPassword)
 	if err != nil {
 		s.logger.Error("failed to hash password during registration", "error", err)
 		return nil, ErrInternalProcessing
 	}
 
-	// 3. Create Domain Objects
 	profile, err := domain.NewUserProfile(firstName, lastName, birthDate)
 	if err != nil {
 		return nil, err // Return domain error directly (e.g., ErrUnderageUser)
@@ -71,7 +72,6 @@ func (s *userService) Register(ctx context.Context, email, plainPassword, firstN
 		return nil, err
 	}
 
-	// 4. Persist
 	if err := s.userRepo.Save(ctx, newUser); err != nil {
 		s.logger.Error("failed to save new user to database", "userID", userID, "error", err)
 		return nil, ErrInternalProcessing
@@ -83,9 +83,17 @@ func (s *userService) Register(ctx context.Context, email, plainPassword, firstN
 
 func (s *userService) Authenticate(ctx context.Context, email, plainPassword string) (string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, email)
-	if err != nil || user == nil {
+	if errors.Is(err, ports.ErrUserNotFound) {
 		s.logger.Warn("authentication failed: user not found")
 		// We return a generic invalid credentials error to prevent email enumeration attacks (Security).
+		return "", ErrInvalidCredentials
+	}
+	if err != nil {
+		s.logger.Error("failed to retrieve user during authentication", "error", err)
+		return "", ErrInternalProcessing
+	}
+	if user == nil {
+		s.logger.Warn("authentication failed: user not found")
 		return "", ErrInvalidCredentials
 	}
 
