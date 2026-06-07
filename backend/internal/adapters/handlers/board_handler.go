@@ -38,6 +38,18 @@ func (handler *BoardHandler) RegisterRoutes(router chi.Router) {
 	router.Delete("/columns/{id}", handler.DeleteColumn)
 }
 
+// CreateBoard creates a Kanban board for the authenticated user.
+// @Summary Create board
+// @Tags Boards
+// @Accept json
+// @Produce json
+// @Param request body boardNameRequest true "Board creation payload"
+// @Success 201 {object} boardResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards [post]
 func (handler *BoardHandler) CreateBoard(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -60,6 +72,15 @@ func (handler *BoardHandler) CreateBoard(response http.ResponseWriter, request *
 	writeJSON(response, http.StatusCreated, boardResponseFromDomain(board))
 }
 
+// GetUserBoards lists Kanban boards owned by the authenticated user.
+// @Summary List user boards
+// @Tags Boards
+// @Produce json
+// @Success 200 {array} boardResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards [get]
 func (handler *BoardHandler) GetUserBoards(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -75,6 +96,17 @@ func (handler *BoardHandler) GetUserBoards(response http.ResponseWriter, request
 	writeJSON(response, http.StatusOK, boardListResponseFromDomain(boards))
 }
 
+// GetBoard retrieves one Kanban board owned by the authenticated user.
+// @Summary Get board
+// @Tags Boards
+// @Produce json
+// @Param id path string true "Board ID"
+// @Success 200 {object} boardResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards/{id} [get]
 func (handler *BoardHandler) GetBoard(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -90,6 +122,20 @@ func (handler *BoardHandler) GetBoard(response http.ResponseWriter, request *htt
 	writeJSON(response, http.StatusOK, boardResponseFromDomain(board))
 }
 
+// UpdateBoardName updates a Kanban board name.
+// @Summary Update board name
+// @Tags Boards
+// @Accept json
+// @Produce json
+// @Param id path string true "Board ID"
+// @Param request body boardNameRequest true "Board name update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards/{id}/name [patch]
 func (handler *BoardHandler) UpdateBoardName(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -112,6 +158,17 @@ func (handler *BoardHandler) UpdateBoardName(response http.ResponseWriter, reque
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteBoard deletes a Kanban board owned by the authenticated user.
+// @Summary Delete board
+// @Tags Boards
+// @Produce json
+// @Param id path string true "Board ID"
+// @Success 204 "No Content"
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards/{id} [delete]
 func (handler *BoardHandler) DeleteBoard(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -127,6 +184,20 @@ func (handler *BoardHandler) DeleteBoard(response http.ResponseWriter, request *
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// CreateColumn creates a column inside a Kanban board.
+// @Summary Create board column
+// @Tags Columns
+// @Accept json
+// @Produce json
+// @Param id path string true "Board ID"
+// @Param request body createColumnRequest true "Column creation payload"
+// @Success 201 {object} columnResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards/{id}/columns [post]
 func (handler *BoardHandler) CreateColumn(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -149,6 +220,17 @@ func (handler *BoardHandler) CreateColumn(response http.ResponseWriter, request 
 	writeJSON(response, http.StatusCreated, columnResponseFromDomain(column))
 }
 
+// GetBoardColumns lists columns for a Kanban board.
+// @Summary List board columns
+// @Tags Columns
+// @Produce json
+// @Param id path string true "Board ID"
+// @Success 200 {array} columnResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /boards/{id}/columns [get]
 func (handler *BoardHandler) GetBoardColumns(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -164,6 +246,20 @@ func (handler *BoardHandler) GetBoardColumns(response http.ResponseWriter, reque
 	writeJSON(response, http.StatusOK, columnListResponseFromDomain(columns))
 }
 
+// UpdateColumnName updates a Kanban column name.
+// @Summary Update column name
+// @Tags Columns
+// @Accept json
+// @Produce json
+// @Param id path string true "Column ID"
+// @Param request body boardNameRequest true "Column name update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /columns/{id}/name [patch]
 func (handler *BoardHandler) UpdateColumnName(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -186,6 +282,20 @@ func (handler *BoardHandler) UpdateColumnName(response http.ResponseWriter, requ
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// MoveColumn updates a Kanban column visual position.
+// @Summary Move column
+// @Tags Columns
+// @Accept json
+// @Produce json
+// @Param id path string true "Column ID"
+// @Param request body moveColumnRequest true "Column move payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /columns/{id}/position [patch]
 func (handler *BoardHandler) MoveColumn(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -208,6 +318,17 @@ func (handler *BoardHandler) MoveColumn(response http.ResponseWriter, request *h
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteColumn deletes a Kanban column.
+// @Summary Delete column
+// @Tags Columns
+// @Produce json
+// @Param id path string true "Column ID"
+// @Success 204 "No Content"
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /columns/{id} [delete]
 func (handler *BoardHandler) DeleteColumn(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {

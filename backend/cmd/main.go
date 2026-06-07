@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	_ "github.com/maverick0322/taskify/backend/docs"
 	"github.com/maverick0322/taskify/backend/internal/adapters/auth"
 	"github.com/maverick0322/taskify/backend/internal/adapters/handlers"
 	"github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
@@ -23,6 +24,7 @@ import (
 	adapterutil "github.com/maverick0322/taskify/backend/internal/adapters/util"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
 	"github.com/maverick0322/taskify/backend/internal/core/services"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 const (
@@ -31,6 +33,11 @@ const (
 	postgresStartupTimeout  = 5 * time.Second
 )
 
+// @title Taskify API
+// @version 1.0
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("application stopped: %v", err)
@@ -92,6 +99,7 @@ func run() error {
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
+	router.Get("/swagger/*", httpSwagger.WrapHandler)
 	userHandler.RegisterRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)

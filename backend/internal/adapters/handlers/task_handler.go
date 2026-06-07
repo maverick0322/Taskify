@@ -38,6 +38,18 @@ func (handler *TaskHandler) RegisterRoutes(router chi.Router) {
 	router.Delete("/tasks/{id}", handler.DeleteTask)
 }
 
+// CreateTask creates a task for the authenticated user.
+// @Summary Create task
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Param request body createTaskRequest true "Task creation payload"
+// @Success 201 {object} taskResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks [post]
 func (handler *TaskHandler) CreateTask(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -74,6 +86,15 @@ func (handler *TaskHandler) CreateTask(response http.ResponseWriter, request *ht
 	writeJSON(response, http.StatusCreated, taskResponseFromDomain(task))
 }
 
+// GetUserTasks lists tasks for the authenticated user.
+// @Summary List user tasks
+// @Tags Tasks
+// @Produce json
+// @Success 200 {array} taskResponse
+// @Failure 401 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks [get]
 func (handler *TaskHandler) GetUserTasks(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -89,6 +110,17 @@ func (handler *TaskHandler) GetUserTasks(response http.ResponseWriter, request *
 	writeJSON(response, http.StatusOK, taskListResponseFromDomain(tasks))
 }
 
+// GetTask retrieves one task owned by the authenticated user.
+// @Summary Get task
+// @Tags Tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {object} taskResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id} [get]
 func (handler *TaskHandler) GetTask(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -104,6 +136,20 @@ func (handler *TaskHandler) GetTask(response http.ResponseWriter, request *http.
 	writeJSON(response, http.StatusOK, taskResponseFromDomain(task))
 }
 
+// UpdateTaskDetails updates task title and description.
+// @Summary Update task details
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param request body updateTaskDetailsRequest true "Task details update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id}/details [patch]
 func (handler *TaskHandler) UpdateTaskDetails(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -126,6 +172,20 @@ func (handler *TaskHandler) UpdateTaskDetails(response http.ResponseWriter, requ
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// UpdateTaskStatus updates task status.
+// @Summary Update task status
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param request body updateTaskStatusRequest true "Task status update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id}/status [patch]
 func (handler *TaskHandler) UpdateTaskStatus(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -148,6 +208,20 @@ func (handler *TaskHandler) UpdateTaskStatus(response http.ResponseWriter, reque
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// UpdateTaskPriority updates task priority.
+// @Summary Update task priority
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param request body updateTaskPriorityRequest true "Task priority update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id}/priority [patch]
 func (handler *TaskHandler) UpdateTaskPriority(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -170,6 +244,17 @@ func (handler *TaskHandler) UpdateTaskPriority(response http.ResponseWriter, req
 	response.WriteHeader(http.StatusNoContent)
 }
 
+// DeleteTask deletes a task owned by the authenticated user.
+// @Summary Delete task
+// @Tags Tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 204 "No Content"
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id} [delete]
 func (handler *TaskHandler) DeleteTask(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
