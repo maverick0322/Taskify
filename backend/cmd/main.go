@@ -36,7 +36,7 @@ func main() {
 }
 
 func run() error {
-	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := godotenv.Overload(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to load local environment file: %w", err)
 	}
 
@@ -66,14 +66,15 @@ func run() error {
 		return fmt.Errorf("failed to initialize password hasher: %w", err)
 	}
 
-	tokenGenerator, err := auth.NewJWTTokenGenerator(config.jwtSecret, config.jwtTTL)
+	tokenGenerator, err := auth.NewJWTTokenGenerator(config.jwtSecret, config.accessTokenTTL, config.refreshTokenTTL)
 	if err != nil {
 		return fmt.Errorf("failed to initialize token generator: %w", err)
 	}
 
 	idGenerator := adapterutil.NewUUIDGenerator()
 	userRepository := repositories.NewPostgresUserRepository(postgresPool, applicationLogger)
-	userUseCase := services.NewUserService(userRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
+	sessionRepository := repositories.NewPostgresSessionRepository(postgresPool, applicationLogger)
+	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 
 	router := chi.NewRouter()

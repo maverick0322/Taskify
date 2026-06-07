@@ -11,10 +11,11 @@ import (
 func TestNewJWTTokenGenerator_ValidSettings_ReturnsGenerator(t *testing.T) {
 	// Arrange
 	secretKey := "test-secret"
-	tokenTTL := 15 * time.Minute
+	accessTokenTTL := 5 * time.Minute
+	refreshTokenTTL := 24 * time.Hour
 
 	// Act
-	generator, err := NewJWTTokenGenerator(secretKey, tokenTTL)
+	generator, err := NewJWTTokenGenerator(secretKey, accessTokenTTL, refreshTokenTTL)
 
 	// Assert
 	if err != nil {
@@ -28,10 +29,9 @@ func TestNewJWTTokenGenerator_ValidSettings_ReturnsGenerator(t *testing.T) {
 func TestNewJWTTokenGenerator_EmptySecret_ReturnsErrEmptyJWTSecret(t *testing.T) {
 	// Arrange
 	emptySecretKey := ""
-	tokenTTL := 15 * time.Minute
 
 	// Act
-	generator, err := NewJWTTokenGenerator(emptySecretKey, tokenTTL)
+	generator, err := NewJWTTokenGenerator(emptySecretKey, 5*time.Minute, 24*time.Hour)
 
 	// Assert
 	if generator != nil {
@@ -42,13 +42,12 @@ func TestNewJWTTokenGenerator_EmptySecret_ReturnsErrEmptyJWTSecret(t *testing.T)
 	}
 }
 
-func TestNewJWTTokenGenerator_InvalidTTL_ReturnsErrInvalidTokenTTL(t *testing.T) {
+func TestNewJWTTokenGenerator_InvalidAccessTTL_ReturnsErrInvalidTokenTTL(t *testing.T) {
 	// Arrange
 	secretKey := "test-secret"
-	invalidTokenTTL := 0 * time.Second
 
 	// Act
-	generator, err := NewJWTTokenGenerator(secretKey, invalidTokenTTL)
+	generator, err := NewJWTTokenGenerator(secretKey, 0, 24*time.Hour)
 
 	// Assert
 	if generator != nil {
@@ -59,70 +58,94 @@ func TestNewJWTTokenGenerator_InvalidTTL_ReturnsErrInvalidTokenTTL(t *testing.T)
 	}
 }
 
-func TestJWTTokenGenerator_GenerateTokenValidSubject_ReturnsSignedToken(t *testing.T) {
+func TestNewJWTTokenGenerator_InvalidRefreshTTL_ReturnsErrInvalidTokenTTL(t *testing.T) {
 	// Arrange
 	secretKey := "test-secret"
-	tokenTTL := 15 * time.Minute
-	userID := "user-123"
-	generator, _ := NewJWTTokenGenerator(secretKey, tokenTTL)
 
 	// Act
-	signedToken, err := generator.GenerateToken(userID)
+	generator, err := NewJWTTokenGenerator(secretKey, 5*time.Minute, 0)
+
+	// Assert
+	if generator != nil {
+		t.Fatal("expected nil generator")
+	}
+	if !errors.Is(err, ErrInvalidTokenTTL) {
+		t.Errorf("expected error %v, got %v", ErrInvalidTokenTTL, err)
+	}
+}
+
+func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ReturnsSignedTokens(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+
+	// Act
+	tokenPair, err := generator.GenerateTokenPair("user-123")
 
 	// Assert
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if signedToken == "" {
-		t.Fatal("expected signed token, got empty string")
+	if tokenPair.AccessToken == "" {
+		t.Fatal("expected access token, got empty string")
+	}
+	if tokenPair.RefreshToken == "" {
+		t.Fatal("expected refresh token, got empty string")
+	}
+	if tokenPair.AccessToken == tokenPair.RefreshToken {
+		t.Fatal("expected access and refresh tokens to differ")
 	}
 }
 
-func TestJWTTokenGenerator_GenerateTokenEmptySubject_ReturnsErrEmptyTokenSubject(t *testing.T) {
+func TestJWTTokenGenerator_GenerateTokenPairEmptySubject_ReturnsErrEmptyTokenSubject(t *testing.T) {
 	// Arrange
-	generator, _ := NewJWTTokenGenerator("test-secret", 15*time.Minute)
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
 
 	// Act
-	signedToken, err := generator.GenerateToken("")
+	tokenPair, err := generator.GenerateTokenPair("")
 
 	// Assert
-	if signedToken != "" {
-		t.Fatal("expected empty signed token")
+	if tokenPair.AccessToken != "" {
+		t.Fatal("expected empty access token")
 	}
 	if !errors.Is(err, ErrEmptyTokenSubject) {
 		t.Errorf("expected error %v, got %v", ErrEmptyTokenSubject, err)
 	}
 }
 
-func TestJWTTokenGenerator_GenerateTokenValidSubject_ContainsExpectedClaims(t *testing.T) {
+func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ContainsExpectedClaims(t *testing.T) {
 	// Arrange
 	secretKey := "test-secret"
-	tokenTTL := 15 * time.Minute
+	accessTokenTTL := 5 * time.Minute
+	refreshTokenTTL := 24 * time.Hour
 	userID := "user-123"
-	generator, _ := NewJWTTokenGenerator(secretKey, tokenTTL)
+	generator, _ := NewJWTTokenGenerator(secretKey, accessTokenTTL, refreshTokenTTL)
 
 	// Act
-	signedToken, err := generator.GenerateToken(userID)
-	parsedToken, claims := parseSignedToken(t, signedToken, secretKey)
+	tokenPair, err := generator.GenerateTokenPair(userID)
+	accessToken, accessClaims := parseSignedToken(t, tokenPair.AccessToken, secretKey)
+	refreshToken, refreshClaims := parseSignedToken(t, tokenPair.RefreshToken, secretKey)
 
 	// Assert
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if !parsedToken.Valid {
-		t.Fatal("expected token to be valid")
+	if !accessToken.Valid {
+		t.Fatal("expected access token to be valid")
 	}
-	if claims.Subject != userID {
-		t.Errorf("expected subject %s, got %s", userID, claims.Subject)
+	if !refreshToken.Valid {
+		t.Fatal("expected refresh token to be valid")
 	}
-	if claims.IssuedAt == nil {
-		t.Fatal("expected issued at claim")
+	if accessClaims.Subject != userID {
+		t.Errorf("expected access subject %s, got %s", userID, accessClaims.Subject)
 	}
-	if claims.ExpiresAt == nil {
-		t.Fatal("expected expires at claim")
+	if refreshClaims.Subject != userID {
+		t.Errorf("expected refresh subject %s, got %s", userID, refreshClaims.Subject)
 	}
-	if claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time) != tokenTTL {
-		t.Errorf("expected token ttl %v, got %v", tokenTTL, claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time))
+	if accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time) != accessTokenTTL {
+		t.Errorf("expected access ttl %v, got %v", accessTokenTTL, accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time))
+	}
+	if refreshClaims.ExpiresAt.Time.Sub(refreshClaims.IssuedAt.Time) != refreshTokenTTL {
+		t.Errorf("expected refresh ttl %v, got %v", refreshTokenTTL, refreshClaims.ExpiresAt.Time.Sub(refreshClaims.IssuedAt.Time))
 	}
 }
 

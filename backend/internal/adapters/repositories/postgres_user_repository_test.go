@@ -89,6 +89,19 @@ func TestPostgresUserRepository_SaveValidUser_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestNewPostgresUserRepository_NilPool_ReturnsRepository(t *testing.T) {
+	// Arrange
+	logger := &fakeRepositoryLogger{}
+
+	// Act
+	repository := NewPostgresUserRepository(nil, logger)
+
+	// Assert
+	if repository == nil {
+		t.Fatal("expected repository, got nil")
+	}
+}
+
 func TestPostgresUserRepository_SaveNilUser_ReturnsErrRepositoryUnavailable(t *testing.T) {
 	// Arrange
 	repository := &PostgresUserRepository{database: &fakePostgresDatabase{}, logger: &fakeRepositoryLogger{}}

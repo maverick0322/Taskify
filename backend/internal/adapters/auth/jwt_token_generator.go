@@ -17,37 +17,60 @@ var (
 
 // JWTTokenGenerator signs stateless access tokens without leaking JWT details into the core.
 type JWTTokenGenerator struct {
-	secretKey []byte
-	tokenTTL  time.Duration
+	secretKey       []byte
+	accessTokenTTL  time.Duration
+	refreshTokenTTL time.Duration
 }
 
 // NewJWTTokenGenerator injects secret and lifetime so security settings stay outside code.
-func NewJWTTokenGenerator(secretKey string, tokenTTL time.Duration) (ports.TokenGenerator, error) {
+func NewJWTTokenGenerator(secretKey string, accessTokenTTL, refreshTokenTTL time.Duration) (ports.TokenGenerator, error) {
 	if secretKey == "" {
 		return nil, ErrEmptyJWTSecret
 	}
-	if tokenTTL <= 0 {
+	if accessTokenTTL <= 0 || refreshTokenTTL <= 0 {
 		return nil, ErrInvalidTokenTTL
 	}
 
 	return &JWTTokenGenerator{
-		secretKey: []byte(secretKey),
-		tokenTTL:  tokenTTL,
+		secretKey:       []byte(secretKey),
+		accessTokenTTL:  accessTokenTTL,
+		refreshTokenTTL: refreshTokenTTL,
 	}, nil
 }
 
-func (generator *JWTTokenGenerator) GenerateToken(userID string) (string, error) {
+func (generator *JWTTokenGenerator) GenerateTokenPair(userID string) (ports.TokenPair, error) {
 	if userID == "" {
-		return "", ErrEmptyTokenSubject
+		return ports.TokenPair{}, ErrEmptyTokenSubject
 	}
 
 	now := time.Now().UTC()
-	claims := jwt.RegisteredClaims{
-		Subject:   userID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(generator.tokenTTL)),
+	accessTokenExpiresAt := now.Add(generator.accessTokenTTL)
+	refreshTokenExpiresAt := now.Add(generator.refreshTokenTTL)
+
+	accessToken, err := generator.signToken(userID, now, accessTokenExpiresAt)
+	if err != nil {
+		return ports.TokenPair{}, err
 	}
 
+	refreshToken, err := generator.signToken(userID, now, refreshTokenExpiresAt)
+	if err != nil {
+		return ports.TokenPair{}, err
+	}
+
+	return ports.TokenPair{
+		AccessToken:           accessToken,
+		RefreshToken:          refreshToken,
+		AccessTokenExpiresAt:  accessTokenExpiresAt,
+		RefreshTokenExpiresAt: refreshTokenExpiresAt,
+	}, nil
+}
+
+func (generator *JWTTokenGenerator) signToken(userID string, issuedAt, expiresAt time.Time) (string, error) {
+	claims := jwt.RegisteredClaims{
+		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(issuedAt),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signedToken, err := token.SignedString(generator.secretKey)
 	if err != nil {

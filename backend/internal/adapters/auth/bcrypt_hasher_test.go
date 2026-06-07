@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -56,6 +57,23 @@ func TestBcryptHasher_HashValidPassword_ReturnsHash(t *testing.T) {
 	}
 	if hashedPassword == plainPassword {
 		t.Fatal("expected hashed password to differ from plain password")
+	}
+}
+
+func TestBcryptHasher_HashTooLongPassword_ReturnsErrPasswordHashFailed(t *testing.T) {
+	// Arrange
+	hasher, _ := NewBcryptHasher(bcrypt.MinCost)
+	tooLongPassword := strings.Repeat("a", 73)
+
+	// Act
+	hashedPassword, err := hasher.Hash(tooLongPassword)
+
+	// Assert
+	if hashedPassword != "" {
+		t.Fatal("expected empty hashed password")
+	}
+	if !errors.Is(err, ErrPasswordHashFailed) {
+		t.Errorf("expected error %v, got %v", ErrPasswordHashFailed, err)
 	}
 }
 

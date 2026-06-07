@@ -15,17 +15,22 @@ import (
 )
 
 type mockUserUseCase struct {
-	userToReturn  *domain.User
-	tokenToReturn string
-	errToReturn   error
+	userToReturn         *domain.User
+	accessTokenToReturn  string
+	refreshTokenToReturn string
+	errToReturn          error
 }
 
 func (useCase *mockUserUseCase) Register(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error) {
 	return useCase.userToReturn, useCase.errToReturn
 }
 
-func (useCase *mockUserUseCase) Authenticate(ctx context.Context, email, plainPassword string) (string, error) {
-	return useCase.tokenToReturn, useCase.errToReturn
+func (useCase *mockUserUseCase) Authenticate(ctx context.Context, email, plainPassword string) (string, string, error) {
+	return useCase.accessTokenToReturn, useCase.refreshTokenToReturn, useCase.errToReturn
+}
+
+func (useCase *mockUserUseCase) RefreshSession(ctx context.Context, refreshToken string) (string, string, error) {
+	return useCase.accessTokenToReturn, useCase.refreshTokenToReturn, useCase.errToReturn
 }
 
 func (useCase *mockUserUseCase) UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error {
@@ -144,7 +149,7 @@ func TestUserHandler_RegisterInternalError_ReturnsInternalServerError(t *testing
 
 func TestUserHandler_LoginValidCredentials_ReturnsOK(t *testing.T) {
 	// Arrange
-	router := createUserTestRouter(&mockUserUseCase{tokenToReturn: "token-123"}, &mockHandlerLogger{})
+	router := createUserTestRouter(&mockUserUseCase{accessTokenToReturn: "access-token", refreshTokenToReturn: "refresh-token"}, &mockHandlerLogger{})
 	request := httptest.NewRequest(http.MethodPost, "/users/login", strings.NewReader(validLoginJSON()))
 	response := httptest.NewRecorder()
 
@@ -155,8 +160,11 @@ func TestUserHandler_LoginValidCredentials_ReturnsOK(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, response.Code)
 	}
-	if !strings.Contains(response.Body.String(), `"token":"token-123"`) {
-		t.Errorf("expected response to contain token")
+	if !strings.Contains(response.Body.String(), `"accessToken":"access-token"`) {
+		t.Errorf("expected response to contain access token")
+	}
+	if !strings.Contains(response.Body.String(), `"refreshToken":"refresh-token"`) {
+		t.Errorf("expected response to contain refresh token")
 	}
 }
 
@@ -179,6 +187,99 @@ func TestUserHandler_LoginInternalError_ReturnsInternalServerError(t *testing.T)
 	// Arrange
 	router := createUserTestRouter(&mockUserUseCase{errToReturn: errors.New("token generator failure")}, &mockHandlerLogger{})
 	request := httptest.NewRequest(http.MethodPost, "/users/login", strings.NewReader(validLoginJSON()))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
+	}
+}
+
+func TestUserHandler_RefreshValidToken_ReturnsOK(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{accessTokenToReturn: "new-access-token", refreshTokenToReturn: "new-refresh-token"}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader(validRefreshJSON()))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"accessToken":"new-access-token"`) {
+		t.Errorf("expected response to contain refreshed access token")
+	}
+}
+
+func TestUserHandler_RefreshMalformedJSON_ReturnsBadRequest(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader("{"))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
+func TestUserHandler_RefreshInvalidToken_ReturnsUnauthorized(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{errToReturn: services.ErrInvalidRefreshToken}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader(validRefreshJSON()))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestUserHandler_RefreshRevokedToken_ReturnsUnauthorized(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{errToReturn: services.ErrSessionRevoked}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader(validRefreshJSON()))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestUserHandler_RefreshExpiredToken_ReturnsUnauthorized(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{errToReturn: services.ErrRefreshSessionExpired}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader(validRefreshJSON()))
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestUserHandler_RefreshInternalError_ReturnsInternalServerError(t *testing.T) {
+	// Arrange
+	router := createUserTestRouter(&mockUserUseCase{errToReturn: services.ErrInternalProcessing}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/refresh", strings.NewReader(validRefreshJSON()))
 	response := httptest.NewRecorder()
 
 	// Act
@@ -219,4 +320,8 @@ func validRegisterJSON() string {
 
 func validLoginJSON() string {
 	return `{"email":"test@domain.com","password":"securePass123"}`
+}
+
+func validRefreshJSON() string {
+	return `{"refreshToken":"refresh-token"}`
 }

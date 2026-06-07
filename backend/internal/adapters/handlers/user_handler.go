@@ -36,6 +36,7 @@ func NewUserHandler(userUseCase ports.UserUseCase, logger ports.Logger) *UserHan
 func (handler *UserHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/users/register", handler.Register)
 	router.Post("/users/login", handler.Login)
+	router.Post("/users/refresh", handler.RefreshSession)
 }
 
 func (handler *UserHandler) Register(response http.ResponseWriter, request *http.Request) {
@@ -80,13 +81,30 @@ func (handler *UserHandler) Login(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	token, err := handler.userUseCase.Authenticate(request.Context(), loginRequest.Email, loginRequest.Password)
+	accessToken, refreshToken, err := handler.userUseCase.Authenticate(request.Context(), loginRequest.Email, loginRequest.Password)
 	if err != nil {
 		handler.handleLoginError(response, err)
 		return
 	}
 
-	writeJSON(response, http.StatusOK, loginUserResponse{Token: token})
+	writeJSON(response, http.StatusOK, tokenPairResponse{AccessToken: accessToken, RefreshToken: refreshToken})
+}
+
+func (handler *UserHandler) RefreshSession(response http.ResponseWriter, request *http.Request) {
+	var refreshRequest refreshSessionRequest
+	if err := json.NewDecoder(request.Body).Decode(&refreshRequest); err != nil {
+		handler.logger.Warn("refresh request contains invalid json")
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	accessToken, refreshToken, err := handler.userUseCase.RefreshSession(request.Context(), refreshRequest.RefreshToken)
+	if err != nil {
+		handler.handleRefreshError(response, err)
+		return
+	}
+
+	writeJSON(response, http.StatusOK, tokenPairResponse{AccessToken: accessToken, RefreshToken: refreshToken})
 }
 
 func (handler *UserHandler) handleRegisterError(response http.ResponseWriter, err error) {
@@ -111,6 +129,19 @@ func (handler *UserHandler) handleLoginError(response http.ResponseWriter, err e
 	}
 
 	handler.logger.Error("login failed due to internal processing error", "error", err)
+	writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
+}
+
+func (handler *UserHandler) handleRefreshError(response http.ResponseWriter, err error) {
+	if errors.Is(err, services.ErrInvalidRefreshToken) ||
+		errors.Is(err, services.ErrSessionRevoked) ||
+		errors.Is(err, services.ErrRefreshSessionExpired) {
+		handler.logger.Warn("refresh rejected because session token is invalid")
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "invalid refresh token"})
+		return
+	}
+
+	handler.logger.Error("refresh failed due to internal processing error", "error", err)
 	writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
 }
 
@@ -148,8 +179,13 @@ type loginUserRequest struct {
 	Password string `json:"password"`
 }
 
-type loginUserResponse struct {
-	Token string `json:"token"`
+type refreshSessionRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+type tokenPairResponse struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 type errorResponse struct {
