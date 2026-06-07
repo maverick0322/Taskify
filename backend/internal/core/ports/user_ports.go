@@ -22,7 +22,8 @@ type UserRepository interface {
 // to interact with the core logic.
 type UserUseCase interface {
 	Register(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error)
-	Authenticate(ctx context.Context, email, plainPassword string) (string, error)
+	Authenticate(ctx context.Context, email, plainPassword string) (string, string, error)
+	RefreshSession(ctx context.Context, refreshToken string) (string, string, error)
 	UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error
 }
 

@@ -11,7 +11,8 @@ func TestRun_MissingConfiguration_ReturnsErrMissingEnvironmentVariable(t *testin
 	// Arrange
 	t.Setenv(dbURLEnvKey, "")
 	t.Setenv(jwtSecretEnvKey, "")
-	t.Setenv(jwtTTLEnvKey, "")
+	t.Setenv(accessTokenTTLEnvKey, "")
+	t.Setenv(refreshTokenTTLEnvKey, "")
 	t.Setenv(portEnvKey, "")
 	t.Setenv(bcryptCostEnvKey, "")
 
@@ -28,7 +29,8 @@ func TestRun_InvalidDatabaseURL_ReturnsError(t *testing.T) {
 	// Arrange
 	t.Setenv(dbURLEnvKey, "://invalid")
 	t.Setenv(jwtSecretEnvKey, "local-secret")
-	t.Setenv(jwtTTLEnvKey, "24h")
+	t.Setenv(accessTokenTTLEnvKey, "5m")
+	t.Setenv(refreshTokenTTLEnvKey, "24h")
 	t.Setenv(portEnvKey, "8080")
 	t.Setenv(bcryptCostEnvKey, "10")
 

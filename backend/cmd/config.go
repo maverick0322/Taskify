@@ -9,25 +9,28 @@ import (
 )
 
 const (
-	dbURLEnvKey      = "DB_URL"
-	jwtSecretEnvKey  = "JWT_SECRET"
-	jwtTTLEnvKey     = "JWT_TTL"
-	portEnvKey       = "PORT"
-	bcryptCostEnvKey = "BCRYPT_COST"
+	dbURLEnvKey           = "DB_URL"
+	jwtSecretEnvKey       = "JWT_SECRET"
+	accessTokenTTLEnvKey  = "ACCESS_TOKEN_TTL"
+	refreshTokenTTLEnvKey = "REFRESH_TOKEN_TTL"
+	portEnvKey            = "PORT"
+	bcryptCostEnvKey      = "BCRYPT_COST"
 )
 
 var (
 	ErrMissingEnvironmentVariable = errors.New("config: missing required environment variable")
 	ErrInvalidBcryptCost          = errors.New("config: invalid bcrypt cost")
-	ErrInvalidJWTTTL              = errors.New("config: invalid jwt ttl")
+	ErrInvalidAccessTokenTTL      = errors.New("config: invalid access token ttl")
+	ErrInvalidRefreshTokenTTL     = errors.New("config: invalid refresh token ttl")
 )
 
 type appConfig struct {
-	databaseURL string
-	jwtSecret   string
-	jwtTTL      time.Duration
-	port        string
-	bcryptCost  int
+	databaseURL     string
+	jwtSecret       string
+	accessTokenTTL  time.Duration
+	refreshTokenTTL time.Duration
+	port            string
+	bcryptCost      int
 }
 
 type getenvFunc func(string) string
@@ -43,7 +46,12 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 		return appConfig{}, err
 	}
 
-	jwtTTLValue, err := requiredEnvironmentValue(getenv, jwtTTLEnvKey)
+	accessTokenTTLValue, err := requiredEnvironmentValue(getenv, accessTokenTTLEnvKey)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	refreshTokenTTLValue, err := requiredEnvironmentValue(getenv, refreshTokenTTLEnvKey)
 	if err != nil {
 		return appConfig{}, err
 	}
@@ -58,7 +66,12 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 		return appConfig{}, err
 	}
 
-	jwtTTL, err := parseJWTTTL(jwtTTLValue)
+	accessTokenTTL, err := parsePositiveDuration(accessTokenTTLValue, ErrInvalidAccessTokenTTL)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	refreshTokenTTL, err := parsePositiveDuration(refreshTokenTTLValue, ErrInvalidRefreshTokenTTL)
 	if err != nil {
 		return appConfig{}, err
 	}
@@ -69,11 +82,12 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 	}
 
 	return appConfig{
-		databaseURL: databaseURL,
-		jwtSecret:   jwtSecret,
-		jwtTTL:      jwtTTL,
-		port:        port,
-		bcryptCost:  bcryptCost,
+		databaseURL:     databaseURL,
+		jwtSecret:       jwtSecret,
+		accessTokenTTL:  accessTokenTTL,
+		refreshTokenTTL: refreshTokenTTL,
+		port:            port,
+		bcryptCost:      bcryptCost,
 	}, nil
 }
 
@@ -95,11 +109,11 @@ func parseBcryptCost(rawValue string) (int, error) {
 	return bcryptCost, nil
 }
 
-func parseJWTTTL(rawValue string) (time.Duration, error) {
-	jwtTTL, err := time.ParseDuration(strings.TrimSpace(rawValue))
-	if err != nil || jwtTTL <= 0 {
-		return 0, fmt.Errorf("%w: %s", ErrInvalidJWTTTL, rawValue)
+func parsePositiveDuration(rawValue string, sentinelError error) (time.Duration, error) {
+	parsedDuration, err := time.ParseDuration(strings.TrimSpace(rawValue))
+	if err != nil || parsedDuration <= 0 {
+		return 0, fmt.Errorf("%w: %s", sentinelError, rawValue)
 	}
 
-	return jwtTTL, nil
+	return parsedDuration, nil
 }

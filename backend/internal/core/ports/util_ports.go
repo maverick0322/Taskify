@@ -1,5 +1,7 @@
 package ports
 
+import "time"
+
 // Logger defines the contract for our application logging.
 // We strictly use Info, Warn, and Error to prevent log noise.
 type Logger interface {
@@ -14,9 +16,17 @@ type PasswordHasher interface {
 	Compare(plainPassword, hashedPassword string) error
 }
 
-// TokenGenerator abstracts the session token creation (e.g., JWT).
+// TokenPair keeps access and refresh credentials coupled at the port boundary.
+type TokenPair struct {
+	AccessToken           string
+	RefreshToken          string
+	AccessTokenExpiresAt  time.Time
+	RefreshTokenExpiresAt time.Time
+}
+
+// TokenGenerator abstracts session token creation without exposing JWT details to the core.
 type TokenGenerator interface {
-	GenerateToken(userID string) (string, error)
+	GenerateTokenPair(userID string) (TokenPair, error)
 }
 
 // IDGenerator abstracts the creation of unique identifiers (e.g., UUIDv4, ULID).

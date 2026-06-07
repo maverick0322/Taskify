@@ -9,11 +9,12 @@ import (
 func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:      "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
-		jwtSecretEnvKey:  "local-secret",
-		jwtTTLEnvKey:     "24h",
-		portEnvKey:       "8080",
-		bcryptCostEnvKey: "10",
+		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
+		jwtSecretEnvKey:       "local-secret",
+		accessTokenTTLEnvKey:  "5m",
+		refreshTokenTTLEnvKey: "24h",
+		portEnvKey:            "8080",
+		bcryptCostEnvKey:      "10",
 	})
 
 	// Act
@@ -26,8 +27,11 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	if config.databaseURL == "" {
 		t.Fatal("expected database URL")
 	}
-	if config.jwtTTL != 24*time.Hour {
-		t.Errorf("expected jwt ttl %v, got %v", 24*time.Hour, config.jwtTTL)
+	if config.accessTokenTTL != 5*time.Minute {
+		t.Errorf("expected access token ttl %v, got %v", 5*time.Minute, config.accessTokenTTL)
+	}
+	if config.refreshTokenTTL != 24*time.Hour {
+		t.Errorf("expected refresh token ttl %v, got %v", 24*time.Hour, config.refreshTokenTTL)
 	}
 	if config.bcryptCost != 10 {
 		t.Errorf("expected bcrypt cost 10, got %d", config.bcryptCost)
@@ -37,10 +41,11 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 func TestLoadAppConfig_MissingDatabaseURL_ReturnsErrMissingEnvironmentVariable(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		jwtSecretEnvKey:  "local-secret",
-		jwtTTLEnvKey:     "24h",
-		portEnvKey:       "8080",
-		bcryptCostEnvKey: "10",
+		jwtSecretEnvKey:       "local-secret",
+		accessTokenTTLEnvKey:  "5m",
+		refreshTokenTTLEnvKey: "24h",
+		portEnvKey:            "8080",
+		bcryptCostEnvKey:      "10",
 	})
 
 	// Act
@@ -55,11 +60,12 @@ func TestLoadAppConfig_MissingDatabaseURL_ReturnsErrMissingEnvironmentVariable(t
 func TestLoadAppConfig_InvalidBcryptCost_ReturnsErrInvalidBcryptCost(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:      "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
-		jwtSecretEnvKey:  "local-secret",
-		jwtTTLEnvKey:     "24h",
-		portEnvKey:       "8080",
-		bcryptCostEnvKey: "invalid",
+		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
+		jwtSecretEnvKey:       "local-secret",
+		accessTokenTTLEnvKey:  "5m",
+		refreshTokenTTLEnvKey: "24h",
+		portEnvKey:            "8080",
+		bcryptCostEnvKey:      "invalid",
 	})
 
 	// Act
@@ -71,22 +77,43 @@ func TestLoadAppConfig_InvalidBcryptCost_ReturnsErrInvalidBcryptCost(t *testing.
 	}
 }
 
-func TestLoadAppConfig_InvalidJWTTTL_ReturnsErrInvalidJWTTTL(t *testing.T) {
+func TestLoadAppConfig_InvalidAccessTokenTTL_ReturnsErrInvalidAccessTokenTTL(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:      "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
-		jwtSecretEnvKey:  "local-secret",
-		jwtTTLEnvKey:     "0s",
-		portEnvKey:       "8080",
-		bcryptCostEnvKey: "10",
+		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
+		jwtSecretEnvKey:       "local-secret",
+		accessTokenTTLEnvKey:  "0s",
+		refreshTokenTTLEnvKey: "24h",
+		portEnvKey:            "8080",
+		bcryptCostEnvKey:      "10",
 	})
 
 	// Act
 	_, err := loadAppConfig(getenv)
 
 	// Assert
-	if !errors.Is(err, ErrInvalidJWTTTL) {
-		t.Errorf("expected error %v, got %v", ErrInvalidJWTTTL, err)
+	if !errors.Is(err, ErrInvalidAccessTokenTTL) {
+		t.Errorf("expected error %v, got %v", ErrInvalidAccessTokenTTL, err)
+	}
+}
+
+func TestLoadAppConfig_InvalidRefreshTokenTTL_ReturnsErrInvalidRefreshTokenTTL(t *testing.T) {
+	// Arrange
+	getenv := mapGetenv(map[string]string{
+		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
+		jwtSecretEnvKey:       "local-secret",
+		accessTokenTTLEnvKey:  "5m",
+		refreshTokenTTLEnvKey: "0s",
+		portEnvKey:            "8080",
+		bcryptCostEnvKey:      "10",
+	})
+
+	// Act
+	_, err := loadAppConfig(getenv)
+
+	// Assert
+	if !errors.Is(err, ErrInvalidRefreshTokenTTL) {
+		t.Errorf("expected error %v, got %v", ErrInvalidRefreshTokenTTL, err)
 	}
 }
 
