@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     birth_date DATE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
@@ -41,3 +41,31 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS boards (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT chk_boards_name_length CHECK (char_length(trim(name)) >= 3),
+    CONSTRAINT chk_boards_created_at_not_zero CHECK (created_at > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
+    CONSTRAINT chk_boards_updated_at_not_zero CHECK (updated_at > TIMESTAMPTZ '0001-01-01 00:00:00+00')
+);
+CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id);
+CREATE INDEX IF NOT EXISTS idx_boards_user_id_updated_at ON boards(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS columns (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT chk_columns_name_length CHECK (char_length(trim(name)) >= 3),
+    CONSTRAINT chk_columns_position_non_negative CHECK (position >= 0),
+    CONSTRAINT chk_columns_created_at_not_zero CHECK (created_at > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
+    CONSTRAINT chk_columns_updated_at_not_zero CHECK (updated_at > TIMESTAMPTZ '0001-01-01 00:00:00+00')
+);
+CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id);
+CREATE INDEX IF NOT EXISTS idx_columns_board_id_position ON columns(board_id, position);
