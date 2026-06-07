@@ -152,3 +152,27 @@ func TestUser_Getters_ReturnExpectedValues(t *testing.T) {
 		t.Errorf("expected profile firstName %s, got %s", profile.firstName, retrievedProfile.firstName)
 	}
 }
+
+func TestUserProfile_Getters_ReturnExpectedValues(t *testing.T) {
+	// Arrange
+	firstName := "John"
+	lastName := "Doe"
+	birthDate := time.Now().AddDate(-20, 0, 0)
+	profile, _ := NewUserProfile(firstName, lastName, birthDate)
+
+	// Act
+	retrievedFirstName := profile.FirstName()
+	retrievedLastName := profile.LastName()
+	retrievedBirthDate := profile.BirthDate()
+
+	// Assert
+	if retrievedFirstName != firstName {
+		t.Errorf("expected firstName %s, got %s", firstName, retrievedFirstName)
+	}
+	if retrievedLastName != lastName {
+		t.Errorf("expected lastName %s, got %s", lastName, retrievedLastName)
+	}
+	if !retrievedBirthDate.Equal(birthDate) {
+		t.Errorf("expected birthDate %v, got %v", birthDate, retrievedBirthDate)
+	}
+}
