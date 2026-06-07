@@ -13,6 +13,9 @@ var (
 	ErrInvalidTokenTTL    = errors.New("auth: token ttl must be positive")
 	ErrEmptyTokenSubject  = errors.New("auth: token subject cannot be empty")
 	ErrTokenSigningFailed = errors.New("auth: token signing failed")
+	ErrEmptyToken         = errors.New("auth: token cannot be empty")
+	ErrInvalidToken       = errors.New("auth: invalid token")
+	ErrExpiredToken       = errors.New("auth: expired token")
 )
 
 // JWTTokenGenerator signs stateless access tokens without leaking JWT details into the core.
@@ -63,6 +66,36 @@ func (generator *JWTTokenGenerator) GenerateTokenPair(userID string) (ports.Toke
 		AccessTokenExpiresAt:  accessTokenExpiresAt,
 		RefreshTokenExpiresAt: refreshTokenExpiresAt,
 	}, nil
+}
+
+func (generator *JWTTokenGenerator) ValidateToken(token string) (string, error) {
+	if token == "" {
+		return "", ErrEmptyToken
+	}
+
+	claims := &jwt.RegisteredClaims{}
+	parsedToken, err := jwt.ParseWithClaims(token, claims, func(parsedToken *jwt.Token) (interface{}, error) {
+		if parsedToken.Method != jwt.SigningMethodHS256 {
+			return nil, ErrInvalidToken
+		}
+
+		return generator.secretKey, nil
+	})
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return "", ErrExpiredToken
+		}
+
+		return "", ErrInvalidToken
+	}
+	if parsedToken == nil || !parsedToken.Valid {
+		return "", ErrInvalidToken
+	}
+	if claims.Subject == "" {
+		return "", ErrInvalidToken
+	}
+
+	return claims.Subject, nil
 }
 
 func (generator *JWTTokenGenerator) signToken(userID string, issuedAt, expiresAt time.Time) (string, error) {

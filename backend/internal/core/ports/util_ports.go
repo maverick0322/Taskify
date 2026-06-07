@@ -29,6 +29,11 @@ type TokenGenerator interface {
 	GenerateTokenPair(userID string) (TokenPair, error)
 }
 
+// TokenValidator abstracts access-token verification for inbound adapters.
+type TokenValidator interface {
+	ValidateToken(token string) (string, error)
+}
+
 // IDGenerator abstracts the creation of unique identifiers (e.g., UUIDv4, ULID).
 type IDGenerator interface {
 	Generate() string

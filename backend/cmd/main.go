@@ -17,9 +17,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/maverick0322/taskify/backend/internal/adapters/auth"
 	"github.com/maverick0322/taskify/backend/internal/adapters/handlers"
+	"github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
 	"github.com/maverick0322/taskify/backend/internal/adapters/logging"
 	"github.com/maverick0322/taskify/backend/internal/adapters/repositories"
 	adapterutil "github.com/maverick0322/taskify/backend/internal/adapters/util"
+	"github.com/maverick0322/taskify/backend/internal/core/ports"
 	"github.com/maverick0322/taskify/backend/internal/core/services"
 )
 
@@ -70,15 +72,27 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize token generator: %w", err)
 	}
+	tokenValidator, ok := tokenGenerator.(ports.TokenValidator)
+	if !ok {
+		return fmt.Errorf("failed to initialize token validator")
+	}
 
 	idGenerator := adapterutil.NewUUIDGenerator()
 	userRepository := repositories.NewPostgresUserRepository(postgresPool, applicationLogger)
 	sessionRepository := repositories.NewPostgresSessionRepository(postgresPool, applicationLogger)
+	taskRepository := repositories.NewPostgresTaskRepository(postgresPool, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
+	taskUseCase := services.NewTaskService(taskRepository, idGenerator, applicationLogger)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
+	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
+	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
 	userHandler.RegisterRoutes(router)
+	router.Group(func(protectedRouter chi.Router) {
+		protectedRouter.Use(authMiddleware.RequireAuthentication)
+		taskHandler.RegisterRoutes(protectedRouter)
+	})
 
 	server := &http.Server{
 		Addr:              ":" + config.port,

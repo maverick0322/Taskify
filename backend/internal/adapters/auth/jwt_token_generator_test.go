@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/maverick0322/taskify/backend/internal/core/ports"
 )
 
 func TestNewJWTTokenGenerator_ValidSettings_ReturnsGenerator(t *testing.T) {
@@ -149,6 +150,113 @@ func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ContainsExpectedClaims(
 	}
 }
 
+func TestJWTTokenGenerator_ValidateTokenValidAccessToken_ReturnsUserID(t *testing.T) {
+	// Arrange
+	userID := "user-123"
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	tokenPair, _ := generator.GenerateTokenPair(userID)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	retrievedUserID, err := tokenValidator.ValidateToken(tokenPair.AccessToken)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if retrievedUserID != userID {
+		t.Errorf("expected user ID %s, got %s", userID, retrievedUserID)
+	}
+}
+
+func TestJWTTokenGenerator_ValidateTokenEmptyToken_ReturnsErrEmptyToken(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	userID, err := tokenValidator.ValidateToken("")
+
+	// Assert
+	if userID != "" {
+		t.Errorf("expected empty user ID, got %s", userID)
+	}
+	if !errors.Is(err, ErrEmptyToken) {
+		t.Errorf("expected error %v, got %v", ErrEmptyToken, err)
+	}
+}
+
+func TestJWTTokenGenerator_ValidateTokenInvalidToken_ReturnsErrInvalidToken(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	userID, err := tokenValidator.ValidateToken("not-a-valid-token")
+
+	// Assert
+	if userID != "" {
+		t.Errorf("expected empty user ID, got %s", userID)
+	}
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("expected error %v, got %v", ErrInvalidToken, err)
+	}
+}
+
+func TestJWTTokenGenerator_ValidateTokenExpiredToken_ReturnsErrExpiredToken(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	expiredToken := signTestToken(t, "test-secret", "user-123", time.Now().Add(-10*time.Minute), time.Now().Add(-5*time.Minute), jwt.SigningMethodHS256)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	userID, err := tokenValidator.ValidateToken(expiredToken)
+
+	// Assert
+	if userID != "" {
+		t.Errorf("expected empty user ID, got %s", userID)
+	}
+	if !errors.Is(err, ErrExpiredToken) {
+		t.Errorf("expected error %v, got %v", ErrExpiredToken, err)
+	}
+}
+
+func TestJWTTokenGenerator_ValidateTokenWrongSigningMethod_ReturnsErrInvalidToken(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	tokenWithWrongMethod := signTestToken(t, "test-secret", "user-123", time.Now(), time.Now().Add(5*time.Minute), jwt.SigningMethodHS384)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	userID, err := tokenValidator.ValidateToken(tokenWithWrongMethod)
+
+	// Assert
+	if userID != "" {
+		t.Errorf("expected empty user ID, got %s", userID)
+	}
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("expected error %v, got %v", ErrInvalidToken, err)
+	}
+}
+
+func TestJWTTokenGenerator_ValidateTokenEmptySubject_ReturnsErrInvalidToken(t *testing.T) {
+	// Arrange
+	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
+	tokenWithEmptySubject := signTestToken(t, "test-secret", "", time.Now(), time.Now().Add(5*time.Minute), jwt.SigningMethodHS256)
+	tokenValidator := generator.(ports.TokenValidator)
+
+	// Act
+	userID, err := tokenValidator.ValidateToken(tokenWithEmptySubject)
+
+	// Assert
+	if userID != "" {
+		t.Errorf("expected empty user ID, got %s", userID)
+	}
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("expected error %v, got %v", ErrInvalidToken, err)
+	}
+}
+
 func parseSignedToken(t *testing.T, signedToken, secretKey string) (*jwt.Token, *jwt.RegisteredClaims) {
 	t.Helper()
 
@@ -165,4 +273,21 @@ func parseSignedToken(t *testing.T, signedToken, secretKey string) (*jwt.Token, 
 	}
 
 	return parsedToken, claims
+}
+
+func signTestToken(t *testing.T, secretKey, subject string, issuedAt, expiresAt time.Time, signingMethod jwt.SigningMethod) string {
+	t.Helper()
+
+	claims := jwt.RegisteredClaims{
+		Subject:   subject,
+		IssuedAt:  jwt.NewNumericDate(issuedAt),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
+	}
+	token := jwt.NewWithClaims(signingMethod, claims)
+	signedToken, err := token.SignedString([]byte(secretKey))
+	if err != nil {
+		t.Fatalf("expected token to sign, got: %v", err)
+	}
+
+	return signedToken
 }
