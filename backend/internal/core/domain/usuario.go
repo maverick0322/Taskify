@@ -12,9 +12,9 @@ const (
 	legalAgeYears     = 18
 )
 
-// Exported sentinel errors allow upper layers (e.g., Application/Services) 
+// Exported sentinel errors allow upper layers (e.g., Application/Services)
 // to perform type-safe error checking using errors.Is() without relying on string matching,
-// ensuring predictable control flow.
+// ensuring predictable control flow and defensive programming.
 var (
 	ErrInvalidName     = errors.New("domain: first or last name does not meet minimum length")
 	ErrInvalidEmail    = errors.New("domain: invalid email format")
@@ -23,7 +23,7 @@ var (
 	ErrEmptyID         = errors.New("domain: user ID cannot be empty")
 )
 
-// UserProfile acts as a Value Object. Fields are unexported to enforce immutability 
+// UserProfile acts as a Value Object. Fields are unexported (private) to enforce immutability
 // after creation, preventing accidental state corruption across the application.
 type UserProfile struct {
 	firstName string
@@ -31,15 +31,15 @@ type UserProfile struct {
 	birthDate time.Time
 }
 
-// NewUserProfile acts as a factory, enforcing business invariants at creation time (Defensive Programming).
+// NewUserProfile acts as a factory, enforcing business invariants at creation time.
 // This guarantees that an invalid state can never exist within the domain layer.
 func NewUserProfile(firstName, lastName string, birthDate time.Time) (UserProfile, error) {
 	if len(strings.TrimSpace(firstName)) < minNameLength || len(strings.TrimSpace(lastName)) < minNameLength {
 		return UserProfile{}, ErrInvalidName
 	}
 
-	minBirthDate := time.Now().AddDate(-legalAgeYears, 0, 0)
-	if birthDate.After(minBirthDate) {
+	minimumRequiredAgeDate := time.Now().AddDate(-legalAgeYears, 0, 0)
+	if birthDate.After(minimumRequiredAgeDate) {
 		return UserProfile{}, ErrUnderageUser
 	}
 
@@ -50,8 +50,9 @@ func NewUserProfile(firstName, lastName string, birthDate time.Time) (UserProfil
 	}, nil
 }
 
-// User is the Aggregate Root. State is strictly encapsulated to adhere to the 
-// Open/Closed Principle (OCP); state transitions must happen through controlled behaviors, not direct assignment.
+// User is the Aggregate Root. State is strictly encapsulated to adhere to the
+// Open/Closed Principle (OCP); state transitions must happen through controlled behaviors,
+// not direct assignment.
 type User struct {
 	id           string
 	email        string
@@ -59,11 +60,12 @@ type User struct {
 	profile      UserProfile
 }
 
+// NewUser initializes a User entity ensuring its validity upon creation.
 func NewUser(id, email, passwordHash string, profile UserProfile) (*User, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, ErrEmptyID
 	}
-	
+
 	if !strings.Contains(email, "@") {
 		return nil, ErrInvalidEmail
 	}
@@ -80,14 +82,15 @@ func NewUser(id, email, passwordHash string, profile UserProfile) (*User, error)
 	}, nil
 }
 
-func (u *User) ID() string {
-	return u.id
+// Getters expose state without allowing direct modification, maintaining encapsulation.
+func (user *User) ID() string {
+	return user.id
 }
 
-func (u *User) Email() string {
-	return u.email
+func (user *User) Email() string {
+	return user.email
 }
 
-func (u *User) Profile() UserProfile {
-	return u.profile
+func (user *User) Profile() UserProfile {
+	return user.profile
 }
