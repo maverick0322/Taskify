@@ -100,3 +100,18 @@ func (user *User) Profile() UserProfile {
 func (user *User) PasswordHash() string {
 	return user.passwordHash
 }
+
+// Getters for UserProfile to allow persistence adapters to read the state
+// without breaking encapsulation and immutability.
+
+func (p UserProfile) FirstName() string {
+	return p.firstName
+}
+
+func (p UserProfile) LastName() string {
+	return p.lastName
+}
+
+func (p UserProfile) BirthDate() time.Time {
+	return p.birthDate
+}
