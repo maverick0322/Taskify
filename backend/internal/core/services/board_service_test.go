@@ -64,23 +64,26 @@ func (repository *mockBoardRepository) Delete(ctx context.Context, id string) er
 }
 
 type mockColumnRepository struct {
-	columnToReturn     *domain.Column
-	columnsToReturn    []*domain.Column
-	saveError          error
-	getByIDError       error
-	getByBoardIDError  error
-	updateError        error
-	deleteError        error
-	savedColumn        *domain.Column
-	updatedColumn      *domain.Column
-	deletedColumnID    string
-	requestedColumnID  string
-	requestedBoardID   string
-	getByIDCallCount   int
-	getByBoardIDCalled bool
-	saveCalled         bool
-	updateCalled       bool
-	deleteCalled       bool
+	columnToReturn         *domain.Column
+	columnsToReturn        []*domain.Column
+	saveError              error
+	getByIDError           error
+	getByBoardIDError      error
+	updateError            error
+	updatePositionsError   error
+	deleteError            error
+	savedColumn            *domain.Column
+	updatedColumn          *domain.Column
+	updatedPositionColumns []*domain.Column
+	deletedColumnID        string
+	requestedColumnID      string
+	requestedBoardID       string
+	getByIDCallCount       int
+	getByBoardIDCalled     bool
+	saveCalled             bool
+	updateCalled           bool
+	updatePositionsCalled  bool
+	deleteCalled           bool
 }
 
 func (repository *mockColumnRepository) Save(ctx context.Context, column *domain.Column) error {
@@ -105,6 +108,12 @@ func (repository *mockColumnRepository) Update(ctx context.Context, column *doma
 	repository.updatedColumn = column
 	repository.updateCalled = true
 	return repository.updateError
+}
+
+func (repository *mockColumnRepository) UpdatePositions(ctx context.Context, columns []*domain.Column) error {
+	repository.updatedPositionColumns = columns
+	repository.updatePositionsCalled = true
+	return repository.updatePositionsError
 }
 
 func (repository *mockColumnRepository) Delete(ctx context.Context, id string) error {
@@ -656,7 +665,77 @@ func TestUpdateColumnName_UpdateFailure_ReturnsErrInternalProcessing(t *testing.
 	}
 }
 
-func TestMoveColumn_AuthorizedColumn_UpdatesPositionAndPersists(t *testing.T) {
+func TestMoveColumn_MoveRight_ShiftsAffectedColumnsAndPersistsBatch(t *testing.T) {
+	// Arrange
+	board := createBoardServiceBoard(t, validBoardServiceUserID)
+	targetColumn := createBoardServiceColumnWithPosition(t, "column-1", 0)
+	firstShiftedColumn := createBoardServiceColumnWithPosition(t, "column-2", 1)
+	secondShiftedColumn := createBoardServiceColumnWithPosition(t, "column-3", 2)
+	unchangedColumn := createBoardServiceColumnWithPosition(t, "column-4", 3)
+	columnRepository := &mockColumnRepository{
+		columnToReturn:  targetColumn,
+		columnsToReturn: []*domain.Column{targetColumn, firstShiftedColumn, secondShiftedColumn, unchangedColumn},
+	}
+	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
+
+	// Act
+	err := service.MoveColumn(context.Background(), validBoardServiceUserID, targetColumn.ID(), 2)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if targetColumn.Position() != 2 {
+		t.Errorf("expected target position 2, got %d", targetColumn.Position())
+	}
+	if firstShiftedColumn.Position() != 0 {
+		t.Errorf("expected first shifted column position 0, got %d", firstShiftedColumn.Position())
+	}
+	if secondShiftedColumn.Position() != 1 {
+		t.Errorf("expected second shifted column position 1, got %d", secondShiftedColumn.Position())
+	}
+	if unchangedColumn.Position() != 3 {
+		t.Errorf("expected unchanged column position 3, got %d", unchangedColumn.Position())
+	}
+	assertUpdatedPositionColumnIDs(t, columnRepository.updatedPositionColumns, []string{"column-2", "column-3", "column-1"})
+}
+
+func TestMoveColumn_MoveLeft_ShiftsAffectedColumnsAndPersistsBatch(t *testing.T) {
+	// Arrange
+	board := createBoardServiceBoard(t, validBoardServiceUserID)
+	firstShiftedColumn := createBoardServiceColumnWithPosition(t, "column-1", 0)
+	secondShiftedColumn := createBoardServiceColumnWithPosition(t, "column-2", 1)
+	targetColumn := createBoardServiceColumnWithPosition(t, "column-3", 2)
+	unchangedColumn := createBoardServiceColumnWithPosition(t, "column-4", 3)
+	columnRepository := &mockColumnRepository{
+		columnToReturn:  targetColumn,
+		columnsToReturn: []*domain.Column{firstShiftedColumn, secondShiftedColumn, targetColumn, unchangedColumn},
+	}
+	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
+
+	// Act
+	err := service.MoveColumn(context.Background(), validBoardServiceUserID, targetColumn.ID(), 0)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if targetColumn.Position() != 0 {
+		t.Errorf("expected target position 0, got %d", targetColumn.Position())
+	}
+	if firstShiftedColumn.Position() != 1 {
+		t.Errorf("expected first shifted column position 1, got %d", firstShiftedColumn.Position())
+	}
+	if secondShiftedColumn.Position() != 2 {
+		t.Errorf("expected second shifted column position 2, got %d", secondShiftedColumn.Position())
+	}
+	if unchangedColumn.Position() != 3 {
+		t.Errorf("expected unchanged column position 3, got %d", unchangedColumn.Position())
+	}
+	assertUpdatedPositionColumnIDs(t, columnRepository.updatedPositionColumns, []string{"column-1", "column-2", "column-3"})
+}
+
+func TestMoveColumn_SamePosition_ReturnsNilWithoutLoadingSiblings(t *testing.T) {
 	// Arrange
 	board := createBoardServiceBoard(t, validBoardServiceUserID)
 	column := createBoardServiceColumn(t)
@@ -664,14 +743,17 @@ func TestMoveColumn_AuthorizedColumn_UpdatesPositionAndPersists(t *testing.T) {
 	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
 
 	// Act
-	err := service.MoveColumn(context.Background(), validBoardServiceUserID, validBoardServiceColumnID, 2)
+	err := service.MoveColumn(context.Background(), validBoardServiceUserID, validBoardServiceColumnID, validColumnServicePosition)
 
 	// Assert
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if columnRepository.updatedColumn.Position() != 2 {
-		t.Errorf("expected position 2, got %d", columnRepository.updatedColumn.Position())
+	if columnRepository.getByBoardIDCalled {
+		t.Fatal("expected board columns not to be loaded")
+	}
+	if columnRepository.updatePositionsCalled {
+		t.Fatal("expected positions not to be updated")
 	}
 }
 
@@ -679,7 +761,8 @@ func TestMoveColumn_NegativePosition_ReturnsDomainError(t *testing.T) {
 	// Arrange
 	board := createBoardServiceBoard(t, validBoardServiceUserID)
 	column := createBoardServiceColumn(t)
-	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, &mockColumnRepository{columnToReturn: column}, &mockBoardIDGenerator{}, &mockBoardLogger{})
+	columnRepository := &mockColumnRepository{columnToReturn: column}
+	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
 
 	// Act
 	err := service.MoveColumn(context.Background(), validBoardServiceUserID, validBoardServiceColumnID, -1)
@@ -687,6 +770,49 @@ func TestMoveColumn_NegativePosition_ReturnsDomainError(t *testing.T) {
 	// Assert
 	if !errors.Is(err, domain.ErrInvalidColumnPosition) {
 		t.Errorf("expected error %v, got %v", domain.ErrInvalidColumnPosition, err)
+	}
+	if columnRepository.updatePositionsCalled {
+		t.Fatal("expected positions not to be updated")
+	}
+}
+
+func TestMoveColumn_GetBoardColumnsFailure_ReturnsErrInternalProcessing(t *testing.T) {
+	// Arrange
+	board := createBoardServiceBoard(t, validBoardServiceUserID)
+	column := createBoardServiceColumn(t)
+	columnRepository := &mockColumnRepository{
+		columnToReturn:    column,
+		getByBoardIDError: ports.ErrColumnRepositoryUnavailable,
+	}
+	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
+
+	// Act
+	err := service.MoveColumn(context.Background(), validBoardServiceUserID, validBoardServiceColumnID, 2)
+
+	// Assert
+	if !errors.Is(err, ErrInternalProcessing) {
+		t.Errorf("expected error %v, got %v", ErrInternalProcessing, err)
+	}
+}
+
+func TestMoveColumn_UpdatePositionsFailure_ReturnsErrInternalProcessing(t *testing.T) {
+	// Arrange
+	board := createBoardServiceBoard(t, validBoardServiceUserID)
+	targetColumn := createBoardServiceColumnWithPosition(t, "column-1", 0)
+	shiftedColumn := createBoardServiceColumnWithPosition(t, "column-2", 1)
+	columnRepository := &mockColumnRepository{
+		columnToReturn:       targetColumn,
+		columnsToReturn:      []*domain.Column{targetColumn, shiftedColumn},
+		updatePositionsError: ports.ErrColumnRepositoryUnavailable,
+	}
+	service := NewBoardService(&mockBoardRepository{boardToReturn: board}, columnRepository, &mockBoardIDGenerator{}, &mockBoardLogger{})
+
+	// Act
+	err := service.MoveColumn(context.Background(), validBoardServiceUserID, targetColumn.ID(), 1)
+
+	// Assert
+	if !errors.Is(err, ErrInternalProcessing) {
+		t.Errorf("expected error %v, got %v", ErrInternalProcessing, err)
 	}
 }
 
@@ -738,10 +864,30 @@ func createBoardServiceBoard(t *testing.T, userID string) *domain.Board {
 func createBoardServiceColumn(t *testing.T) *domain.Column {
 	t.Helper()
 
-	column, err := domain.NewColumn(validBoardServiceColumnID, validBoardServiceBoardID, validColumnServiceName, validColumnServicePosition)
+	return createBoardServiceColumnWithPosition(t, validBoardServiceColumnID, validColumnServicePosition)
+}
+
+func createBoardServiceColumnWithPosition(t *testing.T, columnID string, position int) *domain.Column {
+	t.Helper()
+
+	column, err := domain.NewColumn(columnID, validBoardServiceBoardID, validColumnServiceName, position)
 	if err != nil {
 		t.Fatalf("expected column to be valid, got: %v", err)
 	}
 
 	return column
+}
+
+func assertUpdatedPositionColumnIDs(t *testing.T, columns []*domain.Column, expectedIDs []string) {
+	t.Helper()
+
+	if len(columns) != len(expectedIDs) {
+		t.Fatalf("expected %d updated columns, got %d", len(expectedIDs), len(columns))
+	}
+
+	for index, expectedID := range expectedIDs {
+		if columns[index].ID() != expectedID {
+			t.Errorf("expected updated column ID %s at index %d, got %s", expectedID, index, columns[index].ID())
+		}
+	}
 }

@@ -22,6 +22,7 @@ type ColumnRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.Column, error)
 	GetByBoardID(ctx context.Context, boardID string) ([]*domain.Column, error)
 	Update(ctx context.Context, column *domain.Column) error
+	UpdatePositions(ctx context.Context, columns []*domain.Column) error
 	Delete(ctx context.Context, id string) error
 }
 

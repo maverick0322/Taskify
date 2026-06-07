@@ -140,11 +140,56 @@ func (service *boardService) MoveColumn(ctx context.Context, userID, columnID st
 		return err
 	}
 
-	if err := column.ChangePosition(position); err != nil {
-		return err
+	oldPosition := column.Position()
+	newPosition := position
+	if oldPosition == newPosition {
+		return nil
 	}
 
-	return service.persistColumnUpdate(ctx, column, "failed to move column")
+	if newPosition < 0 {
+		return column.ChangePosition(newPosition)
+	}
+
+	columns, err := service.columnRepository.GetByBoardID(ctx, column.BoardID())
+	if err != nil {
+		service.logger.Error("failed to retrieve columns for move", "boardID", column.BoardID(), "columnID", column.ID(), "error", err)
+		return ErrInternalProcessing
+	}
+
+	modifiedColumns := make([]*domain.Column, 0, len(columns))
+	for _, currentColumn := range columns {
+		if currentColumn.ID() == column.ID() {
+			continue
+		}
+
+		currentPosition := currentColumn.Position()
+		if shouldShiftColumnRight(oldPosition, newPosition, currentPosition) {
+			if err := currentColumn.ChangePosition(currentPosition - 1); err != nil {
+				return err
+			}
+			modifiedColumns = append(modifiedColumns, currentColumn)
+			continue
+		}
+
+		if shouldShiftColumnLeft(oldPosition, newPosition, currentPosition) {
+			if err := currentColumn.ChangePosition(currentPosition + 1); err != nil {
+				return err
+			}
+			modifiedColumns = append(modifiedColumns, currentColumn)
+		}
+	}
+
+	if err := column.ChangePosition(newPosition); err != nil {
+		return err
+	}
+	modifiedColumns = append(modifiedColumns, column)
+
+	if err := service.columnRepository.UpdatePositions(ctx, modifiedColumns); err != nil {
+		service.logger.Error("failed to update column positions", "boardID", column.BoardID(), "columnID", column.ID(), "error", err)
+		return ErrInternalProcessing
+	}
+
+	return nil
 }
 
 func (service *boardService) DeleteColumn(ctx context.Context, userID, columnID string) error {
@@ -231,4 +276,12 @@ func (service *boardService) persistColumnUpdate(ctx context.Context, column *do
 	}
 
 	return nil
+}
+
+func shouldShiftColumnRight(oldPosition, newPosition, currentPosition int) bool {
+	return newPosition > oldPosition && oldPosition < currentPosition && currentPosition <= newPosition
+}
+
+func shouldShiftColumnLeft(oldPosition, newPosition, currentPosition int) bool {
+	return newPosition < oldPosition && newPosition <= currentPosition && currentPosition < oldPosition
 }
