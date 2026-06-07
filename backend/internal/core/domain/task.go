@@ -39,12 +39,14 @@ func (priority TaskPriority) IsValid() bool {
 }
 
 var (
-	ErrEmptyTaskID         = errors.New("domain: task ID cannot be empty")
-	ErrEmptyTaskUserID     = errors.New("domain: task user ID cannot be empty")
-	ErrInvalidTaskTitle    = errors.New("domain: task title does not meet minimum length")
-	ErrInvalidTaskStatus   = errors.New("domain: invalid task status")
-	ErrInvalidTaskPriority = errors.New("domain: invalid task priority")
-	ErrPastDueDate         = errors.New("domain: task due date cannot be in the past")
+	ErrEmptyTaskID          = errors.New("domain: task ID cannot be empty")
+	ErrEmptyTaskUserID      = errors.New("domain: task user ID cannot be empty")
+	ErrInvalidTaskTitle     = errors.New("domain: task title does not meet minimum length")
+	ErrInvalidTaskStatus    = errors.New("domain: invalid task status")
+	ErrInvalidTaskPriority  = errors.New("domain: invalid task priority")
+	ErrPastDueDate          = errors.New("domain: task due date cannot be in the past")
+	ErrInvalidTaskCreatedAt = errors.New("domain: task created at cannot be zero")
+	ErrInvalidTaskUpdatedAt = errors.New("domain: task updated at cannot be zero")
 )
 
 // Task is the aggregate root for personal work tracking.
@@ -62,44 +64,94 @@ type Task struct {
 
 // NewTask centralizes invariants so invalid task state cannot enter the domain.
 func NewTask(id, userID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
-	trimmedID := strings.TrimSpace(id)
-	if trimmedID == "" {
-		return nil, ErrEmptyTaskID
-	}
-
-	trimmedUserID := strings.TrimSpace(userID)
-	if trimmedUserID == "" {
-		return nil, ErrEmptyTaskUserID
-	}
-
-	trimmedTitle, err := validateTaskTitle(title)
+	taskFields, err := validateTaskFields(id, userID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
 
-	if !status.IsValid() {
-		return nil, ErrInvalidTaskStatus
-	}
-
-	if !priority.IsValid() {
-		return nil, ErrInvalidTaskPriority
-	}
-
-	if isPastDueDate(dueDate, time.Now()) {
-		return nil, ErrPastDueDate
-	}
-
 	currentTime := time.Now()
 	return &Task{
-		id:          trimmedID,
-		userID:      trimmedUserID,
-		title:       trimmedTitle,
-		description: strings.TrimSpace(description),
+		id:          taskFields.id,
+		userID:      taskFields.userID,
+		title:       taskFields.title,
+		description: taskFields.description,
 		status:      status,
 		priority:    priority,
 		createdAt:   currentTime,
 		updatedAt:   currentTime,
 		dueDate:     dueDate,
+	}, nil
+}
+
+// RehydrateTask restores persisted state without exposing mutation-oriented setters.
+func RehydrateTask(
+	id,
+	userID,
+	title,
+	description string,
+	status TaskStatus,
+	priority TaskPriority,
+	createdAt,
+	updatedAt,
+	dueDate time.Time,
+) (*Task, error) {
+	taskFields, err := validateTaskFields(id, userID, title, description, status, priority, dueDate)
+	if err != nil {
+		return nil, err
+	}
+	if createdAt.IsZero() {
+		return nil, ErrInvalidTaskCreatedAt
+	}
+	if updatedAt.IsZero() {
+		return nil, ErrInvalidTaskUpdatedAt
+	}
+
+	return &Task{
+		id:          taskFields.id,
+		userID:      taskFields.userID,
+		title:       taskFields.title,
+		description: taskFields.description,
+		status:      status,
+		priority:    priority,
+		createdAt:   createdAt,
+		updatedAt:   updatedAt,
+		dueDate:     dueDate,
+	}, nil
+}
+
+func validateTaskFields(id, userID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return validatedTaskFields{}, ErrEmptyTaskID
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return validatedTaskFields{}, ErrEmptyTaskUserID
+	}
+
+	trimmedTitle, err := validateTaskTitle(title)
+	if err != nil {
+		return validatedTaskFields{}, err
+	}
+
+	if !status.IsValid() {
+		return validatedTaskFields{}, ErrInvalidTaskStatus
+	}
+
+	if !priority.IsValid() {
+		return validatedTaskFields{}, ErrInvalidTaskPriority
+	}
+
+	if isPastDueDate(dueDate, time.Now()) {
+		return validatedTaskFields{}, ErrPastDueDate
+	}
+
+	return validatedTaskFields{
+		id:          trimmedID,
+		userID:      trimmedUserID,
+		title:       trimmedTitle,
+		description: strings.TrimSpace(description),
 	}, nil
 }
 
@@ -186,4 +238,11 @@ func validateTaskTitle(title string) (string, error) {
 
 func isPastDueDate(dueDate, now time.Time) bool {
 	return !dueDate.IsZero() && dueDate.Before(now)
+}
+
+type validatedTaskFields struct {
+	id          string
+	userID      string
+	title       string
+	description string
 }

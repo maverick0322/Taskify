@@ -334,6 +334,61 @@ func TestTask_ChangePriorityInvalidPriority_ReturnsErrInvalidTaskPriority(t *tes
 	}
 }
 
+func TestRehydrateTask_ValidFields_ReturnsTaskWithPersistedDates(t *testing.T) {
+	// Arrange
+	createdAt := time.Now().Add(-2 * time.Hour)
+	updatedAt := time.Now().Add(-time.Hour)
+	dueDate := time.Now().Add(24 * time.Hour)
+
+	// Act
+	task, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusDone, TaskPriorityHigh, createdAt, updatedAt, dueDate)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if !task.CreatedAt().Equal(createdAt) {
+		t.Errorf("expected created at %v, got %v", createdAt, task.CreatedAt())
+	}
+	if !task.UpdatedAt().Equal(updatedAt) {
+		t.Errorf("expected updated at %v, got %v", updatedAt, task.UpdatedAt())
+	}
+	if task.Status() != TaskStatusDone {
+		t.Errorf("expected status %s, got %s", TaskStatusDone, task.Status())
+	}
+	if task.Priority() != TaskPriorityHigh {
+		t.Errorf("expected priority %s, got %s", TaskPriorityHigh, task.Priority())
+	}
+}
+
+func TestRehydrateTask_ZeroCreatedAt_ReturnsErrInvalidTaskCreatedAt(t *testing.T) {
+	// Arrange
+	zeroCreatedAt := time.Time{}
+	updatedAt := time.Now().Add(-time.Hour)
+
+	// Act
+	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, zeroCreatedAt, updatedAt, time.Time{})
+
+	// Assert
+	if !errors.Is(err, ErrInvalidTaskCreatedAt) {
+		t.Errorf("expected error %v, got %v", ErrInvalidTaskCreatedAt, err)
+	}
+}
+
+func TestRehydrateTask_ZeroUpdatedAt_ReturnsErrInvalidTaskUpdatedAt(t *testing.T) {
+	// Arrange
+	createdAt := time.Now().Add(-2 * time.Hour)
+	zeroUpdatedAt := time.Time{}
+
+	// Act
+	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, createdAt, zeroUpdatedAt, time.Time{})
+
+	// Assert
+	if !errors.Is(err, ErrInvalidTaskUpdatedAt) {
+		t.Errorf("expected error %v, got %v", ErrInvalidTaskUpdatedAt, err)
+	}
+}
+
 func createValidTask(t *testing.T) *Task {
 	t.Helper()
 
