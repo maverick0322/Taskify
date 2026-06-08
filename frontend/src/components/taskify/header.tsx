@@ -51,7 +51,11 @@ export function Header({
 
   return (
     <>
-      <NewTaskDialog open={newTaskOpen} onOpenChange={setNewTaskOpen} />
+      <NewTaskDialog
+        open={newTaskOpen}
+        onOpenChange={setNewTaskOpen}
+        selectedBoardId={selectedBoardId}
+      />
 
       {/* Mobile Sidebar Sheet */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -143,7 +147,12 @@ export function Header({
           </Button>
 
           {/* Primary CTA */}
-          <Button size="sm" className="h-9 gap-1.5 text-sm font-semibold" onClick={() => setNewTaskOpen(true)}>
+          <Button
+            size="sm"
+            className="h-9 gap-1.5 text-sm font-semibold"
+            onClick={() => setNewTaskOpen(true)}
+            disabled={!selectedBoardId}
+          >
             <Plus data-icon="inline-start" className="size-4" />
             <span className="hidden sm:inline">Nueva Tarea</span>
             <span className="sm:hidden">Nueva</span>
