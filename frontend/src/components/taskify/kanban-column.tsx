@@ -3,23 +3,12 @@
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { TaskCard } from "@/components/taskify/task-card"
+import type { KanbanTask } from "@/components/taskify/kanban-board"
 import { Plus, MoreHorizontal } from "lucide-react"
-
-interface Task {
-  id: string
-  title: string
-  description?: string
-  priority: "Alta" | "Media" | "Baja"
-  dueDate: string
-  tag?: string
-  assignees?: { name: string; seed: string }[]
-  comments?: number
-  attachments?: number
-}
 
 interface KanbanColumnProps {
   title: string
-  tasks: Task[]
+  tasks: KanbanTask[]
   accentColor: string
   dotColor: string
 }

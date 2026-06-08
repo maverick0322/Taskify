@@ -41,7 +41,7 @@ export function TaskCard({
   title,
   description,
   priority,
-  dueDate,
+  dueDate = "Sin fecha",
   tag,
   assignees = [],
   comments = 0,
