@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { TaskifyDashboard } from "@/components/TaskifyDashboard";
-import { LoginForm } from "@/components/auth/LoginForm";
+import { AuthScreen } from "@/components/auth/AuthScreen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const queryClient = new QueryClient();
@@ -18,7 +18,7 @@ function App() {
         {accessToken ? (
           <TaskifyDashboard />
         ) : (
-          <LoginForm onLoginSuccess={setAccessToken} />
+          <AuthScreen onLoginSuccess={setAccessToken} />
         )}
       </TooltipProvider>
     </QueryClientProvider>
