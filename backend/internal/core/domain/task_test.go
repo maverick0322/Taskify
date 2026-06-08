@@ -352,6 +352,47 @@ func TestTask_ChangePriorityInvalidPriority_ReturnsErrInvalidTaskPriority(t *tes
 	}
 }
 
+func TestTask_UpdateValidFields_UpdatesTaskAndUpdatedAt(t *testing.T) {
+	// Arrange
+	task := createValidTask(t)
+	previousUpdatedAt := task.UpdatedAt()
+	newDueDate := time.Now().Add(48 * time.Hour)
+	waitForTimestampChange()
+
+	// Act
+	err := task.Update("Review pull request", "Check test coverage", TaskPriorityHigh, newDueDate)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if task.Title() != "Review pull request" {
+		t.Errorf("expected updated title, got %s", task.Title())
+	}
+	if task.Priority() != TaskPriorityHigh {
+		t.Errorf("expected priority %s, got %s", TaskPriorityHigh, task.Priority())
+	}
+	if !task.DueDate().Equal(newDueDate) {
+		t.Errorf("expected due date %v, got %v", newDueDate, task.DueDate())
+	}
+	if !task.UpdatedAt().After(previousUpdatedAt) {
+		t.Errorf("expected updated at to be after %v, got %v", previousUpdatedAt, task.UpdatedAt())
+	}
+}
+
+func TestTask_UpdatePastDueDate_ReturnsErrPastDueDate(t *testing.T) {
+	// Arrange
+	task := createValidTask(t)
+
+	// Act
+	err := task.Update("Review pull request", "Check test coverage", TaskPriorityHigh, time.Now().Add(-time.Hour))
+
+	// Assert
+	if !errors.Is(err, ErrPastDueDate) {
+		t.Errorf("expected error %v, got %v", ErrPastDueDate, err)
+	}
+}
+
 func TestRehydrateTask_ValidFields_ReturnsTaskWithPersistedDates(t *testing.T) {
 	// Arrange
 	createdAt := time.Now().Add(-2 * time.Hour)

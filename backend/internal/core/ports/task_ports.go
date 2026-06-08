@@ -24,6 +24,7 @@ type TaskUseCase interface {
 	GetTask(ctx context.Context, userID, taskID string) (*domain.Task, error)
 	GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error)
 	GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error)
+	UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error
 	UpdateTaskDetails(ctx context.Context, userID, taskID, title, description string) error
 	UpdateTaskStatus(ctx context.Context, userID, taskID string, status domain.TaskStatus) error
 	UpdateTaskPriority(ctx context.Context, userID, taskID string, priority domain.TaskPriority) error

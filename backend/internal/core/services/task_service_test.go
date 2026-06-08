@@ -335,6 +335,49 @@ func TestGetBoardTasks_RepositoryFailure_ReturnsErrInternalProcessing(t *testing
 	}
 }
 
+func TestUpdateTask_OwnedTask_UpdatesAndPersists(t *testing.T) {
+	// Arrange
+	task := createTaskServiceTask(t, validTaskServiceUserID)
+	repository := &mockTaskRepository{taskToReturn: task}
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	dueDate := time.Now().Add(48 * time.Hour)
+
+	// Act
+	err := service.UpdateTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "Review code", "Check edge cases", domain.TaskPriorityHigh, dueDate)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if repository.updatedTask == nil {
+		t.Fatal("expected task to be updated")
+	}
+	if repository.updatedTask.Title() != "Review code" {
+		t.Errorf("expected title Review code, got %s", repository.updatedTask.Title())
+	}
+	if repository.updatedTask.Priority() != domain.TaskPriorityHigh {
+		t.Errorf("expected priority %s, got %s", domain.TaskPriorityHigh, repository.updatedTask.Priority())
+	}
+	if !repository.updatedTask.DueDate().Equal(dueDate) {
+		t.Errorf("expected due date %v, got %v", dueDate, repository.updatedTask.DueDate())
+	}
+}
+
+func TestUpdateTask_InvalidPriority_ReturnsDomainError(t *testing.T) {
+	// Arrange
+	task := createTaskServiceTask(t, validTaskServiceUserID)
+	repository := &mockTaskRepository{taskToReturn: task}
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+
+	// Act
+	err := service.UpdateTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "Review code", "Check edge cases", domain.TaskPriority("urgent"), time.Time{})
+
+	// Assert
+	if !errors.Is(err, domain.ErrInvalidTaskPriority) {
+		t.Errorf("expected error %v, got %v", domain.ErrInvalidTaskPriority, err)
+	}
+}
+
 func TestUpdateTaskDetails_OwnedTask_UpdatesAndPersists(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)

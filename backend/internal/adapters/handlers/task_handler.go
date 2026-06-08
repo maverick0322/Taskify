@@ -32,6 +32,7 @@ func (handler *TaskHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/tasks", handler.CreateTask)
 	router.Get("/tasks", handler.GetUserTasks)
 	router.Get("/tasks/{id}", handler.GetTask)
+	router.Patch("/tasks/{id}", handler.UpdateTask)
 	router.Patch("/tasks/{id}/details", handler.UpdateTaskDetails)
 	router.Patch("/tasks/{id}/status", handler.UpdateTaskStatus)
 	router.Patch("/tasks/{id}/priority", handler.UpdateTaskPriority)
@@ -142,6 +143,57 @@ func (handler *TaskHandler) GetTask(response http.ResponseWriter, request *http.
 	}
 
 	writeJSON(response, http.StatusOK, taskResponseFromDomain(task))
+}
+
+// UpdateTask updates task fields in one request.
+// @Summary Update task
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param request body updateTaskRequest true "Task update payload"
+// @Success 204 "No Content"
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 404 {object} errorResponse
+// @Failure 500 {object} errorResponse
+// @Security BearerAuth
+// @Router /tasks/{id} [patch]
+func (handler *TaskHandler) UpdateTask(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var updateRequest updateTaskRequest
+	if err := json.NewDecoder(request.Body).Decode(&updateRequest); err != nil {
+		handler.logger.Warn("update task request contains invalid json", "userID", userID)
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	dueDate, err := parseTaskDueDate(updateRequest.DueDate)
+	if err != nil {
+		handler.logger.Warn("update task request contains invalid due date", "userID", userID)
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid due date"})
+		return
+	}
+
+	err = handler.taskUseCase.UpdateTask(
+		request.Context(),
+		userID,
+		chi.URLParam(request, "id"),
+		updateRequest.Title,
+		updateRequest.Description,
+		domain.TaskPriority(updateRequest.Priority),
+		dueDate,
+	)
+	if err != nil {
+		handler.handleTaskError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
 }
 
 // UpdateTaskDetails updates task title and description.
@@ -356,6 +408,13 @@ func formatTaskDueDate(dueDate time.Time) string {
 
 type createTaskRequest struct {
 	BoardID     string `json:"boardId"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Priority    string `json:"priority"`
+	DueDate     string `json:"dueDate"`
+}
+
+type updateTaskRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Priority    string `json:"priority"`

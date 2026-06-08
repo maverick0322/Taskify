@@ -198,6 +198,26 @@ func (task *Task) ChangePriority(newPriority TaskPriority) error {
 	return nil
 }
 
+func (task *Task) Update(newTitle, newDescription string, newPriority TaskPriority, newDueDate time.Time) error {
+	trimmedTitle, err := validateTaskTitle(newTitle)
+	if err != nil {
+		return err
+	}
+	if !newPriority.IsValid() {
+		return ErrInvalidTaskPriority
+	}
+	if isPastDueDate(newDueDate, time.Now()) {
+		return ErrPastDueDate
+	}
+
+	task.title = trimmedTitle
+	task.description = strings.TrimSpace(newDescription)
+	task.priority = newPriority
+	task.dueDate = newDueDate
+	task.touch()
+	return nil
+}
+
 func (task *Task) ID() string {
 	return task.id
 }

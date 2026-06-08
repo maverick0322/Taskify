@@ -40,6 +40,10 @@ func (useCase *mockTaskUseCase) GetBoardTasks(ctx context.Context, userID, board
 	return useCase.tasksToReturn, useCase.errToReturn
 }
 
+func (useCase *mockTaskUseCase) UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error {
+	return useCase.errToReturn
+}
+
 func (useCase *mockTaskUseCase) UpdateTaskDetails(ctx context.Context, userID, taskID, title, description string) error {
 	return useCase.errToReturn
 }
@@ -202,6 +206,36 @@ func TestTaskHandler_GetTaskNotFound_ReturnsNotFound(t *testing.T) {
 	// Assert
 	if response.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, response.Code)
+	}
+}
+
+func TestTaskHandler_UpdateTaskValidRequest_ReturnsNoContent(t *testing.T) {
+	// Arrange
+	router := createTaskTestRouter(&mockTaskUseCase{})
+	request := authenticatedTaskRequest(http.MethodPatch, "/tasks/task-123", `{"title":"Review code","description":"Check handler","priority":"high","dueDate":"2027-01-01"}`)
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+}
+
+func TestTaskHandler_UpdateTaskInvalidDueDate_ReturnsBadRequest(t *testing.T) {
+	// Arrange
+	router := createTaskTestRouter(&mockTaskUseCase{})
+	request := authenticatedTaskRequest(http.MethodPatch, "/tasks/task-123", `{"title":"Review code","description":"Check handler","priority":"high","dueDate":"01-01-2027"}`)
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }
 

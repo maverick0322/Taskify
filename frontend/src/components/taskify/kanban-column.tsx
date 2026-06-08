@@ -6,13 +6,15 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { TaskCard } from "@/components/taskify/task-card"
 import type { KanbanTask } from "@/components/taskify/kanban-board"
-import type { TaskStatus } from "@/services/taskService"
+import type { Task, TaskStatus } from "@/services/taskService"
 import { Plus, MoreHorizontal } from "lucide-react"
 
 interface KanbanColumnProps {
   status: TaskStatus
   title: string
   tasks: KanbanTask[]
+  selectedBoardId?: string
+  onEditTask: (task: Task) => void
   accentColor: string
   dotColor: string
 }
@@ -21,6 +23,8 @@ export function KanbanColumn({
   status,
   title,
   tasks,
+  selectedBoardId,
+  onEditTask,
   accentColor,
   dotColor,
 }: KanbanColumnProps) {
@@ -67,7 +71,13 @@ export function KanbanColumn({
             className="flex flex-1 flex-col gap-3 overflow-y-auto p-3"
           >
             {tasks.map((task, index) => (
-              <TaskCard key={task.id} index={index} {...task} />
+              <TaskCard
+                key={task.id}
+                index={index}
+                selectedBoardId={selectedBoardId}
+                onEditTask={onEditTask}
+                {...task}
+              />
             ))}
 
             {/* Empty state */}

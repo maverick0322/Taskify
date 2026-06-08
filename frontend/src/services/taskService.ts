@@ -38,6 +38,8 @@ export interface UpdateTaskStatusInput {
   status: TaskStatus;
 }
 
+export type UpdateTaskInput = Partial<Task>;
+
 export async function getTasks(boardId?: string): Promise<Task[]> {
   const query = boardId ? `?board_id=${encodeURIComponent(boardId)}` : "";
   return apiRequest<Task[]>(`/tasks${query}`);
@@ -63,5 +65,26 @@ export async function updateTaskStatus({
   await apiRequest<void>(`/tasks/${taskId}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateTask(
+  taskId: string,
+  data: UpdateTaskInput,
+): Promise<void> {
+  await apiRequest<void>(`/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      title: data.title ?? "",
+      description: data.description ?? "",
+      priority: data.priority ?? "medium",
+      dueDate: data.dueDate ?? "",
+    }),
+  });
+}
+
+export async function deleteTask(taskId: string): Promise<void> {
+  await apiRequest<void>(`/tasks/${taskId}`, {
+    method: "DELETE",
   });
 }

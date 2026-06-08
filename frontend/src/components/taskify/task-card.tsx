@@ -1,19 +1,24 @@
 "use client"
 
 import { Draggable } from "@hello-pangea/dnd"
-import type { CSSProperties } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import type { CSSProperties, MouseEvent } from "react"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Clock, Paperclip, MessageSquare, MoreHorizontal } from "lucide-react"
+import { Clock, Paperclip, MessageSquare, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { deleteTask, type Task } from "@/services/taskService"
 
 type Priority = "Alta" | "Media" | "Baja"
 
 interface TaskCardProps {
   id: string
   index: number
+  task: Task
+  selectedBoardId?: string
+  onEditTask: (task: Task) => void
   title: string
   description?: string
   priority: Priority
@@ -45,6 +50,9 @@ const priorityConfig: Record<Priority, { label: string; className: string }> = {
 export function TaskCard({
   id,
   index,
+  task,
+  selectedBoardId,
+  onEditTask,
   title,
   description,
   priority,
@@ -55,6 +63,28 @@ export function TaskCard({
   attachments = 0,
 }: TaskCardProps) {
   const { label, className } = priorityConfig[priority]
+  const queryClient = useQueryClient()
+  const deleteMutation = useMutation({
+    mutationFn: deleteTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks", selectedBoardId] })
+    },
+  })
+
+  function handleEdit(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+    onEditTask(task)
+  }
+
+  function handleDelete(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+
+    if (!window.confirm("¿Eliminar esta tarea?")) {
+      return
+    }
+
+    deleteMutation.mutate(id)
+  }
 
   return (
     <Draggable draggableId={id} index={index}>
@@ -87,14 +117,27 @@ export function TaskCard({
                 </Badge>
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground transition-opacity -mt-0.5 -mr-1"
-              aria-label="Más opciones"
-            >
-              <MoreHorizontal className="size-3.5" />
-            </Button>
+            <div className="-mr-1 -mt-0.5 flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                aria-label="Editar tarea"
+                onClick={handleEdit}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-muted-foreground hover:text-red-600"
+                aria-label="Eliminar tarea"
+                disabled={deleteMutation.isPending}
+                onClick={handleDelete}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
           </div>
 
           {/* Title */}

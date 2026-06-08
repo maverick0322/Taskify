@@ -3,8 +3,10 @@ import {
   type DropResult,
 } from "@hello-pangea/dnd"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
 
 import { KanbanColumn } from "@/components/taskify/kanban-column"
+import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +20,7 @@ export type KanbanTaskPriority = "Alta" | "Media" | "Baja"
 
 export interface KanbanTask {
   id: string
+  task: Task
   title: string
   description?: string
   priority: KanbanTaskPriority
@@ -65,6 +68,8 @@ interface UpdateTaskStatusContext {
 
 export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
   const queryClient = useQueryClient()
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const tasksQueryKey = ["tasks", selectedBoardId]
   const mutation = useMutation<void, Error, UpdateTaskStatusVariables, UpdateTaskStatusContext>({
     mutationFn: updateTaskStatus,
@@ -111,6 +116,18 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     })
   }
 
+  function handleEditTask(task: Task) {
+    setTaskToEdit(task)
+    setEditDialogOpen(true)
+  }
+
+  function handleEditDialogOpenChange(open: boolean) {
+    setEditDialogOpen(open)
+    if (!open) {
+      setTaskToEdit(null)
+    }
+  }
+
   return (
     <main
       className="flex-1 overflow-x-auto kanban-scroll bg-canvas"
@@ -126,6 +143,8 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
               tasks={tasks
                 .filter((task) => task.status === col.id)
                 .map(taskResponseToKanbanTask)}
+              selectedBoardId={selectedBoardId}
+              onEditTask={handleEditTask}
               accentColor={col.accentColor}
               dotColor={col.dotColor}
             />
@@ -143,6 +162,12 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
           </div>
         </div>
       </DragDropContext>
+      <NewTaskDialog
+        open={editDialogOpen}
+        onOpenChange={handleEditDialogOpenChange}
+        selectedBoardId={selectedBoardId}
+        taskToEdit={taskToEdit}
+      />
     </main>
   )
 }
@@ -150,6 +175,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
 function taskResponseToKanbanTask(task: Task): KanbanTask {
   return {
     id: task.id,
+    task,
     title: task.title,
     description: task.description || undefined,
     priority: priorityToKanbanPriority(task.priority),

@@ -87,6 +87,19 @@ func (service *taskService) GetBoardTasks(ctx context.Context, userID, boardID s
 	return tasks, nil
 }
 
+func (service *taskService) UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error {
+	task, err := service.getAuthorizedTask(ctx, userID, taskID)
+	if err != nil {
+		return err
+	}
+
+	if err := task.Update(title, description, priority, dueDate); err != nil {
+		return err
+	}
+
+	return service.persistTaskUpdate(ctx, task, "failed to update task")
+}
+
 func (service *taskService) UpdateTaskDetails(ctx context.Context, userID, taskID, title, description string) error {
 	task, err := service.getAuthorizedTask(ctx, userID, taskID)
 	if err != nil {

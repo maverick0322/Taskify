@@ -1,6 +1,6 @@
 "use client"
 
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Dialog,
@@ -29,7 +29,12 @@ import {
 import { Label } from "@/components/ui/label"
 import { CalendarIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { createTask, type TaskPriority } from "@/services/taskService"
+import {
+  createTask,
+  updateTask,
+  type Task,
+  type TaskPriority,
+} from "@/services/taskService"
 
 // Month names for formatting the selected date label
 const MONTH_NAMES = [
@@ -45,6 +50,7 @@ interface NewTaskDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedBoardId?: string
+  taskToEdit?: Task | null
 }
 
 const priorityMap: Record<string, TaskPriority> = {
@@ -53,7 +59,18 @@ const priorityMap: Record<string, TaskPriority> = {
   Baja: "low",
 }
 
-export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDialogProps) {
+const priorityLabelMap: Record<TaskPriority, string> = {
+  high: "Alta",
+  medium: "Media",
+  low: "Baja",
+}
+
+export function NewTaskDialog({
+  open,
+  onOpenChange,
+  selectedBoardId,
+  taskToEdit,
+}: NewTaskDialogProps) {
   const queryClient = useQueryClient()
   const [title,       setTitle]       = useState("")
   const [description, setDescription] = useState("")
@@ -63,10 +80,32 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
   const [calOpen,     setCalOpen]     = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
 
+  const isEditing = Boolean(taskToEdit)
+  const activeBoardId = taskToEdit?.boardId ?? selectedBoardId
+
   const mutation = useMutation({
-    mutationFn: createTask,
+    mutationFn: async (input: {
+      title: string
+      description: string
+      priority: TaskPriority
+      dueDate: string
+    }) => {
+      if (taskToEdit) {
+        await updateTask(taskToEdit.id, input)
+        return
+      }
+
+      if (!selectedBoardId) {
+        throw new Error("Selecciona un tablero antes de crear una tarea.")
+      }
+
+      await createTask({
+        ...input,
+        boardId: selectedBoardId,
+      })
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", selectedBoardId] })
+      queryClient.invalidateQueries({ queryKey: ["tasks", activeBoardId] })
       reset()
       onOpenChange(false)
     },
@@ -78,6 +117,25 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
       )
     },
   })
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    if (!taskToEdit) {
+      reset()
+      return
+    }
+
+    setTitle(taskToEdit.title)
+    setDescription(taskToEdit.description)
+    setPriority(priorityLabelMap[taskToEdit.priority])
+    setDueDate(taskToEdit.dueDate ? parseAPIDate(taskToEdit.dueDate) : undefined)
+    setTime("")
+    setCalOpen(false)
+    setErrorMessage("")
+  }, [open, taskToEdit])
 
   function reset() {
     setTitle("")
@@ -92,7 +150,7 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedBoardId) {
+    if (!activeBoardId) {
       setErrorMessage("Selecciona un tablero antes de crear una tarea.")
       return
     }
@@ -104,7 +162,6 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
     }
 
     mutation.mutate({
-      boardId: selectedBoardId,
       title,
       description,
       priority: mappedPriority,
@@ -136,9 +193,11 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nueva Tarea</DialogTitle>
+          <DialogTitle>{isEditing ? "Editar Tarea" : "Nueva Tarea"}</DialogTitle>
           <DialogDescription>
-            Completa los datos para agregar una nueva tarea al tablero.
+            {isEditing
+              ? "Actualiza los datos principales de la tarea."
+              : "Completa los datos para agregar una nueva tarea al tablero."}
           </DialogDescription>
         </DialogHeader>
 
@@ -242,8 +301,8 @@ export function NewTaskDialog({ open, onOpenChange, selectedBoardId }: NewTaskDi
             <Button variant="outline" type="button" onClick={handleCancel} disabled={mutation.isPending}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!title.trim() || !selectedBoardId || mutation.isPending}>
-              {mutation.isPending ? "Guardando..." : "Guardar"}
+            <Button type="submit" disabled={!title.trim() || !activeBoardId || mutation.isPending}>
+              {mutation.isPending ? "Guardando..." : isEditing ? "Actualizar" : "Guardar"}
             </Button>
           </DialogFooter>
         </form>
@@ -258,4 +317,17 @@ function formatDateForAPI(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0")
 
   return `${year}-${month}-${day}`
+}
+
+function parseAPIDate(rawDate: string): Date | undefined {
+  if (!rawDate) {
+    return undefined
+  }
+
+  const [year, month, day] = rawDate.split("-").map(Number)
+  if (!year || !month || !day) {
+    return undefined
+  }
+
+  return new Date(year, month - 1, day)
 }
