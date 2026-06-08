@@ -17,6 +17,7 @@ export interface Task {
   dueDate: string;
   createdAt: string;
   updatedAt: string;
+  boardId: string;
   columnId?: string;
   tag?: string;
   assignees?: TaskAssignee[];
@@ -28,6 +29,7 @@ export interface CreateTaskInput {
   title: string;
   description: string;
   priority: TaskPriority;
+  boardId: string;
   dueDate?: string;
 }
 
@@ -36,8 +38,9 @@ export interface UpdateTaskStatusInput {
   status: TaskStatus;
 }
 
-export async function getTasks(): Promise<Task[]> {
-  return apiRequest<Task[]>("/tasks");
+export async function getTasks(boardId?: string): Promise<Task[]> {
+  const query = boardId ? `?board_id=${encodeURIComponent(boardId)}` : "";
+  return apiRequest<Task[]>(`/tasks${query}`);
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
@@ -47,6 +50,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       title: input.title,
       description: input.description,
       priority: input.priority,
+      boardId: input.boardId,
       dueDate: input.dueDate ?? "",
     }),
   });

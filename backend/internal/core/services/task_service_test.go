@@ -12,24 +12,27 @@ import (
 
 const (
 	validTaskServiceUserID      = "user-123"
+	validTaskServiceBoardID     = "board-123"
 	validTaskServiceTaskID      = "task-123"
 	validTaskServiceTitle       = "Write tests"
 	validTaskServiceDescription = "Cover task service rules"
 )
 
 type mockTaskRepository struct {
-	taskToReturn     *domain.Task
-	tasksToReturn    []*domain.Task
-	saveError        error
-	getByIDError     error
-	getByUserIDError error
-	updateError      error
-	deleteError      error
-	savedTask        *domain.Task
-	updatedTask      *domain.Task
-	deletedTaskID    string
-	requestedTaskID  string
-	requestedUserID  string
+	taskToReturn               *domain.Task
+	tasksToReturn              []*domain.Task
+	saveError                  error
+	getByIDError               error
+	getByUserIDError           error
+	getByUserIDAndBoardIDError error
+	updateError                error
+	deleteError                error
+	savedTask                  *domain.Task
+	updatedTask                *domain.Task
+	deletedTaskID              string
+	requestedTaskID            string
+	requestedUserID            string
+	requestedBoardID           string
 }
 
 func (repository *mockTaskRepository) Save(ctx context.Context, task *domain.Task) error {
@@ -45,6 +48,12 @@ func (repository *mockTaskRepository) GetByID(ctx context.Context, id string) (*
 func (repository *mockTaskRepository) GetByUserID(ctx context.Context, userID string) ([]*domain.Task, error) {
 	repository.requestedUserID = userID
 	return repository.tasksToReturn, repository.getByUserIDError
+}
+
+func (repository *mockTaskRepository) GetByUserIDAndBoardID(ctx context.Context, userID, boardID string) ([]*domain.Task, error) {
+	repository.requestedUserID = userID
+	repository.requestedBoardID = boardID
+	return repository.tasksToReturn, repository.getByUserIDAndBoardIDError
 }
 
 func (repository *mockTaskRepository) Update(ctx context.Context, task *domain.Task) error {
@@ -80,13 +89,46 @@ func (logger *mockTaskLogger) Error(msg string, keysAndValues ...interface{}) {
 	logger.errorMessages = append(logger.errorMessages, msg)
 }
 
+type mockTaskBoardRepository struct {
+	boardToReturn *domain.Board
+	getByIDError  error
+	requestedID   string
+}
+
+func (repository *mockTaskBoardRepository) Save(ctx context.Context, board *domain.Board) error {
+	return nil
+}
+
+func (repository *mockTaskBoardRepository) GetByID(ctx context.Context, id string) (*domain.Board, error) {
+	repository.requestedID = id
+	return repository.boardToReturn, repository.getByIDError
+}
+
+func (repository *mockTaskBoardRepository) GetByUserID(ctx context.Context, userID string) ([]*domain.Board, error) {
+	return nil, nil
+}
+
+func (repository *mockTaskBoardRepository) Update(ctx context.Context, board *domain.Board) error {
+	return nil
+}
+
+func (repository *mockTaskBoardRepository) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
+func newTaskTestService(t *testing.T, repository *mockTaskRepository, idGenerator *mockTaskIDGenerator, logger *mockTaskLogger) ports.TaskUseCase {
+	t.Helper()
+
+	return NewTaskService(repository, &mockTaskBoardRepository{boardToReturn: createTaskServiceBoard(t, validTaskServiceUserID)}, idGenerator, logger)
+}
+
 func TestCreateTask_ValidData_ReturnsTaskAndSaves(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{}
-	service := NewTaskService(repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	task, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	task, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if err != nil {
@@ -105,10 +147,10 @@ func TestCreateTask_ValidData_ReturnsTaskAndSaves(t *testing.T) {
 
 func TestCreateTask_InvalidTitle_ReturnsDomainError(t *testing.T) {
 	// Arrange
-	service := NewTaskService(&mockTaskRepository{}, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
+	service := newTaskTestService(t, &mockTaskRepository{}, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, "No", validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, "No", validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, domain.ErrInvalidTaskTitle) {
@@ -119,10 +161,10 @@ func TestCreateTask_InvalidTitle_ReturnsDomainError(t *testing.T) {
 func TestCreateTask_SaveFailure_ReturnsErrInternalProcessing(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{saveError: ports.ErrTaskRepositoryUnavailable}
-	service := NewTaskService(repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInternalProcessing) {
@@ -134,7 +176,7 @@ func TestGetTask_OwnedTask_ReturnsTask(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	retrievedTask, err := service.GetTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -151,7 +193,7 @@ func TestGetTask_OwnedTask_ReturnsTask(t *testing.T) {
 func TestGetTask_MissingTask_ReturnsErrTaskNotFound(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{getByIDError: ports.ErrTaskNotFound}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	_, err := service.GetTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -165,7 +207,7 @@ func TestGetTask_MissingTask_ReturnsErrTaskNotFound(t *testing.T) {
 func TestGetTask_NilTask_ReturnsErrTaskNotFound(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	_, err := service.GetTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -179,7 +221,7 @@ func TestGetTask_NilTask_ReturnsErrTaskNotFound(t *testing.T) {
 func TestGetTask_RepositoryUnavailable_ReturnsErrInternalProcessing(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{getByIDError: ports.ErrTaskRepositoryUnavailable}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	_, err := service.GetTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -195,7 +237,7 @@ func TestGetTask_TaskOwnedByAnotherUser_ReturnsErrTaskNotFoundAndWarns(t *testin
 	task := createTaskServiceTask(t, "other-user-123")
 	repository := &mockTaskRepository{taskToReturn: task}
 	logger := &mockTaskLogger{}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, logger)
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, logger)
 
 	// Act
 	_, err := service.GetTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -213,7 +255,7 @@ func TestGetUserTasks_RepositorySuccess_ReturnsTasks(t *testing.T) {
 	// Arrange
 	tasks := []*domain.Task{createTaskServiceTask(t, validTaskServiceUserID)}
 	repository := &mockTaskRepository{tasksToReturn: tasks}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	retrievedTasks, err := service.GetUserTasks(context.Background(), validTaskServiceUserID)
@@ -233,10 +275,59 @@ func TestGetUserTasks_RepositorySuccess_ReturnsTasks(t *testing.T) {
 func TestGetUserTasks_RepositoryFailure_ReturnsErrInternalProcessing(t *testing.T) {
 	// Arrange
 	repository := &mockTaskRepository{getByUserIDError: ports.ErrTaskRepositoryUnavailable}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	_, err := service.GetUserTasks(context.Background(), validTaskServiceUserID)
+
+	// Assert
+	if !errors.Is(err, ErrInternalProcessing) {
+		t.Errorf("expected error %v, got %v", ErrInternalProcessing, err)
+	}
+}
+
+func TestGetBoardTasks_AuthorizedBoard_ReturnsTasks(t *testing.T) {
+	// Arrange
+	tasks := []*domain.Task{createTaskServiceTask(t, validTaskServiceUserID)}
+	repository := &mockTaskRepository{tasksToReturn: tasks}
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+
+	// Act
+	retrievedTasks, err := service.GetBoardTasks(context.Background(), validTaskServiceUserID, validTaskServiceBoardID)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if len(retrievedTasks) != 1 {
+		t.Fatalf("expected one task, got %d", len(retrievedTasks))
+	}
+	if repository.requestedBoardID != validTaskServiceBoardID {
+		t.Errorf("expected requested board ID %s, got %s", validTaskServiceBoardID, repository.requestedBoardID)
+	}
+}
+
+func TestGetBoardTasks_UnauthorizedBoard_ReturnsErrBoardNotFound(t *testing.T) {
+	// Arrange
+	boardRepository := &mockTaskBoardRepository{boardToReturn: createTaskServiceBoard(t, "other-user-123")}
+	service := NewTaskService(&mockTaskRepository{}, boardRepository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+
+	// Act
+	_, err := service.GetBoardTasks(context.Background(), validTaskServiceUserID, validTaskServiceBoardID)
+
+	// Assert
+	if !errors.Is(err, ports.ErrBoardNotFound) {
+		t.Errorf("expected error %v, got %v", ports.ErrBoardNotFound, err)
+	}
+}
+
+func TestGetBoardTasks_RepositoryFailure_ReturnsErrInternalProcessing(t *testing.T) {
+	// Arrange
+	repository := &mockTaskRepository{getByUserIDAndBoardIDError: ports.ErrTaskRepositoryUnavailable}
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+
+	// Act
+	_, err := service.GetBoardTasks(context.Background(), validTaskServiceUserID, validTaskServiceBoardID)
 
 	// Assert
 	if !errors.Is(err, ErrInternalProcessing) {
@@ -248,7 +339,7 @@ func TestUpdateTaskDetails_OwnedTask_UpdatesAndPersists(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskDetails(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "Review code", "Check edge cases")
@@ -269,7 +360,7 @@ func TestUpdateTaskDetails_InvalidTitle_ReturnsDomainError(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskDetails(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "No", "Check edge cases")
@@ -284,7 +375,7 @@ func TestUpdateTaskDetails_UnauthorizedTask_ReturnsErrTaskNotFound(t *testing.T)
 	// Arrange
 	task := createTaskServiceTask(t, "other-user-123")
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskDetails(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "Review code", "Check edge cases")
@@ -299,7 +390,7 @@ func TestUpdateTaskDetails_UpdateFailure_ReturnsErrInternalProcessing(t *testing
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task, updateError: ports.ErrTaskRepositoryUnavailable}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskDetails(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, "Review code", "Check edge cases")
@@ -314,7 +405,7 @@ func TestUpdateTaskStatus_OwnedTask_UpdatesAndPersists(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskStatus(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, domain.TaskStatusDone)
@@ -332,7 +423,7 @@ func TestUpdateTaskStatus_InvalidStatus_ReturnsDomainError(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskStatus(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, domain.TaskStatus("blocked"))
@@ -347,7 +438,7 @@ func TestUpdateTaskPriority_OwnedTask_UpdatesAndPersists(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskPriority(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, domain.TaskPriorityHigh)
@@ -365,7 +456,7 @@ func TestUpdateTaskPriority_InvalidPriority_ReturnsDomainError(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskPriority(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, domain.TaskPriority("urgent"))
@@ -380,7 +471,7 @@ func TestUpdateTaskPriority_UnauthorizedTask_ReturnsErrTaskNotFound(t *testing.T
 	// Arrange
 	task := createTaskServiceTask(t, "other-user-123")
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.UpdateTaskPriority(context.Background(), validTaskServiceUserID, validTaskServiceTaskID, domain.TaskPriorityHigh)
@@ -395,7 +486,7 @@ func TestDeleteTask_OwnedTask_DeletesTask(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.DeleteTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -413,7 +504,7 @@ func TestDeleteTask_UnauthorizedTask_ReturnsErrTaskNotFound(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, "other-user-123")
 	repository := &mockTaskRepository{taskToReturn: task}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.DeleteTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -428,7 +519,7 @@ func TestDeleteTask_DeleteFailure_ReturnsErrInternalProcessing(t *testing.T) {
 	// Arrange
 	task := createTaskServiceTask(t, validTaskServiceUserID)
 	repository := &mockTaskRepository{taskToReturn: task, deleteError: ports.ErrTaskRepositoryUnavailable}
-	service := NewTaskService(repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
+	service := newTaskTestService(t, repository, &mockTaskIDGenerator{}, &mockTaskLogger{})
 
 	// Act
 	err := service.DeleteTask(context.Background(), validTaskServiceUserID, validTaskServiceTaskID)
@@ -445,6 +536,7 @@ func createTaskServiceTask(t *testing.T, userID string) *domain.Task {
 	task, err := domain.NewTask(
 		validTaskServiceTaskID,
 		userID,
+		validTaskServiceBoardID,
 		validTaskServiceTitle,
 		validTaskServiceDescription,
 		domain.TaskStatusTodo,
@@ -456,4 +548,15 @@ func createTaskServiceTask(t *testing.T, userID string) *domain.Task {
 	}
 
 	return task
+}
+
+func createTaskServiceBoard(t *testing.T, userID string) *domain.Board {
+	t.Helper()
+
+	board, err := domain.NewBoard(validTaskServiceBoardID, userID, "Project Board")
+	if err != nil {
+		t.Fatalf("expected board to be valid, got: %v", err)
+	}
+
+	return board
 }

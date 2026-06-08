@@ -41,6 +41,7 @@ func (priority TaskPriority) IsValid() bool {
 var (
 	ErrEmptyTaskID          = errors.New("domain: task ID cannot be empty")
 	ErrEmptyTaskUserID      = errors.New("domain: task user ID cannot be empty")
+	ErrEmptyTaskBoardID     = errors.New("domain: task board ID cannot be empty")
 	ErrInvalidTaskTitle     = errors.New("domain: task title does not meet minimum length")
 	ErrInvalidTaskStatus    = errors.New("domain: invalid task status")
 	ErrInvalidTaskPriority  = errors.New("domain: invalid task priority")
@@ -53,6 +54,7 @@ var (
 type Task struct {
 	id          string
 	userID      string
+	boardID     string
 	title       string
 	description string
 	status      TaskStatus
@@ -63,8 +65,8 @@ type Task struct {
 }
 
 // NewTask centralizes invariants so invalid task state cannot enter the domain.
-func NewTask(id, userID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
-	taskFields, err := validateTaskFields(id, userID, title, description, status, priority, dueDate)
+func NewTask(id, userID, boardID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
+	taskFields, err := validateTaskFields(id, userID, boardID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +75,7 @@ func NewTask(id, userID, title, description string, status TaskStatus, priority 
 	return &Task{
 		id:          taskFields.id,
 		userID:      taskFields.userID,
+		boardID:     taskFields.boardID,
 		title:       taskFields.title,
 		description: taskFields.description,
 		status:      status,
@@ -87,6 +90,7 @@ func NewTask(id, userID, title, description string, status TaskStatus, priority 
 func RehydrateTask(
 	id,
 	userID,
+	boardID,
 	title,
 	description string,
 	status TaskStatus,
@@ -95,7 +99,7 @@ func RehydrateTask(
 	updatedAt,
 	dueDate time.Time,
 ) (*Task, error) {
-	taskFields, err := validateTaskFields(id, userID, title, description, status, priority, dueDate)
+	taskFields, err := validateTaskFields(id, userID, boardID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +113,7 @@ func RehydrateTask(
 	return &Task{
 		id:          taskFields.id,
 		userID:      taskFields.userID,
+		boardID:     taskFields.boardID,
 		title:       taskFields.title,
 		description: taskFields.description,
 		status:      status,
@@ -119,7 +124,7 @@ func RehydrateTask(
 	}, nil
 }
 
-func validateTaskFields(id, userID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
+func validateTaskFields(id, userID, boardID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return validatedTaskFields{}, ErrEmptyTaskID
@@ -128,6 +133,11 @@ func validateTaskFields(id, userID, title, description string, status TaskStatus
 	trimmedUserID := strings.TrimSpace(userID)
 	if trimmedUserID == "" {
 		return validatedTaskFields{}, ErrEmptyTaskUserID
+	}
+
+	trimmedBoardID := strings.TrimSpace(boardID)
+	if trimmedBoardID == "" {
+		return validatedTaskFields{}, ErrEmptyTaskBoardID
 	}
 
 	trimmedTitle, err := validateTaskTitle(title)
@@ -150,6 +160,7 @@ func validateTaskFields(id, userID, title, description string, status TaskStatus
 	return validatedTaskFields{
 		id:          trimmedID,
 		userID:      trimmedUserID,
+		boardID:     trimmedBoardID,
 		title:       trimmedTitle,
 		description: strings.TrimSpace(description),
 	}, nil
@@ -193,6 +204,10 @@ func (task *Task) ID() string {
 
 func (task *Task) UserID() string {
 	return task.userID
+}
+
+func (task *Task) BoardID() string {
+	return task.boardID
 }
 
 func (task *Task) Title() string {
@@ -243,6 +258,7 @@ func isPastDueDate(dueDate, now time.Time) bool {
 type validatedTaskFields struct {
 	id          string
 	userID      string
+	boardID     string
 	title       string
 	description string
 }

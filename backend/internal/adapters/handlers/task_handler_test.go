@@ -16,12 +16,14 @@ import (
 )
 
 type mockTaskUseCase struct {
-	taskToReturn  *domain.Task
-	tasksToReturn []*domain.Task
-	errToReturn   error
+	taskToReturn     *domain.Task
+	tasksToReturn    []*domain.Task
+	errToReturn      error
+	requestedBoardID string
 }
 
-func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
+func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID, boardID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
+	useCase.requestedBoardID = boardID
 	return useCase.taskToReturn, useCase.errToReturn
 }
 
@@ -30,6 +32,11 @@ func (useCase *mockTaskUseCase) GetTask(ctx context.Context, userID, taskID stri
 }
 
 func (useCase *mockTaskUseCase) GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error) {
+	return useCase.tasksToReturn, useCase.errToReturn
+}
+
+func (useCase *mockTaskUseCase) GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error) {
+	useCase.requestedBoardID = boardID
 	return useCase.tasksToReturn, useCase.errToReturn
 }
 
@@ -143,6 +150,28 @@ func TestTaskHandler_GetUserTasks_ReturnsOK(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"id":"task-123"`) {
 		t.Errorf("expected response to contain task ID")
+	}
+}
+
+func TestTaskHandler_GetBoardTasksWithBoardID_ReturnsOK(t *testing.T) {
+	// Arrange
+	useCase := &mockTaskUseCase{tasksToReturn: []*domain.Task{createHandlerTask(t)}}
+	router := createTaskTestRouter(useCase)
+	request := authenticatedTaskRequest(http.MethodGet, "/tasks?board_id=board-123", "")
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if useCase.requestedBoardID != "board-123" {
+		t.Errorf("expected requested board ID board-123, got %s", useCase.requestedBoardID)
+	}
+	if !strings.Contains(response.Body.String(), `"boardId":"board-123"`) {
+		t.Errorf("expected response to contain board ID")
 	}
 }
 
@@ -419,6 +448,7 @@ func createHandlerTask(t *testing.T) *domain.Task {
 	task, err := domain.RehydrateTask(
 		"task-123",
 		"user-123",
+		"board-123",
 		"Write tests",
 		"Cover handler",
 		domain.TaskStatusTodo,
@@ -435,5 +465,5 @@ func createHandlerTask(t *testing.T) *domain.Task {
 }
 
 func validCreateTaskJSON() string {
-	return `{"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`
+	return `{"boardId":"board-123","title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`
 }

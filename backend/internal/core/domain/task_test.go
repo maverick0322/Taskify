@@ -9,6 +9,7 @@ import (
 const (
 	validTaskID          = "task-123"
 	validTaskUserID      = "user-123"
+	validTaskBoardID     = "board-123"
 	validTaskTitle       = "Write tests"
 	validTaskDescription = "Cover domain business rules"
 )
@@ -18,7 +19,7 @@ func TestNewTask_ValidFields_ReturnsTask(t *testing.T) {
 	dueDate := time.Now().Add(24 * time.Hour)
 
 	// Act
-	task, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, dueDate)
+	task, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, dueDate)
 
 	// Assert
 	if err != nil {
@@ -38,7 +39,7 @@ func TestNewTask_ValidFields_TrimsTextFields(t *testing.T) {
 	descriptionWithSpaces := "  Cover domain business rules  "
 
 	// Act
-	task, err := NewTask(validTaskID, validTaskUserID, titleWithSpaces, descriptionWithSpaces, TaskStatusTodo, TaskPriorityMedium, time.Time{})
+	task, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, titleWithSpaces, descriptionWithSpaces, TaskStatusTodo, TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if err != nil {
@@ -57,7 +58,7 @@ func TestNewTask_ZeroDueDate_ReturnsTask(t *testing.T) {
 	emptyDueDate := time.Time{}
 
 	// Act
-	task, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, emptyDueDate)
+	task, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, emptyDueDate)
 
 	// Assert
 	if err != nil {
@@ -73,7 +74,7 @@ func TestNewTask_EmptyID_ReturnsErrEmptyTaskID(t *testing.T) {
 	emptyTaskID := ""
 
 	// Act
-	_, err := NewTask(emptyTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
+	_, err := NewTask(emptyTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrEmptyTaskID) {
@@ -86,11 +87,24 @@ func TestNewTask_EmptyUserID_ReturnsErrEmptyTaskUserID(t *testing.T) {
 	emptyTaskUserID := ""
 
 	// Act
-	_, err := NewTask(validTaskID, emptyTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
+	_, err := NewTask(validTaskID, emptyTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrEmptyTaskUserID) {
 		t.Errorf("expected error %v, got %v", ErrEmptyTaskUserID, err)
+	}
+}
+
+func TestNewTask_EmptyBoardID_ReturnsErrEmptyTaskBoardID(t *testing.T) {
+	// Arrange
+	emptyTaskBoardID := ""
+
+	// Act
+	_, err := NewTask(validTaskID, validTaskUserID, emptyTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
+
+	// Assert
+	if !errors.Is(err, ErrEmptyTaskBoardID) {
+		t.Errorf("expected error %v, got %v", ErrEmptyTaskBoardID, err)
 	}
 }
 
@@ -99,7 +113,7 @@ func TestNewTask_ShortTitle_ReturnsErrInvalidTaskTitle(t *testing.T) {
 	shortTitle := "Go"
 
 	// Act
-	_, err := NewTask(validTaskID, validTaskUserID, shortTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
+	_, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, shortTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInvalidTaskTitle) {
@@ -112,7 +126,7 @@ func TestNewTask_InvalidStatus_ReturnsErrInvalidTaskStatus(t *testing.T) {
 	invalidStatus := TaskStatus("blocked")
 
 	// Act
-	_, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, invalidStatus, TaskPriorityMedium, time.Time{})
+	_, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, invalidStatus, TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInvalidTaskStatus) {
@@ -125,7 +139,7 @@ func TestNewTask_InvalidPriority_ReturnsErrInvalidTaskPriority(t *testing.T) {
 	invalidPriority := TaskPriority("urgent")
 
 	// Act
-	_, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, invalidPriority, time.Time{})
+	_, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, invalidPriority, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInvalidTaskPriority) {
@@ -138,7 +152,7 @@ func TestNewTask_PastDueDate_ReturnsErrPastDueDate(t *testing.T) {
 	pastDueDate := time.Now().Add(-time.Hour)
 
 	// Act
-	_, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, pastDueDate)
+	_, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, pastDueDate)
 
 	// Assert
 	if !errors.Is(err, ErrPastDueDate) {
@@ -149,10 +163,11 @@ func TestNewTask_PastDueDate_ReturnsErrPastDueDate(t *testing.T) {
 func TestTask_Getters_ReturnExpectedValues(t *testing.T) {
 	// Arrange
 	dueDate := time.Now().Add(24 * time.Hour)
-	task, _ := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusInProgress, TaskPriorityHigh, dueDate)
+	task, _ := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusInProgress, TaskPriorityHigh, dueDate)
 
 	// Act
 	retrievedUserID := task.UserID()
+	retrievedBoardID := task.BoardID()
 	retrievedTitle := task.Title()
 	retrievedDescription := task.Description()
 	retrievedStatus := task.Status()
@@ -164,6 +179,9 @@ func TestTask_Getters_ReturnExpectedValues(t *testing.T) {
 	// Assert
 	if retrievedUserID != validTaskUserID {
 		t.Errorf("expected user ID %s, got %s", validTaskUserID, retrievedUserID)
+	}
+	if retrievedBoardID != validTaskBoardID {
+		t.Errorf("expected board ID %s, got %s", validTaskBoardID, retrievedBoardID)
 	}
 	if retrievedTitle != validTaskTitle {
 		t.Errorf("expected title %s, got %s", validTaskTitle, retrievedTitle)
@@ -341,7 +359,7 @@ func TestRehydrateTask_ValidFields_ReturnsTaskWithPersistedDates(t *testing.T) {
 	dueDate := time.Now().Add(24 * time.Hour)
 
 	// Act
-	task, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusDone, TaskPriorityHigh, createdAt, updatedAt, dueDate)
+	task, err := RehydrateTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusDone, TaskPriorityHigh, createdAt, updatedAt, dueDate)
 
 	// Assert
 	if err != nil {
@@ -367,7 +385,7 @@ func TestRehydrateTask_ZeroCreatedAt_ReturnsErrInvalidTaskCreatedAt(t *testing.T
 	updatedAt := time.Now().Add(-time.Hour)
 
 	// Act
-	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, zeroCreatedAt, updatedAt, time.Time{})
+	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, zeroCreatedAt, updatedAt, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInvalidTaskCreatedAt) {
@@ -381,7 +399,7 @@ func TestRehydrateTask_ZeroUpdatedAt_ReturnsErrInvalidTaskUpdatedAt(t *testing.T
 	zeroUpdatedAt := time.Time{}
 
 	// Act
-	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, createdAt, zeroUpdatedAt, time.Time{})
+	_, err := RehydrateTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, createdAt, zeroUpdatedAt, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInvalidTaskUpdatedAt) {
@@ -392,7 +410,7 @@ func TestRehydrateTask_ZeroUpdatedAt_ReturnsErrInvalidTaskUpdatedAt(t *testing.T
 func createValidTask(t *testing.T) *Task {
 	t.Helper()
 
-	task, err := NewTask(validTaskID, validTaskUserID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Now().Add(24*time.Hour))
+	task, err := NewTask(validTaskID, validTaskUserID, validTaskBoardID, validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, time.Now().Add(24*time.Hour))
 	if err != nil {
 		t.Fatalf("expected task to be valid, got: %v", err)
 	}

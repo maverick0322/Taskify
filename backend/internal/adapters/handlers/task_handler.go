@@ -73,6 +73,7 @@ func (handler *TaskHandler) CreateTask(response http.ResponseWriter, request *ht
 	task, err := handler.taskUseCase.CreateTask(
 		request.Context(),
 		userID,
+		createRequest.BoardID,
 		createRequest.Title,
 		createRequest.Description,
 		domain.TaskPriority(createRequest.Priority),
@@ -101,7 +102,14 @@ func (handler *TaskHandler) GetUserTasks(response http.ResponseWriter, request *
 		return
 	}
 
-	tasks, err := handler.taskUseCase.GetUserTasks(request.Context(), userID)
+	boardID := request.URL.Query().Get("board_id")
+	var tasks []*domain.Task
+	var err error
+	if boardID == "" {
+		tasks, err = handler.taskUseCase.GetUserTasks(request.Context(), userID)
+	} else {
+		tasks, err = handler.taskUseCase.GetBoardTasks(request.Context(), userID, boardID)
+	}
 	if err != nil {
 		handler.handleTaskError(response, err)
 		return
@@ -285,6 +293,8 @@ func (handler *TaskHandler) handleTaskError(response http.ResponseWriter, err er
 	switch {
 	case errors.Is(err, ports.ErrTaskNotFound):
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "task not found"})
+	case errors.Is(err, ports.ErrBoardNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "board not found"})
 	case isTaskDomainValidationError(err):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid task data"})
 	default:
@@ -296,6 +306,7 @@ func (handler *TaskHandler) handleTaskError(response http.ResponseWriter, err er
 func isTaskDomainValidationError(err error) bool {
 	return errors.Is(err, domain.ErrEmptyTaskID) ||
 		errors.Is(err, domain.ErrEmptyTaskUserID) ||
+		errors.Is(err, domain.ErrEmptyTaskBoardID) ||
 		errors.Is(err, domain.ErrInvalidTaskTitle) ||
 		errors.Is(err, domain.ErrInvalidTaskStatus) ||
 		errors.Is(err, domain.ErrInvalidTaskPriority) ||
@@ -315,6 +326,7 @@ func parseTaskDueDate(rawDueDate string) (time.Time, error) {
 func taskResponseFromDomain(task *domain.Task) taskResponse {
 	return taskResponse{
 		ID:          task.ID(),
+		BoardID:     task.BoardID(),
 		Title:       task.Title(),
 		Description: task.Description(),
 		Status:      string(task.Status()),
@@ -343,6 +355,7 @@ func formatTaskDueDate(dueDate time.Time) string {
 }
 
 type createTaskRequest struct {
+	BoardID     string `json:"boardId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Priority    string `json:"priority"`
@@ -364,6 +377,7 @@ type updateTaskPriorityRequest struct {
 
 type taskResponse struct {
 	ID          string `json:"id"`
+	BoardID     string `json:"boardId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Status      string `json:"status"`

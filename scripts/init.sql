@@ -24,24 +24,6 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_active_user_id ON refresh_tokens(user_id) WHERE is_revoked = FALSE;
 
-CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL,
-    priority TEXT NOT NULL,
-    due_date TIMESTAMPTZ NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_tasks_title_length CHECK (char_length(trim(title)) >= 3),
-    CONSTRAINT chk_tasks_status CHECK (status IN ('todo', 'in_progress', 'done')),
-    CONSTRAINT chk_tasks_priority CHECK (priority IN ('low', 'medium', 'high'))
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
-
 CREATE TABLE IF NOT EXISTS boards (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -54,6 +36,26 @@ CREATE TABLE IF NOT EXISTS boards (
 );
 CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id);
 CREATE INDEX IF NOT EXISTS idx_boards_user_id_updated_at ON boards(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    due_date TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_tasks_title_length CHECK (char_length(trim(title)) >= 3),
+    CONSTRAINT chk_tasks_status CHECK (status IN ('todo', 'in_progress', 'done')),
+    CONSTRAINT chk_tasks_priority CHECK (priority IN ('low', 'medium', 'high'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id_board_id ON tasks(user_id, board_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS columns (
     id TEXT PRIMARY KEY,

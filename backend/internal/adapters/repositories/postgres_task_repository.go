@@ -14,31 +14,39 @@ import (
 
 const (
 	saveTaskQuery = `
-		INSERT INTO tasks (id, user_id, title, description, status, priority, due_date, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO tasks (id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	getTaskByIDQuery = `
-		SELECT id, user_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
 		WHERE id = $1
 	`
 
 	getTasksByUserIDQuery = `
-		SELECT id, user_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
 		WHERE user_id = $1
 		ORDER BY created_at DESC
 	`
 
+	getTasksByUserIDAndBoardIDQuery = `
+		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		FROM tasks
+		WHERE user_id = $1 AND board_id = $2
+		ORDER BY created_at DESC
+	`
+
 	updateTaskQuery = `
 		UPDATE tasks
-		SET title = $2,
-			description = $3,
-			status = $4,
-			priority = $5,
-			due_date = $6,
-			updated_at = $7
+		SET board_id = $2,
+			title = $3,
+			description = $4,
+			status = $5,
+			priority = $6,
+			due_date = $7,
+			updated_at = $8
 		WHERE id = $1
 	`
 
@@ -79,6 +87,7 @@ func (repository *PostgresTaskRepository) Save(ctx context.Context, task *domain
 		saveTaskQuery,
 		task.ID(),
 		task.UserID(),
+		task.BoardID(),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -129,6 +138,32 @@ func (repository *PostgresTaskRepository) GetByUserID(ctx context.Context, userI
 	return tasks, nil
 }
 
+func (repository *PostgresTaskRepository) GetByUserIDAndBoardID(ctx context.Context, userID, boardID string) ([]*domain.Task, error) {
+	rows, err := repository.database.Query(ctx, getTasksByUserIDAndBoardIDQuery, userID, boardID)
+	if err != nil {
+		repository.logger.Error("failed to retrieve tasks by user id and board id", "userID", userID, "boardID", boardID, "error", err)
+		return nil, ports.ErrTaskRepositoryUnavailable
+	}
+	defer rows.Close()
+
+	tasks := make([]*domain.Task, 0)
+	for rows.Next() {
+		task, err := repository.scanTask(rows)
+		if err != nil {
+			repository.logger.Error("failed to scan board task row", "userID", userID, "boardID", boardID, "error", err)
+			return nil, ports.ErrTaskRepositoryUnavailable
+		}
+		tasks = append(tasks, task)
+	}
+
+	if err := rows.Err(); err != nil {
+		repository.logger.Error("failed while iterating board task rows", "userID", userID, "boardID", boardID, "error", err)
+		return nil, ports.ErrTaskRepositoryUnavailable
+	}
+
+	return tasks, nil
+}
+
 func (repository *PostgresTaskRepository) Update(ctx context.Context, task *domain.Task) error {
 	if task == nil {
 		repository.logger.Error("cannot update nil task")
@@ -139,6 +174,7 @@ func (repository *PostgresTaskRepository) Update(ctx context.Context, task *doma
 		ctx,
 		updateTaskQuery,
 		task.ID(),
+		task.BoardID(),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -168,6 +204,7 @@ func (repository *PostgresTaskRepository) scanTask(row pgx.Row) (*domain.Task, e
 	if err := row.Scan(
 		&storedTask.id,
 		&storedTask.userID,
+		&storedTask.boardID,
 		&storedTask.title,
 		&storedTask.description,
 		&storedTask.status,
@@ -182,6 +219,7 @@ func (repository *PostgresTaskRepository) scanTask(row pgx.Row) (*domain.Task, e
 	return domain.RehydrateTask(
 		storedTask.id,
 		storedTask.userID,
+		storedTask.boardID,
 		storedTask.title,
 		storedTask.description,
 		domain.TaskStatus(storedTask.status),
@@ -216,6 +254,7 @@ func (repository *PostgresTaskRepository) mapWriteError(err error, message strin
 type storedTask struct {
 	id          string
 	userID      string
+	boardID     string
 	title       string
 	description string
 	status      string

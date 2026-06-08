@@ -13,15 +13,17 @@ type TaskRepository interface {
 	Save(ctx context.Context, task *domain.Task) error
 	GetByID(ctx context.Context, id string) (*domain.Task, error)
 	GetByUserID(ctx context.Context, userID string) ([]*domain.Task, error)
+	GetByUserIDAndBoardID(ctx context.Context, userID, boardID string) ([]*domain.Task, error)
 	Update(ctx context.Context, task *domain.Task) error
 	Delete(ctx context.Context, id string) error
 }
 
 // TaskUseCase defines user-scoped application operations for task management.
 type TaskUseCase interface {
-	CreateTask(ctx context.Context, userID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error)
+	CreateTask(ctx context.Context, userID, boardID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error)
 	GetTask(ctx context.Context, userID, taskID string) (*domain.Task, error)
 	GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error)
+	GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error)
 	UpdateTaskDetails(ctx context.Context, userID, taskID, title, description string) error
 	UpdateTaskStatus(ctx context.Context, userID, taskID string, status domain.TaskStatus) error
 	UpdateTaskPriority(ctx context.Context, userID, taskID string, priority domain.TaskPriority) error

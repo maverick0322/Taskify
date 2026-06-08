@@ -8,16 +8,23 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Sidebar } from "@/components/taskify/sidebar"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import type { CurrentView } from "@/components/taskify/navigation"
+import type { Board } from "@/services/boardService"
 import { Search, Plus, Bell, Menu, SlidersHorizontal } from "lucide-react"
 
 interface HeaderProps {
   activeView?: CurrentView
+  boards?: Board[]
+  boardsError?: string
+  boardsLoading?: boolean
   onViewChange?: (view: CurrentView) => void
+  selectedBoardId?: string
+  selectedBoardName?: string
+  onBoardSelect?: (board: Board) => void
 }
 
 const viewTitle: Record<CurrentView, string> = {
   dashboard: "Panel de Control",
-  tasks: "Desarrollo Web",
+  tasks: "Mis Tareas",
   agenda: "Agenda",
   automations: "Automatizaciones",
 }
@@ -29,7 +36,16 @@ const viewSubtitle: Record<CurrentView, string> = {
   automations: "Flujos inteligentes para tu equipo",
 }
 
-export function Header({ activeView = "tasks", onViewChange }: HeaderProps) {
+export function Header({
+  activeView = "tasks",
+  boards = [],
+  boardsError,
+  boardsLoading = false,
+  onViewChange,
+  selectedBoardId,
+  selectedBoardName,
+  onBoardSelect,
+}: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 
@@ -44,10 +60,18 @@ export function Header({ activeView = "tasks", onViewChange }: HeaderProps) {
           <Sidebar
             className="h-full"
             activeView={activeView}
+            boards={boards}
+            boardsError={boardsError}
+            boardsLoading={boardsLoading}
             onViewChange={(view) => {
               onViewChange?.(view)
               setMobileOpen(false)
             }}
+            onBoardSelect={(board) => {
+              onBoardSelect?.(board)
+              setMobileOpen(false)
+            }}
+            selectedBoardId={selectedBoardId}
           />
         </SheetContent>
       </Sheet>
@@ -67,7 +91,9 @@ export function Header({ activeView = "tasks", onViewChange }: HeaderProps) {
         {/* Board Title */}
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-foreground truncate text-balance">
-            {viewTitle[activeView]}
+            {activeView === "tasks" && selectedBoardName
+              ? selectedBoardName
+              : viewTitle[activeView]}
           </h1>
           <p className="hidden text-xs text-muted-foreground md:block">
             {viewSubtitle[activeView]}

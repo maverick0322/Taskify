@@ -94,7 +94,7 @@ func run() error {
 	boardRepository := repositories.NewPostgresBoardRepository(postgresPool, applicationLogger)
 	columnRepository := repositories.NewPostgresColumnRepository(postgresPool, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
-	taskUseCase := services.NewTaskService(taskRepository, idGenerator, applicationLogger)
+	taskUseCase := services.NewTaskService(taskRepository, boardRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)

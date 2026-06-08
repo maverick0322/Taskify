@@ -114,8 +114,8 @@ func TestPostgresTaskRepository_SaveValidTask_ReturnsNil(t *testing.T) {
 	if database.receivedSQL != saveTaskQuery {
 		t.Errorf("expected save task query to be used")
 	}
-	if len(database.receivedArguments) != 9 {
-		t.Errorf("expected nine arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 10 {
+		t.Errorf("expected ten arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -132,8 +132,8 @@ func TestPostgresTaskRepository_SaveZeroDueDate_StoresNilDueDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedArguments[6] != nil {
-		t.Errorf("expected nil due date argument, got %v", database.receivedArguments[6])
+	if database.receivedArguments[7] != nil {
+		t.Errorf("expected nil due date argument, got %v", database.receivedArguments[7])
 	}
 }
 
@@ -313,6 +313,78 @@ func TestPostgresTaskRepository_GetByUserIDRowsError_ReturnsErrTaskRepositoryUna
 	}
 }
 
+func TestPostgresTaskRepository_GetByUserIDAndBoardIDExistingTasks_ReturnsTasks(t *testing.T) {
+	// Arrange
+	rows := &fakePostgresTaskRows{
+		rows: []fakePostgresTaskRow{
+			{values: validStoredTaskValues(time.Time{})},
+		},
+	}
+	database := &fakePostgresTaskDatabase{rowsToReturn: rows}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	tasks, err := repository.GetByUserIDAndBoardID(context.Background(), "user-123", "board-123")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected one task, got %d", len(tasks))
+	}
+	if database.receivedSQL != getTasksByUserIDAndBoardIDQuery {
+		t.Errorf("expected board task query to be used")
+	}
+	if database.receivedArguments[1] != "board-123" {
+		t.Errorf("expected board ID argument board-123, got %v", database.receivedArguments[1])
+	}
+}
+
+func TestPostgresTaskRepository_GetByUserIDAndBoardIDQueryFailure_ReturnsErrTaskRepositoryUnavailable(t *testing.T) {
+	// Arrange
+	database := &fakePostgresTaskDatabase{queryError: errors.New("query failure")}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	_, err := repository.GetByUserIDAndBoardID(context.Background(), "user-123", "board-123")
+
+	// Assert
+	if !errors.Is(err, ports.ErrTaskRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTaskRepositoryUnavailable, err)
+	}
+}
+
+func TestPostgresTaskRepository_GetByUserIDAndBoardIDScanFailure_ReturnsErrTaskRepositoryUnavailable(t *testing.T) {
+	// Arrange
+	rows := &fakePostgresTaskRows{rows: []fakePostgresTaskRow{{err: errors.New("scan failure")}}}
+	database := &fakePostgresTaskDatabase{rowsToReturn: rows}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	_, err := repository.GetByUserIDAndBoardID(context.Background(), "user-123", "board-123")
+
+	// Assert
+	if !errors.Is(err, ports.ErrTaskRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTaskRepositoryUnavailable, err)
+	}
+}
+
+func TestPostgresTaskRepository_GetByUserIDAndBoardIDRowsError_ReturnsErrTaskRepositoryUnavailable(t *testing.T) {
+	// Arrange
+	rows := &fakePostgresTaskRows{errToReturn: errors.New("rows failure")}
+	database := &fakePostgresTaskDatabase{rowsToReturn: rows}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	_, err := repository.GetByUserIDAndBoardID(context.Background(), "user-123", "board-123")
+
+	// Assert
+	if !errors.Is(err, ports.ErrTaskRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTaskRepositoryUnavailable, err)
+	}
+}
+
 func TestPostgresTaskRepository_UpdateValidTask_ReturnsNil(t *testing.T) {
 	// Arrange
 	database := &fakePostgresTaskDatabase{}
@@ -417,6 +489,7 @@ func validStoredTaskValues(dueDate time.Time) []interface{} {
 	return []interface{}{
 		"task-123",
 		"user-123",
+		"board-123",
 		"Write tests",
 		"Cover repository rules",
 		string(domain.TaskStatusTodo),
@@ -429,7 +502,7 @@ func validStoredTaskValues(dueDate time.Time) []interface{} {
 
 func corruptedStoredTaskValues() []interface{} {
 	values := validStoredTaskValues(time.Time{})
-	values[4] = "blocked"
+	values[5] = "blocked"
 	return values
 }
 
@@ -439,6 +512,7 @@ func createRepositoryTask(t *testing.T, dueDate time.Time) *domain.Task {
 	task, err := domain.NewTask(
 		"task-123",
 		"user-123",
+		"board-123",
 		"Write tests",
 		"Cover repository rules",
 		domain.TaskStatusTodo,

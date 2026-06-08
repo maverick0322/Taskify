@@ -1,8 +1,9 @@
 "use client"
 
-import React, { useState } from "react"
+import React from "react"
 import { cn } from "@/lib/utils"
 import type { CurrentView } from "@/components/taskify/navigation"
+import type { Board } from "@/services/boardService"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -18,12 +19,7 @@ import {
   ChevronRight,
 } from "lucide-react"
 
-const boards = [
-  { id: 1, name: "Desarrollo Web", color: "bg-indigo-500", active: true },
-  { id: 2, name: "Diseño UI/UX", color: "bg-violet-500", active: false },
-  { id: 3, name: "Marketing Q3", color: "bg-amber-500", active: false },
-  { id: 4, name: "Infraestructura", color: "bg-emerald-500", active: false },
-]
+const boardColors = ["bg-indigo-500", "bg-violet-500", "bg-amber-500", "bg-emerald-500"]
 
 const navItems: { icon: React.ElementType; label: string; view: CurrentView }[] = [
   { icon: LayoutDashboard, label: "Dashboard", view: "dashboard" },
@@ -35,12 +31,24 @@ const navItems: { icon: React.ElementType; label: string; view: CurrentView }[] 
 interface SidebarProps {
   className?: string
   activeView?: CurrentView
+  boards?: Board[]
+  boardsError?: string
+  boardsLoading?: boolean
   onViewChange?: (view: CurrentView) => void
+  selectedBoardId?: string
+  onBoardSelect?: (board: Board) => void
 }
 
-export function Sidebar({ className, activeView = "tasks", onViewChange }: SidebarProps) {
-  const [activeBoard, setActiveBoard] = useState(1)
-
+export function Sidebar({
+  className,
+  activeView = "tasks",
+  boards = [],
+  boardsError,
+  boardsLoading = false,
+  onViewChange,
+  selectedBoardId,
+  onBoardSelect,
+}: SidebarProps) {
   return (
     <TooltipProvider delayDuration={0}>
       <aside
@@ -105,27 +113,48 @@ export function Sidebar({ className, activeView = "tasks", onViewChange }: Sideb
           </div>
 
           <div className="flex flex-col gap-0.5">
-            {boards.map((board) => (
+            {boardsLoading ? (
+              <p className="px-3 py-2 text-xs font-medium text-sidebar-foreground/50">
+                Cargando tableros...
+              </p>
+            ) : null}
+
+            {!boardsLoading && boardsError ? (
+              <p className="px-3 py-2 text-xs font-medium text-red-300">
+                {boardsError}
+              </p>
+            ) : null}
+
+            {!boardsLoading && !boardsError && boards.length === 0 ? (
+              <p className="px-3 py-2 text-xs font-medium text-sidebar-foreground/50">
+                Aun no tienes tableros.
+              </p>
+            ) : null}
+
+            {!boardsLoading && !boardsError ? boards.map((board, index) => (
               <button
                 key={board.id}
-                onClick={() => setActiveBoard(board.id)}
+                onClick={() => {
+                  onBoardSelect?.(board)
+                  onViewChange?.("tasks")
+                }}
                 className={cn(
                   "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
-                  activeBoard === board.id
+                  selectedBoardId === board.id
                     ? "bg-sidebar-accent text-sidebar-foreground font-medium"
                     : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
                 )}
               >
-                <span className={cn("size-2.5 shrink-0 rounded-full", board.color)} />
+                <span className={cn("size-2.5 shrink-0 rounded-full", boardColors[index % boardColors.length])} />
                 <span className="flex-1 truncate text-left">{board.name}</span>
                 <ChevronRight
                   className={cn(
                     "size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-70",
-                    activeBoard === board.id && "opacity-70"
+                    selectedBoardId === board.id && "opacity-70"
                   )}
                 />
               </button>
-            ))}
+            )) : null}
           </div>
         </div>
 
