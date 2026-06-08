@@ -31,6 +31,9 @@ const (
 	serverReadHeaderTimeout = 5 * time.Second
 	serverShutdownTimeout   = 10 * time.Second
 	postgresStartupTimeout  = 5 * time.Second
+	corsAllowedOrigin       = "*"
+	corsAllowedMethods      = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	corsAllowedHeaders      = "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization"
 )
 
 // @title Taskify API
@@ -99,6 +102,7 @@ func run() error {
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
+	router.Use(withCORS)
 	router.Get("/swagger/*", httpSwagger.WrapHandler)
 	userHandler.RegisterRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
@@ -143,4 +147,20 @@ func startHTTPServer(server *http.Server, serverErrors chan<- error) {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		serverErrors <- err
 	}
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers := w.Header()
+		headers.Set("Access-Control-Allow-Origin", corsAllowedOrigin)
+		headers.Set("Access-Control-Allow-Methods", corsAllowedMethods)
+		headers.Set("Access-Control-Allow-Headers", corsAllowedHeaders)
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
