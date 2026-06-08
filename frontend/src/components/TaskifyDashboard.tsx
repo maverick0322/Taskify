@@ -115,7 +115,7 @@ export function TaskifyDashboard() {
         ) : null}
 
         {currentView === "agenda" ? (
-          <AgendaView />
+          <AgendaView selectedBoardId={selectedBoardId} />
         ) : null}
 
         {currentView === "dashboard" ? (
