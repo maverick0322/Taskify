@@ -9,6 +9,7 @@ import { Sidebar } from "@/components/taskify/sidebar"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import type { CurrentView } from "@/components/taskify/navigation"
 import type { Board } from "@/services/boardService"
+import { useAuthStore } from "@/store/useAuthStore"
 import { Search, Plus, Bell, Menu, SlidersHorizontal } from "lucide-react"
 
 interface HeaderProps {
@@ -46,6 +47,7 @@ export function Header({
   selectedBoardName,
   onBoardSelect,
 }: HeaderProps) {
+  const user = useAuthStore((state) => state.user)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 
@@ -160,8 +162,8 @@ export function Header({
 
           {/* Avatar — mobile only */}
           <Avatar className="size-8 md:hidden">
-            <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=taskify" alt="Ana García" />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">AG</AvatarFallback>
+            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || "taskify"}`} alt={user?.fullName ?? "Taskify User"} />
+            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{user?.initials ?? "TU"}</AvatarFallback>
           </Avatar>
         </div>
       </header>

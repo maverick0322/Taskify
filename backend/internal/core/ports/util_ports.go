@@ -24,9 +24,16 @@ type TokenPair struct {
 	RefreshTokenExpiresAt time.Time
 }
 
+type TokenSubject struct {
+	UserID    string
+	Email     string
+	FirstName string
+	LastName  string
+}
+
 // TokenGenerator abstracts session token creation without exposing JWT details to the core.
 type TokenGenerator interface {
-	GenerateTokenPair(userID string) (TokenPair, error)
+	GenerateTokenPair(subject TokenSubject) (TokenPair, error)
 }
 
 // TokenValidator abstracts access-token verification for inbound adapters.

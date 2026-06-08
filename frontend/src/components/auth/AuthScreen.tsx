@@ -11,12 +11,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { login, register } from "@/services/authService";
+import { useAuthStore } from "@/store/useAuthStore";
 
-type AuthScreenProps = {
-  onLoginSuccess: (accessToken: string) => void;
-};
-
-export function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
+export function AuthScreen() {
+  const setAuthenticatedSession = useAuthStore((state) => state.login);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,9 +48,8 @@ export function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       }
 
       const tokenPair = await login({ email, password });
-      localStorage.setItem("accessToken", tokenPair.accessToken);
       localStorage.setItem("refreshToken", tokenPair.refreshToken);
-      onLoginSuccess(tokenPair.accessToken);
+      setAuthenticatedSession(tokenPair.accessToken);
     } catch (error) {
       const message =
         error instanceof Error

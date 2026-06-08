@@ -4,6 +4,7 @@ import React from "react"
 import { cn } from "@/lib/utils"
 import type { CurrentView } from "@/components/taskify/navigation"
 import type { Board } from "@/services/boardService"
+import { useAuthStore } from "@/store/useAuthStore"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -17,6 +18,7 @@ import {
   Settings,
   HelpCircle,
   ChevronRight,
+  LogOut,
 } from "lucide-react"
 
 const boardColors = ["bg-indigo-500", "bg-violet-500", "bg-amber-500", "bg-emerald-500"]
@@ -49,6 +51,9 @@ export function Sidebar({
   selectedBoardId,
   onBoardSelect,
 }: SidebarProps) {
+  const user = useAuthStore((state) => state.user)
+  const logout = useAuthStore((state) => state.logout)
+
   return (
     <TooltipProvider delayDuration={0}>
       <aside
@@ -190,16 +195,24 @@ export function Sidebar({
           </div>
 
           {/* User Profile */}
-          <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-sidebar-accent/60 cursor-pointer transition-colors">
+          <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-sidebar-accent/60 transition-colors">
             <Avatar className="size-8">
-              <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=taskify" alt="Ana García" />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">AG</AvatarFallback>
+              <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || "taskify"}`} alt={user?.fullName ?? "Taskify User"} />
+              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{user?.initials ?? "TU"}</AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-sidebar-foreground">Ana García</p>
-              <p className="truncate text-xs text-sidebar-foreground/50">Pro Plan</p>
+              <p className="truncate text-sm font-medium text-sidebar-foreground">{user?.fullName ?? "Taskify User"}</p>
+              <p className="truncate text-xs text-sidebar-foreground/50">{user?.email ?? "Sin correo"}</p>
             </div>
-            <div className="size-2 rounded-full bg-emerald-400 shrink-0" />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8 shrink-0 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              onClick={logout}
+              aria-label="Cerrar sesion"
+            >
+              <LogOut className="size-4" />
+            </Button>
           </div>
         </div>
       </aside>

@@ -111,7 +111,7 @@ func (s *userService) Authenticate(ctx context.Context, email, plainPassword str
 		return "", "", ErrInvalidCredentials
 	}
 
-	tokenPair, err := s.tokenGen.GenerateTokenPair(user.ID())
+	tokenPair, err := s.tokenGen.GenerateTokenPair(tokenSubjectFromUser(user))
 	if err != nil {
 		s.logger.Error("failed to generate token pair", "userID", user.ID(), "error", err)
 		return "", "", ErrInternalProcessing
@@ -160,7 +160,17 @@ func (s *userService) RefreshSession(ctx context.Context, refreshToken string) (
 		return "", "", ErrRefreshSessionExpired
 	}
 
-	tokenPair, err := s.tokenGen.GenerateTokenPair(currentSession.UserID())
+	user, err := s.userRepo.GetByID(ctx, currentSession.UserID())
+	if errors.Is(err, ports.ErrUserNotFound) || user == nil {
+		s.logger.Warn("refresh session rejected because user was not found", "userID", currentSession.UserID())
+		return "", "", ErrInvalidRefreshToken
+	}
+	if err != nil {
+		s.logger.Error("failed to retrieve user during refresh", "userID", currentSession.UserID(), "error", err)
+		return "", "", ErrInternalProcessing
+	}
+
+	tokenPair, err := s.tokenGen.GenerateTokenPair(tokenSubjectFromUser(user))
 	if err != nil {
 		s.logger.Error("failed to generate refreshed token pair", "userID", currentSession.UserID(), "error", err)
 		return "", "", ErrInternalProcessing
@@ -194,4 +204,14 @@ func (s *userService) buildRefreshSession(userID string, tokenPair ports.TokenPa
 func hashRefreshToken(refreshToken string) string {
 	refreshTokenHash := sha256.Sum256([]byte(refreshToken))
 	return hex.EncodeToString(refreshTokenHash[:])
+}
+
+func tokenSubjectFromUser(user *domain.User) ports.TokenSubject {
+	profile := user.Profile()
+	return ports.TokenSubject{
+		UserID:    user.ID(),
+		Email:     user.Email(),
+		FirstName: profile.FirstName(),
+		LastName:  profile.LastName(),
+	}
 }

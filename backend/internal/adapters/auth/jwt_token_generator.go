@@ -41,8 +41,15 @@ func NewJWTTokenGenerator(secretKey string, accessTokenTTL, refreshTokenTTL time
 	}, nil
 }
 
-func (generator *JWTTokenGenerator) GenerateTokenPair(userID string) (ports.TokenPair, error) {
-	if userID == "" {
+type taskifyClaims struct {
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	jwt.RegisteredClaims
+}
+
+func (generator *JWTTokenGenerator) GenerateTokenPair(subject ports.TokenSubject) (ports.TokenPair, error) {
+	if subject.UserID == "" {
 		return ports.TokenPair{}, ErrEmptyTokenSubject
 	}
 
@@ -50,12 +57,12 @@ func (generator *JWTTokenGenerator) GenerateTokenPair(userID string) (ports.Toke
 	accessTokenExpiresAt := now.Add(generator.accessTokenTTL)
 	refreshTokenExpiresAt := now.Add(generator.refreshTokenTTL)
 
-	accessToken, err := generator.signToken(userID, now, accessTokenExpiresAt)
+	accessToken, err := generator.signToken(subject, now, accessTokenExpiresAt)
 	if err != nil {
 		return ports.TokenPair{}, err
 	}
 
-	refreshToken, err := generator.signToken(userID, now, refreshTokenExpiresAt)
+	refreshToken, err := generator.signToken(subject, now, refreshTokenExpiresAt)
 	if err != nil {
 		return ports.TokenPair{}, err
 	}
@@ -98,11 +105,16 @@ func (generator *JWTTokenGenerator) ValidateToken(token string) (string, error) 
 	return claims.Subject, nil
 }
 
-func (generator *JWTTokenGenerator) signToken(userID string, issuedAt, expiresAt time.Time) (string, error) {
-	claims := jwt.RegisteredClaims{
-		Subject:   userID,
-		IssuedAt:  jwt.NewNumericDate(issuedAt),
-		ExpiresAt: jwt.NewNumericDate(expiresAt),
+func (generator *JWTTokenGenerator) signToken(subject ports.TokenSubject, issuedAt, expiresAt time.Time) (string, error) {
+	claims := taskifyClaims{
+		Email:     subject.Email,
+		FirstName: subject.FirstName,
+		LastName:  subject.LastName,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   subject.UserID,
+			IssuedAt:  jwt.NewNumericDate(issuedAt),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signedToken, err := token.SignedString(generator.secretKey)

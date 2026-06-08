@@ -80,7 +80,7 @@ func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ReturnsSignedTokens(t *
 	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
 
 	// Act
-	tokenPair, err := generator.GenerateTokenPair("user-123")
+	tokenPair, err := generator.GenerateTokenPair(validTokenSubject())
 
 	// Assert
 	if err != nil {
@@ -102,7 +102,7 @@ func TestJWTTokenGenerator_GenerateTokenPairEmptySubject_ReturnsErrEmptyTokenSub
 	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
 
 	// Act
-	tokenPair, err := generator.GenerateTokenPair("")
+	tokenPair, err := generator.GenerateTokenPair(ports.TokenSubject{})
 
 	// Assert
 	if tokenPair.AccessToken != "" {
@@ -118,11 +118,11 @@ func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ContainsExpectedClaims(
 	secretKey := "test-secret"
 	accessTokenTTL := 5 * time.Minute
 	refreshTokenTTL := 24 * time.Hour
-	userID := "user-123"
+	subject := validTokenSubject()
 	generator, _ := NewJWTTokenGenerator(secretKey, accessTokenTTL, refreshTokenTTL)
 
 	// Act
-	tokenPair, err := generator.GenerateTokenPair(userID)
+	tokenPair, err := generator.GenerateTokenPair(subject)
 	accessToken, accessClaims := parseSignedToken(t, tokenPair.AccessToken, secretKey)
 	refreshToken, refreshClaims := parseSignedToken(t, tokenPair.RefreshToken, secretKey)
 
@@ -136,11 +136,17 @@ func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ContainsExpectedClaims(
 	if !refreshToken.Valid {
 		t.Fatal("expected refresh token to be valid")
 	}
-	if accessClaims.Subject != userID {
-		t.Errorf("expected access subject %s, got %s", userID, accessClaims.Subject)
+	if accessClaims.Subject != subject.UserID {
+		t.Errorf("expected access subject %s, got %s", subject.UserID, accessClaims.Subject)
 	}
-	if refreshClaims.Subject != userID {
-		t.Errorf("expected refresh subject %s, got %s", userID, refreshClaims.Subject)
+	if refreshClaims.Subject != subject.UserID {
+		t.Errorf("expected refresh subject %s, got %s", subject.UserID, refreshClaims.Subject)
+	}
+	if accessClaims.Email != subject.Email {
+		t.Errorf("expected access email %s, got %s", subject.Email, accessClaims.Email)
+	}
+	if accessClaims.FirstName != subject.FirstName || accessClaims.LastName != subject.LastName {
+		t.Errorf("expected access name %s %s, got %s %s", subject.FirstName, subject.LastName, accessClaims.FirstName, accessClaims.LastName)
 	}
 	if accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time) != accessTokenTTL {
 		t.Errorf("expected access ttl %v, got %v", accessTokenTTL, accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time))
@@ -154,7 +160,7 @@ func TestJWTTokenGenerator_ValidateTokenValidAccessToken_ReturnsUserID(t *testin
 	// Arrange
 	userID := "user-123"
 	generator, _ := NewJWTTokenGenerator("test-secret", 5*time.Minute, 24*time.Hour)
-	tokenPair, _ := generator.GenerateTokenPair(userID)
+	tokenPair, _ := generator.GenerateTokenPair(validTokenSubject())
 	tokenValidator := generator.(ports.TokenValidator)
 
 	// Act
@@ -257,10 +263,10 @@ func TestJWTTokenGenerator_ValidateTokenEmptySubject_ReturnsErrInvalidToken(t *t
 	}
 }
 
-func parseSignedToken(t *testing.T, signedToken, secretKey string) (*jwt.Token, *jwt.RegisteredClaims) {
+func parseSignedToken(t *testing.T, signedToken, secretKey string) (*jwt.Token, *taskifyClaims) {
 	t.Helper()
 
-	claims := &jwt.RegisteredClaims{}
+	claims := &taskifyClaims{}
 	parsedToken, err := jwt.ParseWithClaims(signedToken, claims, func(token *jwt.Token) (interface{}, error) {
 		if token.Method != jwt.SigningMethodHS256 {
 			return nil, errors.New("unexpected signing method")
@@ -273,6 +279,15 @@ func parseSignedToken(t *testing.T, signedToken, secretKey string) (*jwt.Token, 
 	}
 
 	return parsedToken, claims
+}
+
+func validTokenSubject() ports.TokenSubject {
+	return ports.TokenSubject{
+		UserID:    "user-123",
+		Email:     "test@domain.com",
+		FirstName: "Jane",
+		LastName:  "Doe",
+	}
 }
 
 func signTestToken(t *testing.T, secretKey, subject string, issuedAt, expiresAt time.Time, signingMethod jwt.SigningMethod) string {

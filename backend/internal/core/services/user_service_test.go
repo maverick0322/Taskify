@@ -11,10 +11,12 @@ import (
 )
 
 type mockUserRepository struct {
-	userToReturn    *domain.User
-	getByEmailError error
-	saveError       error
-	savedUser       *domain.User
+	userToReturn     *domain.User
+	userByIDToReturn *domain.User
+	getByIDError     error
+	getByEmailError  error
+	saveError        error
+	savedUser        *domain.User
 }
 
 func (repository *mockUserRepository) Save(ctx context.Context, user *domain.User) error {
@@ -23,7 +25,11 @@ func (repository *mockUserRepository) Save(ctx context.Context, user *domain.Use
 }
 
 func (repository *mockUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {
-	return nil, nil
+	if repository.userByIDToReturn != nil || repository.getByIDError != nil {
+		return repository.userByIDToReturn, repository.getByIDError
+	}
+
+	return repository.userToReturn, nil
 }
 
 func (repository *mockUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
@@ -76,9 +82,11 @@ func (hasher *mockHasher) Compare(plain, hash string) error {
 type mockTokenGen struct {
 	tokenPair   ports.TokenPair
 	errToReturn error
+	subject     ports.TokenSubject
 }
 
-func (generator *mockTokenGen) GenerateTokenPair(userID string) (ports.TokenPair, error) {
+func (generator *mockTokenGen) GenerateTokenPair(subject ports.TokenSubject) (ports.TokenPair, error) {
+	generator.subject = subject
 	return generator.tokenPair, generator.errToReturn
 }
 
@@ -256,6 +264,12 @@ func TestAuthenticate_ValidCredentials_ReturnsTokenPairAndSavesSession(t *testin
 	if mockSessions.savedSession.TokenHash() == "refresh-token" {
 		t.Fatal("expected stored refresh token value to be hashed")
 	}
+	if mockTokens.subject.Email != "test@domain.com" {
+		t.Errorf("expected token subject email test@domain.com, got %s", mockTokens.subject.Email)
+	}
+	if mockTokens.subject.FirstName != "Jane" || mockTokens.subject.LastName != "Doe" {
+		t.Errorf("expected token subject name Jane Doe, got %s %s", mockTokens.subject.FirstName, mockTokens.subject.LastName)
+	}
 }
 
 func TestAuthenticate_NilUser_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -351,7 +365,8 @@ func TestRefreshSession_ValidToken_RotatesAndReturnsTokenPair(t *testing.T) {
 	currentSession, _ := domain.NewRefreshToken("session-123", "user-123", hashRefreshToken("refresh-token"), time.Now().Add(time.Hour), false)
 	mockSessions := &mockSessionRepository{sessionToReturn: currentSession}
 	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
-	svc := NewUserService(&mockUserRepository{}, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-456"}, &mockLogger{})
+	mockRepo := &mockUserRepository{userByIDToReturn: createServiceTestUser(t)}
+	svc := NewUserService(mockRepo, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-456"}, &mockLogger{})
 
 	// Act
 	accessToken, refreshToken, err := svc.RefreshSession(context.Background(), "refresh-token")
@@ -371,6 +386,9 @@ func TestRefreshSession_ValidToken_RotatesAndReturnsTokenPair(t *testing.T) {
 	}
 	if mockSessions.rotatedSession == nil {
 		t.Fatal("expected new session to be persisted through rotation")
+	}
+	if mockTokens.subject.Email != "test@domain.com" {
+		t.Errorf("expected token subject email test@domain.com, got %s", mockTokens.subject.Email)
 	}
 }
 
@@ -450,7 +468,7 @@ func TestRefreshSession_TokenGenerationFailure_ReturnsErrInternalProcessing(t *t
 	currentSession, _ := domain.NewRefreshToken("session-123", "user-123", hashRefreshToken("refresh-token"), time.Now().Add(time.Hour), false)
 	mockSessions := &mockSessionRepository{sessionToReturn: currentSession}
 	mockTokens := &mockTokenGen{errToReturn: errors.New("token failure")}
-	svc := NewUserService(&mockUserRepository{}, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{}, &mockLogger{})
+	svc := NewUserService(&mockUserRepository{userByIDToReturn: createServiceTestUser(t)}, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{}, &mockLogger{})
 
 	// Act
 	_, _, err := svc.RefreshSession(context.Background(), "refresh-token")
@@ -466,7 +484,7 @@ func TestRefreshSession_RotateFailure_ReturnsErrInternalProcessing(t *testing.T)
 	currentSession, _ := domain.NewRefreshToken("session-123", "user-123", hashRefreshToken("refresh-token"), time.Now().Add(time.Hour), false)
 	mockSessions := &mockSessionRepository{sessionToReturn: currentSession, rotateError: ports.ErrSessionRepositoryUnavailable}
 	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
-	svc := NewUserService(&mockUserRepository{}, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-456"}, &mockLogger{})
+	svc := NewUserService(&mockUserRepository{userByIDToReturn: createServiceTestUser(t)}, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-456"}, &mockLogger{})
 
 	// Act
 	_, _, err := svc.RefreshSession(context.Background(), "refresh-token")
