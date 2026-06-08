@@ -2,6 +2,7 @@
 
 import React, { useState } from "react"
 import { cn } from "@/lib/utils"
+import type { CurrentView } from "@/components/taskify/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -24,22 +25,20 @@ const boards = [
   { id: 4, name: "Infraestructura", color: "bg-emerald-500", active: false },
 ]
 
-type ActiveView = "kanban" | "agenda"
-
-const navItems: { icon: React.ElementType; label: string; view?: ActiveView }[] = [
-  { icon: LayoutDashboard, label: "Dashboard" },
-  { icon: CheckSquare,     label: "Mis Tareas", view: "kanban" },
-  { icon: Calendar,        label: "Agenda",     view: "agenda" },
-  { icon: Zap,             label: "Automatizaciones" },
+const navItems: { icon: React.ElementType; label: string; view: CurrentView }[] = [
+  { icon: LayoutDashboard, label: "Dashboard", view: "dashboard" },
+  { icon: CheckSquare,     label: "Mis Tareas", view: "tasks" },
+  { icon: Calendar,        label: "Agenda", view: "agenda" },
+  { icon: Zap,             label: "Automatizaciones", view: "automations" },
 ]
 
 interface SidebarProps {
   className?: string
-  activeView?: ActiveView
-  onViewChange?: (view: ActiveView) => void
+  activeView?: CurrentView
+  onViewChange?: (view: CurrentView) => void
 }
 
-export function Sidebar({ className, activeView = "kanban", onViewChange }: SidebarProps) {
+export function Sidebar({ className, activeView = "tasks", onViewChange }: SidebarProps) {
   const [activeBoard, setActiveBoard] = useState(1)
 
   return (
@@ -65,17 +64,16 @@ export function Sidebar({ className, activeView = "kanban", onViewChange }: Side
         {/* Nav Items */}
         <nav className="flex flex-col gap-1 px-3 pt-4">
           {navItems.map(({ icon: Icon, label, view }) => {
-            const isActive = view !== undefined && view === activeView
+            const isActive = view === activeView
             return (
               <button
                 key={label}
-                onClick={() => view && onViewChange?.(view)}
+                onClick={() => onViewChange?.(view)}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-                  !view && "cursor-default"
                 )}
               >
                 <Icon className="size-4 shrink-0" />

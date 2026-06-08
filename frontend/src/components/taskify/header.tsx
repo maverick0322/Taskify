@@ -7,14 +7,29 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Sidebar } from "@/components/taskify/sidebar"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
+import type { CurrentView } from "@/components/taskify/navigation"
 import { Search, Plus, Bell, Menu, SlidersHorizontal } from "lucide-react"
 
 interface HeaderProps {
-  activeView?: "kanban" | "agenda"
-  onViewChange?: (view: "kanban" | "agenda") => void
+  activeView?: CurrentView
+  onViewChange?: (view: CurrentView) => void
 }
 
-export function Header({ activeView = "kanban", onViewChange }: HeaderProps) {
+const viewTitle: Record<CurrentView, string> = {
+  dashboard: "Panel de Control",
+  tasks: "Desarrollo Web",
+  agenda: "Agenda",
+  automations: "Automatizaciones",
+}
+
+const viewSubtitle: Record<CurrentView, string> = {
+  dashboard: "Resumen general de tu espacio de trabajo",
+  tasks: "12 tareas · Actualizado hace 5 min",
+  agenda: "15 tareas · Junio 2026",
+  automations: "Flujos inteligentes para tu equipo",
+}
+
+export function Header({ activeView = "tasks", onViewChange }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 
@@ -52,12 +67,10 @@ export function Header({ activeView = "kanban", onViewChange }: HeaderProps) {
         {/* Board Title */}
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-foreground truncate text-balance">
-            {activeView === "agenda" ? "Agenda" : "Desarrollo Web"}
+            {viewTitle[activeView]}
           </h1>
           <p className="hidden text-xs text-muted-foreground md:block">
-            {activeView === "agenda"
-              ? "15 tareas \u00b7 Junio 2026"
-              : "12 tareas \u00b7 Actualizado hace 5 min"}
+            {viewSubtitle[activeView]}
           </p>
         </div>
 
