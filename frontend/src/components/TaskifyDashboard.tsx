@@ -108,7 +108,7 @@ export function TaskifyDashboard() {
                   {taskErrorMessage}
                 </div>
               ) : (
-                <KanbanBoard tasks={tasks} />
+                <KanbanBoard selectedBoardId={selectedBoardId} tasks={tasks} />
               )}
             </div>
           </>

@@ -1,12 +1,16 @@
 "use client"
 
+import { Droppable } from "@hello-pangea/dnd"
+
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { TaskCard } from "@/components/taskify/task-card"
 import type { KanbanTask } from "@/components/taskify/kanban-board"
+import type { TaskStatus } from "@/services/taskService"
 import { Plus, MoreHorizontal } from "lucide-react"
 
 interface KanbanColumnProps {
+  status: TaskStatus
   title: string
   tasks: KanbanTask[]
   accentColor: string
@@ -14,6 +18,7 @@ interface KanbanColumnProps {
 }
 
 export function KanbanColumn({
+  status,
   title,
   tasks,
   accentColor,
@@ -54,18 +59,27 @@ export function KanbanColumn({
       </div>
 
       {/* Cards */}
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-        {tasks.map((task) => (
-          <TaskCard key={task.id} {...task} />
-        ))}
+      <Droppable droppableId={status}>
+        {(provided) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className="flex flex-1 flex-col gap-3 overflow-y-auto p-3"
+          >
+            {tasks.map((task, index) => (
+              <TaskCard key={task.id} index={index} {...task} />
+            ))}
 
-        {/* Empty state */}
-        {tasks.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border/60 p-6 text-center">
-            <p className="text-xs text-muted-foreground">Sin tareas aún</p>
+            {/* Empty state */}
+            {tasks.length === 0 && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border/60 p-6 text-center">
+                <p className="text-xs text-muted-foreground">Sin tareas aún</p>
+              </div>
+            )}
+            {provided.placeholder}
           </div>
         )}
-      </div>
+      </Droppable>
 
       {/* Add Task */}
       <div className="border-t border-border/50 p-3">

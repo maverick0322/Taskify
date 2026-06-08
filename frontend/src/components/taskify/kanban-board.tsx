@@ -1,7 +1,18 @@
+import {
+  DragDropContext,
+  type DropResult,
+} from "@hello-pangea/dnd"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+
 import { KanbanColumn } from "@/components/taskify/kanban-column"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { Task, TaskPriority } from "@/services/taskService"
+import {
+  updateTaskStatus,
+  type Task,
+  type TaskPriority,
+  type TaskStatus,
+} from "@/services/taskService"
 
 export type KanbanTaskPriority = "Alta" | "Media" | "Baja"
 
@@ -39,39 +50,99 @@ const columns = [
 ]
 
 interface KanbanBoardProps {
+  selectedBoardId?: string
   tasks: Task[]
 }
 
-export function KanbanBoard({ tasks }: KanbanBoardProps) {
+interface UpdateTaskStatusVariables {
+  taskId: string
+  status: TaskStatus
+}
+
+interface UpdateTaskStatusContext {
+  previousTasks?: Task[]
+}
+
+export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
+  const queryClient = useQueryClient()
+  const tasksQueryKey = ["tasks", selectedBoardId]
+  const mutation = useMutation<void, Error, UpdateTaskStatusVariables, UpdateTaskStatusContext>({
+    mutationFn: updateTaskStatus,
+    onMutate: async ({ taskId, status }) => {
+      await queryClient.cancelQueries({ queryKey: tasksQueryKey })
+
+      const previousTasks = queryClient.getQueryData<Task[]>(tasksQueryKey)
+
+      queryClient.setQueryData<Task[]>(tasksQueryKey, (currentTasks = []) =>
+        currentTasks.map((task) =>
+          task.id === taskId ? { ...task, status } : task,
+        ),
+      )
+
+      return { previousTasks }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(tasksQueryKey, context.previousTasks)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: tasksQueryKey })
+    },
+  })
+
+  function handleDragEnd(result: DropResult) {
+    const { destination, draggableId, source } = result
+
+    if (!destination || !selectedBoardId) {
+      return
+    }
+
+    const nextStatus = destination.droppableId as TaskStatus
+    const previousStatus = source.droppableId as TaskStatus
+
+    if (nextStatus === previousStatus) {
+      return
+    }
+
+    mutation.mutate({
+      taskId: draggableId,
+      status: nextStatus,
+    })
+  }
+
   return (
     <main
       className="flex-1 overflow-x-auto kanban-scroll bg-canvas"
       aria-label="Tablero Kanban"
     >
-      <div className="flex h-full gap-4 p-5 md:p-6">
-        {columns.map((col) => (
-          <KanbanColumn
-            key={col.id}
-            title={col.title}
-            tasks={tasks
-              .filter((task) => task.status === col.id)
-              .map(taskResponseToKanbanTask)}
-            accentColor={col.accentColor}
-            dotColor={col.dotColor}
-          />
-        ))}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="flex h-full gap-4 p-5 md:p-6">
+          {columns.map((col) => (
+            <KanbanColumn
+              key={col.id}
+              status={col.id}
+              title={col.title}
+              tasks={tasks
+                .filter((task) => task.status === col.id)
+                .map(taskResponseToKanbanTask)}
+              accentColor={col.accentColor}
+              dotColor={col.dotColor}
+            />
+          ))}
 
-        {/* Add Column Button */}
-        <div className="flex shrink-0 items-start pt-0.5">
-          <Button
-            variant="outline"
-            className="h-12 w-44 gap-2 border-dashed border-border/80 text-muted-foreground hover:text-foreground hover:border-border hover:bg-column"
-          >
-            <Plus className="size-4" />
-            Nueva columna
-          </Button>
+          {/* Add Column Button */}
+          <div className="flex shrink-0 items-start pt-0.5">
+            <Button
+              variant="outline"
+              className="h-12 w-44 gap-2 border-dashed border-border/80 text-muted-foreground hover:text-foreground hover:border-border hover:bg-column"
+            >
+              <Plus className="size-4" />
+              Nueva columna
+            </Button>
+          </div>
         </div>
-      </div>
+      </DragDropContext>
     </main>
   )
 }
