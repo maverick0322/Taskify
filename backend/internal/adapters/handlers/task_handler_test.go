@@ -20,6 +20,8 @@ type mockTaskUseCase struct {
 	tasksToReturn    []*domain.Task
 	errToReturn      error
 	requestedBoardID string
+	userTasksCalled  bool
+	boardTasksCalled bool
 }
 
 func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID, boardID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
@@ -32,10 +34,12 @@ func (useCase *mockTaskUseCase) GetTask(ctx context.Context, userID, taskID stri
 }
 
 func (useCase *mockTaskUseCase) GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error) {
+	useCase.userTasksCalled = true
 	return useCase.tasksToReturn, useCase.errToReturn
 }
 
 func (useCase *mockTaskUseCase) GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error) {
+	useCase.boardTasksCalled = true
 	useCase.requestedBoardID = boardID
 	return useCase.tasksToReturn, useCase.errToReturn
 }
@@ -141,7 +145,8 @@ func TestTaskHandler_CreateTaskInternalError_ReturnsInternalServerError(t *testi
 
 func TestTaskHandler_GetUserTasks_ReturnsOK(t *testing.T) {
 	// Arrange
-	router := createTaskTestRouter(&mockTaskUseCase{tasksToReturn: []*domain.Task{createHandlerTask(t)}})
+	useCase := &mockTaskUseCase{tasksToReturn: []*domain.Task{createHandlerTask(t)}}
+	router := createTaskTestRouter(useCase)
 	request := authenticatedTaskRequest(http.MethodGet, "/tasks", "")
 	response := httptest.NewRecorder()
 
@@ -154,6 +159,12 @@ func TestTaskHandler_GetUserTasks_ReturnsOK(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"id":"task-123"`) {
 		t.Errorf("expected response to contain task ID")
+	}
+	if !useCase.userTasksCalled {
+		t.Errorf("expected global user task use case to be called")
+	}
+	if useCase.boardTasksCalled {
+		t.Errorf("expected board task use case not to be called")
 	}
 }
 

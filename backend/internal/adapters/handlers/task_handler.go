@@ -92,6 +92,7 @@ func (handler *TaskHandler) CreateTask(response http.ResponseWriter, request *ht
 // @Summary List user tasks
 // @Tags Tasks
 // @Produce json
+// @Param board_id query string false "Optional board ID filter"
 // @Success 200 {array} taskResponse
 // @Failure 401 {object} errorResponse
 // @Failure 500 {object} errorResponse

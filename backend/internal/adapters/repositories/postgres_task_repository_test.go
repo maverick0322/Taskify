@@ -264,6 +264,15 @@ func TestPostgresTaskRepository_GetByUserIDExistingTasks_ReturnsTasks(t *testing
 	if !tasks[0].DueDate().IsZero() {
 		t.Errorf("expected first task due date to be zero")
 	}
+	if database.receivedSQL != getTasksByUserIDQuery {
+		t.Errorf("expected global user task query to be used")
+	}
+	if len(database.receivedArguments) != 1 {
+		t.Fatalf("expected one query argument, got %d", len(database.receivedArguments))
+	}
+	if database.receivedArguments[0] != "user-123" {
+		t.Errorf("expected user ID argument user-123, got %v", database.receivedArguments[0])
+	}
 	if !rows.closed {
 		t.Fatal("expected rows to be closed")
 	}
