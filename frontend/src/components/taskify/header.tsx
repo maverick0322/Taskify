@@ -153,7 +153,6 @@ export function Header({
             size="sm"
             className="h-9 gap-1.5 text-sm font-semibold"
             onClick={() => setNewTaskOpen(true)}
-            disabled={!selectedBoardId}
           >
             <Plus data-icon="inline-start" className="size-4" />
             <span className="hidden sm:inline">Nueva Tarea</span>

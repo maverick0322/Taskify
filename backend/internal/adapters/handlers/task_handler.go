@@ -359,7 +359,6 @@ func (handler *TaskHandler) handleTaskError(response http.ResponseWriter, err er
 func isTaskDomainValidationError(err error) bool {
 	return errors.Is(err, domain.ErrEmptyTaskID) ||
 		errors.Is(err, domain.ErrEmptyTaskUserID) ||
-		errors.Is(err, domain.ErrEmptyTaskBoardID) ||
 		errors.Is(err, domain.ErrInvalidTaskTitle) ||
 		errors.Is(err, domain.ErrInvalidTaskStatus) ||
 		errors.Is(err, domain.ErrInvalidTaskPriority) ||
@@ -408,7 +407,7 @@ func formatTaskDueDate(dueDate time.Time) string {
 }
 
 type createTaskRequest struct {
-	BoardID     string `json:"boardId"`
+	BoardID     *string `json:"boardId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Priority    string `json:"priority"`
@@ -437,7 +436,7 @@ type updateTaskPriorityRequest struct {
 
 type taskResponse struct {
 	ID          string `json:"id"`
-	BoardID     string `json:"boardId"`
+	BoardID     *string `json:"boardId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Status      string `json:"status"`

@@ -24,8 +24,10 @@ type mockTaskUseCase struct {
 	boardTasksCalled bool
 }
 
-func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID, boardID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
-	useCase.requestedBoardID = boardID
+func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID string, boardID *string, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
+	if boardID != nil {
+		useCase.requestedBoardID = *boardID
+	}
 	return useCase.taskToReturn, useCase.errToReturn
 }
 
@@ -79,6 +81,42 @@ func TestTaskHandler_CreateTaskValidRequest_ReturnsCreated(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"id":"task-123"`) {
 		t.Errorf("expected response to contain task ID")
+	}
+}
+
+func TestTaskHandler_CreateTaskWithoutBoardID_ReturnsCreated(t *testing.T) {
+	// Arrange
+	router := createTaskTestRouter(&mockTaskUseCase{taskToReturn: createGlobalHandlerTask(t)})
+	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`)
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusCreated {
+		t.Errorf("expected status %d, got %d", http.StatusCreated, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"boardId":null`) {
+		t.Errorf("expected response to contain null board ID")
+	}
+}
+
+func TestTaskHandler_CreateTaskWithNullBoardID_ReturnsCreated(t *testing.T) {
+	// Arrange
+	router := createTaskTestRouter(&mockTaskUseCase{taskToReturn: createGlobalHandlerTask(t)})
+	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"boardId":null,"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`)
+	response := httptest.NewRecorder()
+
+	// Act
+	router.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusCreated {
+		t.Errorf("expected status %d, got %d", http.StatusCreated, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"boardId":null`) {
+		t.Errorf("expected response to contain null board ID")
 	}
 }
 
@@ -493,7 +531,7 @@ func createHandlerTask(t *testing.T) *domain.Task {
 	task, err := domain.RehydrateTask(
 		"task-123",
 		"user-123",
-		"board-123",
+		handlerBoardIDPtr("board-123"),
 		"Write tests",
 		"Cover handler",
 		domain.TaskStatusTodo,
@@ -507,6 +545,32 @@ func createHandlerTask(t *testing.T) *domain.Task {
 	}
 
 	return task
+}
+
+func createGlobalHandlerTask(t *testing.T) *domain.Task {
+	t.Helper()
+
+	task, err := domain.RehydrateTask(
+		"task-123",
+		"user-123",
+		nil,
+		"Write tests",
+		"Cover handler",
+		domain.TaskStatusTodo,
+		domain.TaskPriorityMedium,
+		time.Now().Add(-2*time.Hour),
+		time.Now().Add(-time.Hour),
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("expected task to be valid, got: %v", err)
+	}
+
+	return task
+}
+
+func handlerBoardIDPtr(boardID string) *string {
+	return &boardID
 }
 
 func validCreateTaskJSON() string {

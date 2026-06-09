@@ -41,7 +41,6 @@ func (priority TaskPriority) IsValid() bool {
 var (
 	ErrEmptyTaskID          = errors.New("domain: task ID cannot be empty")
 	ErrEmptyTaskUserID      = errors.New("domain: task user ID cannot be empty")
-	ErrEmptyTaskBoardID     = errors.New("domain: task board ID cannot be empty")
 	ErrInvalidTaskTitle     = errors.New("domain: task title does not meet minimum length")
 	ErrInvalidTaskStatus    = errors.New("domain: invalid task status")
 	ErrInvalidTaskPriority  = errors.New("domain: invalid task priority")
@@ -54,7 +53,7 @@ var (
 type Task struct {
 	id          string
 	userID      string
-	boardID     string
+	boardID     *string
 	title       string
 	description string
 	status      TaskStatus
@@ -65,7 +64,7 @@ type Task struct {
 }
 
 // NewTask centralizes invariants so invalid task state cannot enter the domain.
-func NewTask(id, userID, boardID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
+func NewTask(id, userID string, boardID *string, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
 	taskFields, err := validateTaskFields(id, userID, boardID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
@@ -89,8 +88,8 @@ func NewTask(id, userID, boardID, title, description string, status TaskStatus, 
 // RehydrateTask restores persisted state without exposing mutation-oriented setters.
 func RehydrateTask(
 	id,
-	userID,
-	boardID,
+	userID string,
+	boardID *string,
 	title,
 	description string,
 	status TaskStatus,
@@ -124,7 +123,7 @@ func RehydrateTask(
 	}, nil
 }
 
-func validateTaskFields(id, userID, boardID, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
+func validateTaskFields(id, userID string, boardID *string, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return validatedTaskFields{}, ErrEmptyTaskID
@@ -135,10 +134,7 @@ func validateTaskFields(id, userID, boardID, title, description string, status T
 		return validatedTaskFields{}, ErrEmptyTaskUserID
 	}
 
-	trimmedBoardID := strings.TrimSpace(boardID)
-	if trimmedBoardID == "" {
-		return validatedTaskFields{}, ErrEmptyTaskBoardID
-	}
+	trimmedBoardID := normalizeOptionalTaskBoardID(boardID)
 
 	trimmedTitle, err := validateTaskTitle(title)
 	if err != nil {
@@ -226,7 +222,7 @@ func (task *Task) UserID() string {
 	return task.userID
 }
 
-func (task *Task) BoardID() string {
+func (task *Task) BoardID() *string {
 	return task.boardID
 }
 
@@ -278,7 +274,20 @@ func isPastDueDate(dueDate, now time.Time) bool {
 type validatedTaskFields struct {
 	id          string
 	userID      string
-	boardID     string
+	boardID     *string
 	title       string
 	description string
+}
+
+func normalizeOptionalTaskBoardID(boardID *string) *string {
+	if boardID == nil {
+		return nil
+	}
+
+	trimmedBoardID := strings.TrimSpace(*boardID)
+	if trimmedBoardID == "" {
+		return nil
+	}
+
+	return &trimmedBoardID
 }

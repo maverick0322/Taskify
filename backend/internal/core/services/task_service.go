@@ -33,8 +33,8 @@ func NewTaskService(
 
 func (service *taskService) CreateTask(
 	ctx context.Context,
-	userID,
-	boardID,
+	userID string,
+	boardID *string,
 	title,
 	description string,
 	priority domain.TaskPriority,
@@ -46,8 +46,10 @@ func (service *taskService) CreateTask(
 		return nil, err
 	}
 
-	if _, err := service.getAuthorizedBoard(ctx, userID, task.BoardID()); err != nil {
-		return nil, err
+	if task.BoardID() != nil {
+		if _, err := service.getAuthorizedBoard(ctx, userID, *task.BoardID()); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := service.taskRepository.Save(ctx, task); err != nil {

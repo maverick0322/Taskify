@@ -95,17 +95,16 @@ export function NewTaskDialog({
         return
       }
 
-      if (!selectedBoardId) {
-        throw new Error("Selecciona un tablero antes de crear una tarea.")
-      }
-
       await createTask({
         ...input,
-        boardId: selectedBoardId,
+        ...(selectedBoardId ? { boardId: selectedBoardId } : {}),
       })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", activeBoardId] })
+      if (activeBoardId) {
+        queryClient.invalidateQueries({ queryKey: ["tasks", activeBoardId] })
+      }
+      queryClient.invalidateQueries({ queryKey: ["tasks", "global"] })
       reset()
       onOpenChange(false)
     },
@@ -149,11 +148,6 @@ export function NewTaskDialog({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
-    if (!activeBoardId) {
-      setErrorMessage("Selecciona un tablero antes de crear una tarea.")
-      return
-    }
 
     const mappedPriority = priorityMap[priority]
     if (!mappedPriority) {
@@ -301,7 +295,7 @@ export function NewTaskDialog({
             <Button variant="outline" type="button" onClick={handleCancel} disabled={mutation.isPending}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!title.trim() || !activeBoardId || mutation.isPending}>
+            <Button type="submit" disabled={!title.trim() || mutation.isPending}>
               {mutation.isPending ? "Guardando..." : isEditing ? "Actualizar" : "Guardar"}
             </Button>
           </DialogFooter>

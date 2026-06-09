@@ -17,7 +17,7 @@ export interface Task {
   dueDate: string;
   createdAt: string;
   updatedAt: string;
-  boardId: string;
+  boardId?: string | null;
   columnId?: string;
   tag?: string;
   assignees?: TaskAssignee[];
@@ -29,7 +29,7 @@ export interface CreateTaskInput {
   title: string;
   description: string;
   priority: TaskPriority;
-  boardId: string;
+  boardId?: string | null;
   dueDate?: string;
 }
 
@@ -52,7 +52,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       title: input.title,
       description: input.description,
       priority: input.priority,
-      boardId: input.boardId,
+      ...(input.boardId ? { boardId: input.boardId } : {}),
       dueDate: input.dueDate ?? "",
     }),
   });

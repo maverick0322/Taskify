@@ -20,7 +20,7 @@ type TaskRepository interface {
 
 // TaskUseCase defines user-scoped application operations for task management.
 type TaskUseCase interface {
-	CreateTask(ctx context.Context, userID, boardID, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error)
+	CreateTask(ctx context.Context, userID string, boardID *string, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error)
 	GetTask(ctx context.Context, userID, taskID string) (*domain.Task, error)
 	GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error)
 	GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error)

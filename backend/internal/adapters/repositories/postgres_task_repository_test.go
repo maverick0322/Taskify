@@ -137,6 +137,24 @@ func TestPostgresTaskRepository_SaveZeroDueDate_StoresNilDueDate(t *testing.T) {
 	}
 }
 
+func TestPostgresTaskRepository_SaveGlobalTask_StoresNilBoardID(t *testing.T) {
+	// Arrange
+	database := &fakePostgresTaskDatabase{}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+	task := createGlobalRepositoryTask(t)
+
+	// Act
+	err := repository.Save(context.Background(), task)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if database.receivedArguments[2] != nil {
+		t.Errorf("expected nil board ID argument, got %v", database.receivedArguments[2])
+	}
+}
+
 func TestNewPostgresTaskRepository_NilPool_ReturnsRepository(t *testing.T) {
 	// Arrange
 	logger := &fakeRepositoryLogger{}
@@ -211,6 +229,24 @@ func TestPostgresTaskRepository_GetByIDExistingTask_ReturnsTask(t *testing.T) {
 		t.Errorf("expected due date %v, got %v", dueDate, task.DueDate())
 	}
 }
+
+func TestPostgresTaskRepository_GetByIDGlobalTask_ReturnsTaskWithNilBoardID(t *testing.T) {
+	// Arrange
+	database := &fakePostgresTaskDatabase{rowToReturn: fakePostgresTaskRow{values: validGlobalStoredTaskValues(time.Time{})}}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	task, err := repository.GetByID(context.Background(), "task-123")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if task.BoardID() != nil {
+		t.Errorf("expected global task board ID to be nil")
+	}
+}
+
 
 func TestPostgresTaskRepository_GetByIDMissingTask_ReturnsErrTaskNotFound(t *testing.T) {
 	// Arrange
@@ -411,6 +447,23 @@ func TestPostgresTaskRepository_UpdateValidTask_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestPostgresTaskRepository_UpdateGlobalTask_StoresNilBoardID(t *testing.T) {
+	// Arrange
+	database := &fakePostgresTaskDatabase{}
+	repository := &PostgresTaskRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	// Act
+	err := repository.Update(context.Background(), createGlobalRepositoryTask(t))
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if database.receivedArguments[1] != nil {
+		t.Errorf("expected nil board ID argument, got %v", database.receivedArguments[1])
+	}
+}
+
 func TestPostgresTaskRepository_UpdateNilTask_ReturnsErrTaskRepositoryUnavailable(t *testing.T) {
 	// Arrange
 	repository := &PostgresTaskRepository{database: &fakePostgresTaskDatabase{}, logger: &fakeRepositoryLogger{}}
@@ -474,6 +527,13 @@ func assignTaskScanValues(destinations []interface{}, values []interface{}) {
 		switch destination := destinations[index].(type) {
 		case *string:
 			*destination = value.(string)
+		case **string:
+			if value == nil {
+				*destination = nil
+				continue
+			}
+			storedValue := value.(string)
+			*destination = &storedValue
 		case **time.Time:
 			if value == nil {
 				*destination = nil
@@ -509,6 +569,12 @@ func validStoredTaskValues(dueDate time.Time) []interface{} {
 	}
 }
 
+func validGlobalStoredTaskValues(dueDate time.Time) []interface{} {
+	values := validStoredTaskValues(dueDate)
+	values[2] = nil
+	return values
+}
+
 func corruptedStoredTaskValues() []interface{} {
 	values := validStoredTaskValues(time.Time{})
 	values[5] = "blocked"
@@ -521,7 +587,7 @@ func createRepositoryTask(t *testing.T, dueDate time.Time) *domain.Task {
 	task, err := domain.NewTask(
 		"task-123",
 		"user-123",
-		"board-123",
+		repositoryBoardIDPtr("board-123"),
 		"Write tests",
 		"Cover repository rules",
 		domain.TaskStatusTodo,
@@ -533,4 +599,28 @@ func createRepositoryTask(t *testing.T, dueDate time.Time) *domain.Task {
 	}
 
 	return task
+}
+
+func createGlobalRepositoryTask(t *testing.T) *domain.Task {
+	t.Helper()
+
+	task, err := domain.NewTask(
+		"task-123",
+		"user-123",
+		nil,
+		"Write tests",
+		"Cover repository rules",
+		domain.TaskStatusTodo,
+		domain.TaskPriorityMedium,
+		time.Time{},
+	)
+	if err != nil {
+		t.Fatalf("expected task to be valid, got: %v", err)
+	}
+
+	return task
+}
+
+func repositoryBoardIDPtr(boardID string) *string {
+	return &boardID
 }

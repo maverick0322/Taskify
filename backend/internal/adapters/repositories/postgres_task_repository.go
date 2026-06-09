@@ -87,7 +87,7 @@ func (repository *PostgresTaskRepository) Save(ctx context.Context, task *domain
 		saveTaskQuery,
 		task.ID(),
 		task.UserID(),
-		task.BoardID(),
+		nullableTaskBoardID(task.BoardID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -174,7 +174,7 @@ func (repository *PostgresTaskRepository) Update(ctx context.Context, task *doma
 		ctx,
 		updateTaskQuery,
 		task.ID(),
-		task.BoardID(),
+		nullableTaskBoardID(task.BoardID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -254,7 +254,7 @@ func (repository *PostgresTaskRepository) mapWriteError(err error, message strin
 type storedTask struct {
 	id          string
 	userID      string
-	boardID     string
+	boardID     *string
 	title       string
 	description string
 	status      string
@@ -262,6 +262,14 @@ type storedTask struct {
 	dueDate     *time.Time
 	createdAt   time.Time
 	updatedAt   time.Time
+}
+
+func nullableTaskBoardID(boardID *string) interface{} {
+	if boardID == nil {
+		return nil
+	}
+
+	return *boardID
 }
 
 func nullableTaskDueDate(dueDate time.Time) interface{} {

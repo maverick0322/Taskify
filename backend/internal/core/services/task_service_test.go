@@ -128,7 +128,7 @@ func TestCreateTask_ValidData_ReturnsTaskAndSaves(t *testing.T) {
 	service := newTaskTestService(t, repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	task, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	task, err := service.CreateTask(context.Background(), validTaskServiceUserID, taskServiceBoardIDPtr(validTaskServiceBoardID), validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if err != nil {
@@ -145,12 +145,36 @@ func TestCreateTask_ValidData_ReturnsTaskAndSaves(t *testing.T) {
 	}
 }
 
+func TestCreateTask_WithoutBoardID_CreatesGlobalTaskAndSaves(t *testing.T) {
+	// Arrange
+	repository := &mockTaskRepository{}
+	boardRepository := &mockTaskBoardRepository{boardToReturn: createTaskServiceBoard(t, validTaskServiceUserID)}
+	service := NewTaskService(repository, boardRepository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
+
+	// Act
+	task, err := service.CreateTask(context.Background(), validTaskServiceUserID, nil, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if task.BoardID() != nil {
+		t.Errorf("expected global task board ID to be nil")
+	}
+	if repository.savedTask == nil {
+		t.Fatal("expected task to be saved")
+	}
+	if boardRepository.requestedID != "" {
+		t.Errorf("expected board authorization to be skipped, got board ID %s", boardRepository.requestedID)
+	}
+}
+
 func TestCreateTask_InvalidTitle_ReturnsDomainError(t *testing.T) {
 	// Arrange
 	service := newTaskTestService(t, &mockTaskRepository{}, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, "No", validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, taskServiceBoardIDPtr(validTaskServiceBoardID), "No", validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, domain.ErrInvalidTaskTitle) {
@@ -164,7 +188,7 @@ func TestCreateTask_SaveFailure_ReturnsErrInternalProcessing(t *testing.T) {
 	service := newTaskTestService(t, repository, &mockTaskIDGenerator{id: validTaskServiceTaskID}, &mockTaskLogger{})
 
 	// Act
-	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, validTaskServiceBoardID, validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
+	_, err := service.CreateTask(context.Background(), validTaskServiceUserID, taskServiceBoardIDPtr(validTaskServiceBoardID), validTaskServiceTitle, validTaskServiceDescription, domain.TaskPriorityMedium, time.Time{})
 
 	// Assert
 	if !errors.Is(err, ErrInternalProcessing) {
@@ -579,7 +603,7 @@ func createTaskServiceTask(t *testing.T, userID string) *domain.Task {
 	task, err := domain.NewTask(
 		validTaskServiceTaskID,
 		userID,
-		validTaskServiceBoardID,
+		taskServiceBoardIDPtr(validTaskServiceBoardID),
 		validTaskServiceTitle,
 		validTaskServiceDescription,
 		domain.TaskStatusTodo,
@@ -591,6 +615,10 @@ func createTaskServiceTask(t *testing.T, userID string) *domain.Task {
 	}
 
 	return task
+}
+
+func taskServiceBoardIDPtr(boardID string) *string {
+	return &boardID
 }
 
 func createTaskServiceBoard(t *testing.T, userID string) *domain.Board {
