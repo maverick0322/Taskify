@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, PieChart } from "lucide-react";
 
 import { AgendaView } from "@/components/taskify/agenda-view";
 import { EmptyState } from "@/components/taskify/empty-state";
@@ -115,15 +115,15 @@ export function TaskifyDashboard() {
         ) : null}
 
         {currentView === "agenda" ? (
-          <AgendaView selectedBoardId={selectedBoardId} />
+          <AgendaView />
         ) : null}
 
         {currentView === "dashboard" ? (
           <EmptyState icon={LayoutDashboard} title="Panel de Control" />
         ) : null}
 
-        {currentView === "automations" ? (
-          <EmptyState icon={Bot} title="Automatizaciones" />
+        {currentView === "financial" ? (
+          <EmptyState icon={PieChart} title="Control financiero" />
         ) : null}
       </div>
     </div>

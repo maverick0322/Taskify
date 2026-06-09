@@ -1,1 +1,1 @@
-export type CurrentView = "dashboard" | "tasks" | "agenda" | "automations";
+export type CurrentView = "dashboard" | "tasks" | "agenda" | "financial";

@@ -1,9 +1,10 @@
 "use client"
 
 import React from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import type { CurrentView } from "@/components/taskify/navigation"
-import type { Board } from "@/services/boardService"
+import { createBoard, type Board } from "@/services/boardService"
 import { useAuthStore } from "@/store/useAuthStore"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import {
   Plus,
   CheckSquare,
   Calendar,
+  PieChart,
   Zap,
   Settings,
   HelpCircle,
@@ -27,7 +29,7 @@ const navItems: { icon: React.ElementType; label: string; view: CurrentView }[] 
   { icon: LayoutDashboard, label: "Dashboard", view: "dashboard" },
   { icon: CheckSquare,     label: "Mis Tareas", view: "tasks" },
   { icon: Calendar,        label: "Agenda", view: "agenda" },
-  { icon: Zap,             label: "Automatizaciones", view: "automations" },
+  { icon: PieChart,        label: "Control financiero", view: "financial" },
 ]
 
 interface SidebarProps {
@@ -53,6 +55,31 @@ export function Sidebar({
 }: SidebarProps) {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
+  const queryClient = useQueryClient()
+  const createBoardMutation = useMutation({
+    mutationFn: createBoard,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["boards"] })
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo crear el tablero."
+      window.alert(message)
+    },
+  })
+
+  const handleCreateBoard = () => {
+    const boardName = window.prompt("Nombre del nuevo tablero:")
+    const trimmedBoardName = boardName?.trim()
+
+    if (!trimmedBoardName) {
+      return
+    }
+
+    createBoardMutation.mutate(trimmedBoardName)
+  }
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -108,6 +135,8 @@ export function Sidebar({
                   size="icon"
                   variant="ghost"
                   className="size-6 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  disabled={createBoardMutation.isPending}
+                  onClick={handleCreateBoard}
                 >
                   <Plus className="size-3.5" />
                   <span className="sr-only">Crear tablero</span>

@@ -19,10 +19,6 @@ interface AgendaTask {
   time: string
 }
 
-interface AgendaViewProps {
-  selectedBoardId?: string
-}
-
 const priorityDot: Record<AgendaTask["priority"], string> = {
   Alta: "bg-red-500",
   Media: "bg-amber-400",
@@ -162,24 +158,39 @@ function formatTaskTime(dueDate: string, date: Date): string {
 }
 
 function toAgendaTasks(tasks: Task[]): AgendaTask[] {
-  return tasks.flatMap((task) => {
-    const dueDate = parseDueDate(task.dueDate)
+  return tasks
+    .flatMap((task) => {
+      const dueDate = parseDueDate(task.dueDate)
 
-    if (!dueDate) {
-      return []
-    }
+      if (!dueDate) {
+        return []
+      }
 
-    return {
-      id: task.id,
-      title: task.title,
-      priority: priorityLabel[task.priority],
-      status: statusLabel[task.status],
-      year: dueDate.getFullYear(),
-      month: dueDate.getMonth(),
-      day: dueDate.getDate(),
-      time: formatTaskTime(task.dueDate, dueDate),
-    }
-  })
+      return {
+        id: task.id,
+        title: task.title,
+        priority: priorityLabel[task.priority],
+        status: statusLabel[task.status],
+        year: dueDate.getFullYear(),
+        month: dueDate.getMonth(),
+        day: dueDate.getDate(),
+        time: formatTaskTime(task.dueDate, dueDate),
+      }
+    })
+    .sort((firstTask, secondTask) => {
+      const firstDate = new Date(
+        firstTask.year,
+        firstTask.month,
+        firstTask.day,
+      ).getTime()
+      const secondDate = new Date(
+        secondTask.year,
+        secondTask.month,
+        secondTask.day,
+      ).getTime()
+
+      return firstDate - secondDate
+    })
 }
 
 interface MonthNavProps {
@@ -539,7 +550,7 @@ function DailyAgenda({
   )
 }
 
-export function AgendaView({ selectedBoardId }: AgendaViewProps) {
+export function AgendaView() {
   const [year, setYear] = useState(TODAY_YEAR)
   const [month, setMonth] = useState(TODAY_MONTH)
   const {
@@ -548,9 +559,8 @@ export function AgendaView({ selectedBoardId }: AgendaViewProps) {
     isError,
     error,
   } = useQuery({
-    queryKey: ["tasks", selectedBoardId],
-    queryFn: () => getTasks(selectedBoardId),
-    enabled: !!selectedBoardId,
+    queryKey: ["tasks", "global"],
+    queryFn: () => getTasks(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -591,14 +601,6 @@ export function AgendaView({ selectedBoardId }: AgendaViewProps) {
     onToday: goToday,
   }
 
-  if (!selectedBoardId) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-muted-foreground">
-        Selecciona un tablero del menú lateral para ver su agenda
-      </div>
-    )
-  }
-
   if (isLoading) {
     return (
       <div className="flex flex-1 items-center justify-center bg-canvas text-sm font-medium text-muted-foreground">
@@ -618,7 +620,7 @@ export function AgendaView({ selectedBoardId }: AgendaViewProps) {
   if (agendaTasks.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-muted-foreground">
-        No hay tareas con fecha de vencimiento próxima en este tablero
+        No hay tareas con fecha de vencimiento próxima
       </div>
     )
   }

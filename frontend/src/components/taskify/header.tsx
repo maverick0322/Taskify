@@ -27,14 +27,14 @@ const viewTitle: Record<CurrentView, string> = {
   dashboard: "Panel de Control",
   tasks: "Mis Tareas",
   agenda: "Agenda",
-  automations: "Automatizaciones",
+  financial: "Control financiero",
 }
 
 const viewSubtitle: Record<CurrentView, string> = {
   dashboard: "Resumen general de tu espacio de trabajo",
   tasks: "12 tareas · Actualizado hace 5 min",
   agenda: "15 tareas · Junio 2026",
-  automations: "Flujos inteligentes para tu equipo",
+  financial: "Seguimiento financiero de tus proyectos",
 }
 
 export function Header({
