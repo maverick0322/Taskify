@@ -89,8 +89,8 @@ export function AuthScreen() {
         }}
       />
 
-      <Card className="w-full max-w-md border-border/60 shadow-2xl">
-        <CardHeader className="space-y-3 pb-6 text-center">
+      <Card className="w-full max-w-md border border-border/60 p-0 shadow-2xl ring-0">
+        <CardHeader className="space-y-3 p-6 pb-6 text-center">
           <div className="mx-auto mb-1 flex size-12 items-center justify-center rounded-xl bg-primary shadow-md">
             <Lock className="size-5 text-primary-foreground" />
           </div>
@@ -104,7 +104,7 @@ export function AuthScreen() {
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="px-6 pb-6">
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <div
               className={cn(
