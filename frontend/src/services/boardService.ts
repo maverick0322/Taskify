@@ -17,3 +17,9 @@ export async function createBoard(name: string): Promise<Board> {
     body: JSON.stringify({ name }),
   });
 }
+
+export async function deleteBoard(boardId: string): Promise<void> {
+  await apiRequest<void>(`/boards/${boardId}`, {
+    method: "DELETE",
+  });
+}

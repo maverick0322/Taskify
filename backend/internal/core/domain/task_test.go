@@ -150,16 +150,36 @@ func TestNewTask_InvalidPriority_ReturnsErrInvalidTaskPriority(t *testing.T) {
 	}
 }
 
-func TestNewTask_PastDueDate_ReturnsErrPastDueDate(t *testing.T) {
+func TestNewTask_PastDueDate_ReturnsTask(t *testing.T) {
 	// Arrange
-	pastDueDate := time.Now().Add(-time.Hour)
+	pastDueDate := time.Now().AddDate(0, 0, -1)
 
 	// Act
-	_, err := NewTask(validTaskID, validTaskUserID, taskBoardIDPtr(validTaskBoardID), validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, pastDueDate)
+	task, err := NewTask(validTaskID, validTaskUserID, taskBoardIDPtr(validTaskBoardID), validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, pastDueDate)
 
 	// Assert
-	if !errors.Is(err, ErrPastDueDate) {
-		t.Errorf("expected error %v, got %v", ErrPastDueDate, err)
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if !task.DueDate().Equal(pastDueDate) {
+		t.Errorf("expected due date %v, got %v", pastDueDate, task.DueDate())
+	}
+}
+
+func TestNewTask_TodayDueDate_ReturnsTask(t *testing.T) {
+	// Arrange
+	now := time.Now()
+	todayDueDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Act
+	task, err := NewTask(validTaskID, validTaskUserID, taskBoardIDPtr(validTaskBoardID), validTaskTitle, validTaskDescription, TaskStatusTodo, TaskPriorityMedium, todayDueDate)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if !task.DueDate().Equal(todayDueDate) {
+		t.Errorf("expected due date %v, got %v", todayDueDate, task.DueDate())
 	}
 }
 
@@ -383,16 +403,38 @@ func TestTask_UpdateValidFields_UpdatesTaskAndUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestTask_UpdatePastDueDate_ReturnsErrPastDueDate(t *testing.T) {
+func TestTask_UpdatePastDueDate_UpdatesTask(t *testing.T) {
 	// Arrange
 	task := createValidTask(t)
+	pastDueDate := time.Now().AddDate(0, 0, -1)
 
 	// Act
-	err := task.Update("Review pull request", "Check test coverage", TaskPriorityHigh, time.Now().Add(-time.Hour))
+	err := task.Update("Review pull request", "Check test coverage", TaskPriorityHigh, pastDueDate)
 
 	// Assert
-	if !errors.Is(err, ErrPastDueDate) {
-		t.Errorf("expected error %v, got %v", ErrPastDueDate, err)
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if !task.DueDate().Equal(pastDueDate) {
+		t.Errorf("expected due date %v, got %v", pastDueDate, task.DueDate())
+	}
+}
+
+func TestTask_UpdateTodayDueDate_UpdatesTask(t *testing.T) {
+	// Arrange
+	task := createValidTask(t)
+	now := time.Now()
+	todayDueDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Act
+	err := task.Update("Review pull request", "Check test coverage", TaskPriorityHigh, todayDueDate)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if !task.DueDate().Equal(todayDueDate) {
+		t.Errorf("expected due date %v, got %v", todayDueDate, task.DueDate())
 	}
 }
 

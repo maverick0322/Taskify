@@ -5,11 +5,24 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { CSSProperties, MouseEvent } from "react"
 
 import { cn } from "@/lib/utils"
+import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Clock, Paperclip, MessageSquare, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { deleteTask, type Task } from "@/services/taskService"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  deleteTask,
+  updateTaskStatus,
+  type Task,
+  type TaskStatus,
+} from "@/services/taskService"
 
 type Priority = "Alta" | "Media" | "Baja"
 
@@ -47,6 +60,14 @@ const priorityConfig: Record<Priority, { label: string; className: string }> = {
   },
 }
 
+const statusLabels: Record<TaskStatus, string> = {
+  todo: "Por hacer",
+  in_progress: "En progreso",
+  done: "Terminado",
+}
+
+const taskStatusOptions: TaskStatus[] = ["todo", "in_progress", "done"]
+
 export function TaskCard({
   id,
   index,
@@ -64,10 +85,65 @@ export function TaskCard({
 }: TaskCardProps) {
   const { label, className } = priorityConfig[priority]
   const queryClient = useQueryClient()
+  const boardTasksQueryKey = ["tasks", selectedBoardId]
+  const globalTasksQueryKey = ["tasks", "global"]
   const deleteMutation = useMutation({
     mutationFn: deleteTask,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", selectedBoardId] })
+      invalidateTaskCaches(queryClient, selectedBoardId)
+    },
+  })
+  const statusMutation = useMutation<
+    void,
+    Error,
+    { taskId: string; status: TaskStatus },
+    { previousBoardTasks?: Task[]; previousGlobalTasks?: Task[] }
+  >({
+    mutationFn: updateTaskStatus,
+    onMutate: async ({ taskId, status }) => {
+      const queryKeys = selectedBoardId
+        ? [boardTasksQueryKey, globalTasksQueryKey]
+        : [globalTasksQueryKey]
+
+      await Promise.all(
+        queryKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })),
+      )
+
+      const previousBoardTasks = selectedBoardId
+        ? queryClient.getQueryData<Task[]>(boardTasksQueryKey)
+        : undefined
+      const previousGlobalTasks =
+        queryClient.getQueryData<Task[]>(globalTasksQueryKey)
+
+      if (selectedBoardId) {
+        queryClient.setQueryData<Task[]>(boardTasksQueryKey, (currentTasks = []) =>
+          currentTasks.map((currentTask) =>
+            currentTask.id === taskId
+              ? { ...currentTask, status }
+              : currentTask,
+          ),
+        )
+      }
+
+      queryClient.setQueryData<Task[]>(globalTasksQueryKey, (currentTasks = []) =>
+        currentTasks.map((currentTask) =>
+          currentTask.id === taskId ? { ...currentTask, status } : currentTask,
+        ),
+      )
+
+      return { previousBoardTasks, previousGlobalTasks }
+    },
+    onError: (_error, _variables, context) => {
+      if (selectedBoardId && context?.previousBoardTasks) {
+        queryClient.setQueryData(boardTasksQueryKey, context.previousBoardTasks)
+      }
+
+      if (context?.previousGlobalTasks) {
+        queryClient.setQueryData(globalTasksQueryKey, context.previousGlobalTasks)
+      }
+    },
+    onSettled: () => {
+      invalidateTaskCaches(queryClient, selectedBoardId)
     },
   })
 
@@ -84,6 +160,14 @@ export function TaskCard({
     }
 
     deleteMutation.mutate(id)
+  }
+
+  function handleStatusChange(status: TaskStatus) {
+    if (status === task.status) {
+      return
+    }
+
+    statusMutation.mutate({ taskId: id, status })
   }
 
   return (
@@ -117,7 +201,30 @@ export function TaskCard({
                 </Badge>
               )}
             </div>
-            <div className="-mr-1 -mt-0.5 flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <div
+              className="-mr-1 -mt-0.5 flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Select
+                value={task.status}
+                onValueChange={(value) => handleStatusChange(value as TaskStatus)}
+                disabled={statusMutation.isPending}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="h-6 w-[6.75rem] rounded-md px-2 text-[11px] text-muted-foreground"
+                  aria-label="Cambiar estado de la tarea"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {taskStatusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {statusLabels[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 size="icon"

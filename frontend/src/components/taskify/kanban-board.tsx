@@ -7,6 +7,7 @@ import { useState } from "react"
 
 import { KanbanColumn } from "@/components/taskify/kanban-column"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
+import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -92,7 +93,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: tasksQueryKey })
+      invalidateTaskCaches(queryClient, selectedBoardId)
     },
   })
 

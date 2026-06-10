@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_boards_user_id_updated_at ON boards(user_id, upda
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,

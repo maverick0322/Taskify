@@ -29,6 +29,8 @@ import {
 import { Label } from "@/components/ui/label"
 import { CalendarIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import type { Board } from "@/services/boardService"
 import {
   createTask,
   updateTask,
@@ -49,9 +51,12 @@ function formatDate(date: Date): string {
 interface NewTaskDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  boards?: Board[]
   selectedBoardId?: string
   taskToEdit?: Task | null
 }
+
+const GLOBAL_BOARD_VALUE = "__global__"
 
 const priorityMap: Record<string, TaskPriority> = {
   Alta: "high",
@@ -68,6 +73,7 @@ const priorityLabelMap: Record<TaskPriority, string> = {
 export function NewTaskDialog({
   open,
   onOpenChange,
+  boards = [],
   selectedBoardId,
   taskToEdit,
 }: NewTaskDialogProps) {
@@ -79,9 +85,13 @@ export function NewTaskDialog({
   const [time,        setTime]        = useState("")
   const [calOpen,     setCalOpen]     = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
+  const [selectedTaskBoardId, setSelectedTaskBoardId] = useState(GLOBAL_BOARD_VALUE)
 
   const isEditing = Boolean(taskToEdit)
-  const activeBoardId = taskToEdit?.boardId ?? selectedBoardId
+  const shouldShowBoardSelect = !isEditing && !selectedBoardId
+  const selectedBoardForCreate =
+    selectedTaskBoardId === GLOBAL_BOARD_VALUE ? undefined : selectedTaskBoardId
+  const activeBoardId = taskToEdit?.boardId ?? selectedBoardForCreate ?? selectedBoardId
 
   const mutation = useMutation({
     mutationFn: async (input: {
@@ -89,6 +99,7 @@ export function NewTaskDialog({
       description: string
       priority: TaskPriority
       dueDate: string
+      boardId?: string
     }) => {
       if (taskToEdit) {
         await updateTask(taskToEdit.id, input)
@@ -97,14 +108,11 @@ export function NewTaskDialog({
 
       await createTask({
         ...input,
-        ...(selectedBoardId ? { boardId: selectedBoardId } : {}),
+        ...(input.boardId ? { boardId: input.boardId } : {}),
       })
     },
-    onSuccess: () => {
-      if (activeBoardId) {
-        queryClient.invalidateQueries({ queryKey: ["tasks", activeBoardId] })
-      }
-      queryClient.invalidateQueries({ queryKey: ["tasks", "global"] })
+    onSuccess: (_data, variables) => {
+      invalidateTaskCaches(queryClient, taskToEdit?.boardId ?? variables.boardId)
       reset()
       onOpenChange(false)
     },
@@ -123,6 +131,7 @@ export function NewTaskDialog({
     }
 
     if (!taskToEdit) {
+      setSelectedTaskBoardId(selectedBoardId ?? GLOBAL_BOARD_VALUE)
       reset()
       return
     }
@@ -132,6 +141,7 @@ export function NewTaskDialog({
     setPriority(priorityLabelMap[taskToEdit.priority])
     setDueDate(taskToEdit.dueDate ? parseAPIDate(taskToEdit.dueDate) : undefined)
     setTime("")
+    setSelectedTaskBoardId(taskToEdit.boardId ?? GLOBAL_BOARD_VALUE)
     setCalOpen(false)
     setErrorMessage("")
   }, [open, taskToEdit])
@@ -142,6 +152,7 @@ export function NewTaskDialog({
     setPriority("")
     setDueDate(undefined)
     setTime("")
+    setSelectedTaskBoardId(selectedBoardId ?? GLOBAL_BOARD_VALUE)
     setCalOpen(false)
     setErrorMessage("")
   }
@@ -160,6 +171,7 @@ export function NewTaskDialog({
       description,
       priority: mappedPriority,
       dueDate: dueDate ? formatDateForAPI(dueDate) : "",
+      ...(activeBoardId ? { boardId: activeBoardId } : {}),
     })
   }
 
@@ -236,6 +248,31 @@ export function NewTaskDialog({
             </Select>
           </div>
 
+          {shouldShowBoardSelect ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="task-board">Tablero</Label>
+              <Select
+                value={selectedTaskBoardId}
+                onValueChange={setSelectedTaskBoardId}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger id="task-board">
+                  <SelectValue placeholder="Selecciona un tablero" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={GLOBAL_BOARD_VALUE}>
+                    Ninguno (Tarea Global)
+                  </SelectItem>
+                  {boards.map((board) => (
+                    <SelectItem key={board.id} value={board.id}>
+                      {board.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
           {/* Due date + time — side by side */}
           <div className="grid grid-cols-2 gap-3">
             {/* Date picker */}
@@ -291,7 +328,7 @@ export function NewTaskDialog({
             </p>
           ) : null}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" type="button" onClick={handleCancel} disabled={mutation.isPending}>
               Cancelar
             </Button>

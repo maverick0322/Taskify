@@ -5,11 +5,13 @@ import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { getTasks, type Task, type TaskPriority, type TaskStatus } from "@/services/taskService"
 import { Clock, Circle, ChevronLeft, ChevronRight } from "lucide-react"
 
 interface AgendaTask {
   id: string
+  task: Task
   title: string
   priority: "Alta" | "Media" | "Baja"
   status: "Pendiente" | "En Progreso" | "Completado"
@@ -168,6 +170,7 @@ function toAgendaTasks(tasks: Task[]): AgendaTask[] {
 
       return {
         id: task.id,
+        task,
         title: task.title,
         priority: priorityLabel[task.priority],
         status: statusLabel[task.status],
@@ -266,6 +269,7 @@ function CalendarGrid({
   onPrev,
   onNext,
   onToday,
+  onEditTask,
 }: {
   tasks: AgendaTask[]
   year: number
@@ -273,6 +277,7 @@ function CalendarGrid({
   onPrev: () => void
   onNext: () => void
   onToday: () => void
+  onEditTask: (task: Task) => void
 }) {
   const grid = buildGrid(year, month)
   const tasksByDay = getTasksByDay(tasks, year, month)
@@ -343,11 +348,14 @@ function CalendarGrid({
 
               <div className="flex flex-col gap-0.5 overflow-hidden">
                 {dayTasks.slice(0, 3).map((task) => (
-                  <div
+                  <button
                     key={task.id}
+                    type="button"
                     title={task.title}
+                    aria-label={`Editar tarea: ${task.title}`}
+                    onClick={() => onEditTask(task.task)}
                     className={cn(
-                      "flex items-center gap-1 rounded px-1 py-0.5",
+                      "flex items-center gap-1 rounded px-1 py-0.5 text-left transition-colors hover:ring-1 hover:ring-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       priorityCellBg[task.priority],
                     )}
                   >
@@ -360,7 +368,7 @@ function CalendarGrid({
                     <span className="truncate text-[10px] font-medium leading-none text-foreground/80">
                       {task.title}
                     </span>
-                  </div>
+                  </button>
                 ))}
                 {dayTasks.length > 3 && (
                   <span className="pl-1 text-[10px] text-muted-foreground">
@@ -383,6 +391,7 @@ function DailyAgenda({
   onPrev,
   onNext,
   onToday,
+  onEditTask,
 }: {
   tasks: AgendaTask[]
   year: number
@@ -390,6 +399,7 @@ function DailyAgenda({
   onPrev: () => void
   onNext: () => void
   onToday: () => void
+  onEditTask: (task: Task) => void
 }) {
   const tasksByDay = getTasksByDay(tasks, year, month)
   const taskCount = Object.values(tasksByDay).flat().length
@@ -488,9 +498,12 @@ function DailyAgenda({
             ) : (
               <div className="ml-14 flex flex-col gap-2">
                 {dayTasks.map((task) => (
-                  <article
+                  <button
                     key={task.id}
-                    className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 shadow-sm"
+                    type="button"
+                    aria-label={`Editar tarea: ${task.title}`}
+                    onClick={() => onEditTask(task.task)}
+                    className="flex items-start gap-3 rounded-xl border border-border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <div className="flex flex-col items-center gap-1 pt-0.5">
                       <Circle
@@ -539,7 +552,7 @@ function DailyAgenda({
                         </Badge>
                       </div>
                     </div>
-                  </article>
+                  </button>
                 ))}
               </div>
             )}
@@ -553,6 +566,8 @@ function DailyAgenda({
 export function AgendaView() {
   const [year, setYear] = useState(TODAY_YEAR)
   const [month, setMonth] = useState(TODAY_MONTH)
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const {
     data: tasks = [],
     isLoading,
@@ -593,12 +608,25 @@ export function AgendaView() {
     setMonth(TODAY_MONTH)
   }
 
+  function handleEditTask(task: Task) {
+    setTaskToEdit(task)
+    setEditDialogOpen(true)
+  }
+
+  function handleEditDialogOpenChange(open: boolean) {
+    setEditDialogOpen(open)
+    if (!open) {
+      setTaskToEdit(null)
+    }
+  }
+
   const navProps = {
     year,
     month,
     onPrev: prevMonth,
     onNext: nextMonth,
     onToday: goToday,
+    onEditTask: handleEditTask,
   }
 
   if (isLoading) {
@@ -613,14 +641,6 @@ export function AgendaView() {
     return (
       <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-red-600">
         {errorMessage}
-      </div>
-    )
-  }
-
-  if (agendaTasks.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-muted-foreground">
-        No hay tareas con fecha de vencimiento próxima
       </div>
     )
   }
@@ -640,6 +660,12 @@ export function AgendaView() {
       >
         <DailyAgenda {...navProps} tasks={agendaTasks} />
       </main>
+
+      <NewTaskDialog
+        open={editDialogOpen}
+        onOpenChange={handleEditDialogOpenChange}
+        taskToEdit={taskToEdit}
+      />
     </>
   )
 }

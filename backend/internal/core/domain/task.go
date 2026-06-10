@@ -44,7 +44,6 @@ var (
 	ErrInvalidTaskTitle     = errors.New("domain: task title does not meet minimum length")
 	ErrInvalidTaskStatus    = errors.New("domain: invalid task status")
 	ErrInvalidTaskPriority  = errors.New("domain: invalid task priority")
-	ErrPastDueDate          = errors.New("domain: task due date cannot be in the past")
 	ErrInvalidTaskCreatedAt = errors.New("domain: task created at cannot be zero")
 	ErrInvalidTaskUpdatedAt = errors.New("domain: task updated at cannot be zero")
 )
@@ -149,10 +148,6 @@ func validateTaskFields(id, userID string, boardID *string, title, description s
 		return validatedTaskFields{}, ErrInvalidTaskPriority
 	}
 
-	if isPastDueDate(dueDate, time.Now()) {
-		return validatedTaskFields{}, ErrPastDueDate
-	}
-
 	return validatedTaskFields{
 		id:          trimmedID,
 		userID:      trimmedUserID,
@@ -201,9 +196,6 @@ func (task *Task) Update(newTitle, newDescription string, newPriority TaskPriori
 	}
 	if !newPriority.IsValid() {
 		return ErrInvalidTaskPriority
-	}
-	if isPastDueDate(newDueDate, time.Now()) {
-		return ErrPastDueDate
 	}
 
 	task.title = trimmedTitle
@@ -265,10 +257,6 @@ func validateTaskTitle(title string) (string, error) {
 	}
 
 	return trimmedTitle, nil
-}
-
-func isPastDueDate(dueDate, now time.Time) bool {
-	return !dueDate.IsZero() && dueDate.Before(now)
 }
 
 type validatedTaskFields struct {

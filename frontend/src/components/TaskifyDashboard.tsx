@@ -14,7 +14,7 @@ import { getTasks } from "@/services/taskService";
 
 export function TaskifyDashboard() {
   const [currentView, setCurrentView] = useState<CurrentView>("tasks");
-  const [selectedBoardId, setSelectedBoardId] = useState<string>();
+  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const {
     data: boards = [],
     isLoading: boardsLoading,
@@ -28,7 +28,7 @@ export function TaskifyDashboard() {
     error,
   } = useQuery({
     queryKey: ["tasks", selectedBoardId],
-    queryFn: () => getTasks(selectedBoardId),
+    queryFn: () => getTasks(selectedBoardId ?? undefined),
     enabled: !!selectedBoardId,
   });
 
@@ -42,7 +42,11 @@ export function TaskifyDashboard() {
 
   useEffect(() => {
     if (boards.length === 0) {
-      setSelectedBoardId(undefined);
+      setSelectedBoardId(null);
+      return;
+    }
+
+    if (!selectedBoardId) {
       return;
     }
 
@@ -50,10 +54,18 @@ export function TaskifyDashboard() {
       (board) => board.id === selectedBoardId,
     );
 
-    if (!selectedBoardId || !selectedBoardStillExists) {
-      setSelectedBoardId(boards[0].id);
+    if (!selectedBoardStillExists) {
+      setSelectedBoardId(null);
     }
   }, [boards, selectedBoardId]);
+
+  function handleViewChange(view: CurrentView) {
+    if (view === "tasks" || view === "agenda" || view === "financial") {
+      setSelectedBoardId(null);
+    }
+
+    setCurrentView(view);
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas">
@@ -64,7 +76,7 @@ export function TaskifyDashboard() {
           boards={boards}
           boardsError={boardsIsError ? boardsErrorMessage : undefined}
           boardsLoading={boardsLoading}
-          onViewChange={setCurrentView}
+          onViewChange={handleViewChange}
           selectedBoardId={selectedBoardId}
           onBoardSelect={(board) => setSelectedBoardId(board.id)}
         />
@@ -76,7 +88,7 @@ export function TaskifyDashboard() {
           boards={boards}
           boardsError={boardsIsError ? boardsErrorMessage : undefined}
           boardsLoading={boardsLoading}
-          onViewChange={setCurrentView}
+          onViewChange={handleViewChange}
           selectedBoardId={selectedBoardId}
           selectedBoardName={selectedBoard?.name}
           onBoardSelect={(board) => setSelectedBoardId(board.id)}

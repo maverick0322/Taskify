@@ -18,7 +18,7 @@ interface HeaderProps {
   boardsError?: string
   boardsLoading?: boolean
   onViewChange?: (view: CurrentView) => void
-  selectedBoardId?: string
+  selectedBoardId?: string | null
   selectedBoardName?: string
   onBoardSelect?: (board: Board) => void
 }
@@ -56,7 +56,8 @@ export function Header({
       <NewTaskDialog
         open={newTaskOpen}
         onOpenChange={setNewTaskOpen}
-        selectedBoardId={selectedBoardId}
+        boards={boards}
+        selectedBoardId={selectedBoardId ?? undefined}
       />
 
       {/* Mobile Sidebar Sheet */}
@@ -121,7 +122,7 @@ export function Header({
           <Button
             variant="outline"
             size="sm"
-            className="hidden md:flex h-9 gap-2 text-muted-foreground border-border/60"
+            className="hidden h-9 rounded-lg border-border/60 text-muted-foreground md:flex"
           >
             <SlidersHorizontal className="size-3.5" />
             <span className="text-sm">Filtrar</span>
@@ -151,7 +152,7 @@ export function Header({
           {/* Primary CTA */}
           <Button
             size="sm"
-            className="h-9 gap-1.5 text-sm font-semibold"
+            className="h-9 rounded-lg text-sm font-semibold"
             onClick={() => setNewTaskOpen(true)}
           >
             <Plus data-icon="inline-start" className="size-4" />

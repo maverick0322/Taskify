@@ -362,7 +362,6 @@ func isTaskDomainValidationError(err error) bool {
 		errors.Is(err, domain.ErrInvalidTaskTitle) ||
 		errors.Is(err, domain.ErrInvalidTaskStatus) ||
 		errors.Is(err, domain.ErrInvalidTaskPriority) ||
-		errors.Is(err, domain.ErrPastDueDate) ||
 		errors.Is(err, domain.ErrInvalidTaskCreatedAt) ||
 		errors.Is(err, domain.ErrInvalidTaskUpdatedAt)
 }
@@ -408,10 +407,10 @@ func formatTaskDueDate(dueDate time.Time) string {
 
 type createTaskRequest struct {
 	BoardID     *string `json:"boardId"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Priority    string `json:"priority"`
-	DueDate     string `json:"dueDate"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Priority    string  `json:"priority"`
+	DueDate     string  `json:"dueDate"`
 }
 
 type updateTaskRequest struct {
@@ -435,13 +434,13 @@ type updateTaskPriorityRequest struct {
 }
 
 type taskResponse struct {
-	ID          string `json:"id"`
+	ID          string  `json:"id"`
 	BoardID     *string `json:"boardId"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    string `json:"priority"`
-	DueDate     string `json:"dueDate"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Status      string  `json:"status"`
+	Priority    string  `json:"priority"`
+	DueDate     string  `json:"dueDate"`
+	CreatedAt   string  `json:"createdAt"`
+	UpdatedAt   string  `json:"updatedAt"`
 }
