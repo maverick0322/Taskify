@@ -203,6 +203,30 @@ func TestTransactionHandler_UpdateTransactionValidRequest_ReturnsNoContent(t *te
 	}
 }
 
+func TestTransactionHandler_UpdateTransactionMalformedJSON_ReturnsBadRequest(t *testing.T) {
+	router := createTransactionTestRouter(&mockTransactionUseCase{})
+	request := authenticatedTransactionRequest(http.MethodPatch, "/transactions/transaction-123", "{")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
+func TestTransactionHandler_UpdateTransactionInvalidDate_ReturnsBadRequest(t *testing.T) {
+	router := createTransactionTestRouter(&mockTransactionUseCase{})
+	request := authenticatedTransactionRequest(http.MethodPatch, "/transactions/transaction-123", `{"type":"EXPENSE","concept":"CFE - Luz","category":"Servicios","amountCents":12500,"date":"10-06-2026","status":"PAID","msi":null}`)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
 func TestTransactionHandler_UpdateTransactionNotFound_ReturnsNotFound(t *testing.T) {
 	router := createTransactionTestRouter(&mockTransactionUseCase{errToReturn: ports.ErrTransactionNotFound})
 	request := authenticatedTransactionRequest(http.MethodPatch, "/transactions/transaction-123", validCreateTransactionJSON())
@@ -231,6 +255,18 @@ func TestTransactionHandler_DeleteTransaction_ReturnsNoContent(t *testing.T) {
 	}
 }
 
+func TestTransactionHandler_DeleteTransactionInternalError_ReturnsInternalServerError(t *testing.T) {
+	router := createTransactionTestRouter(&mockTransactionUseCase{errToReturn: services.ErrInternalProcessing})
+	request := authenticatedTransactionRequest(http.MethodDelete, "/transactions/transaction-123", "")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
+	}
+}
+
 func TestTransactionHandler_GetFinancialSummary_ReturnsOK(t *testing.T) {
 	useCase := &mockTransactionUseCase{
 		summaryToReturn: ports.FinancialSummary{
@@ -256,6 +292,18 @@ func TestTransactionHandler_GetFinancialSummary_ReturnsOK(t *testing.T) {
 	}
 	if !useCase.receivedEndDate.Equal(time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("expected exclusive end date 2026-07-01, got %v", useCase.receivedEndDate)
+	}
+}
+
+func TestTransactionHandler_GetFinancialSummaryInternalError_ReturnsInternalServerError(t *testing.T) {
+	router := createTransactionTestRouter(&mockTransactionUseCase{errToReturn: services.ErrInternalProcessing})
+	request := authenticatedTransactionRequest(http.MethodGet, "/transactions/summary?start_date=2026-06-01&end_date=2026-06-30", "")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
 	}
 }
 

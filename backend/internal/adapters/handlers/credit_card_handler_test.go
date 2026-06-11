@@ -111,6 +111,18 @@ func TestCreditCardHandler_UpdateCreditCardValidRequest_ReturnsNoContent(t *test
 	}
 }
 
+func TestCreditCardHandler_UpdateCreditCardMalformedJSON_ReturnsBadRequest(t *testing.T) {
+	router := createCreditCardTestRouter(&mockCreditCardUseCase{})
+	request := authenticatedCreditCardRequest(http.MethodPatch, "/credit-cards/credit-card-123", "{")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
 func TestCreditCardHandler_DeleteCreditCard_ReturnsNoContent(t *testing.T) {
 	useCase := &mockCreditCardUseCase{}
 	router := createCreditCardTestRouter(useCase)
@@ -124,6 +136,18 @@ func TestCreditCardHandler_DeleteCreditCard_ReturnsNoContent(t *testing.T) {
 	}
 	if useCase.requestedID != "credit-card-123" {
 		t.Errorf("expected requested credit card ID credit-card-123, got %s", useCase.requestedID)
+	}
+}
+
+func TestCreditCardHandler_DeleteCreditCardInternalError_ReturnsInternalServerError(t *testing.T) {
+	router := createCreditCardTestRouter(&mockCreditCardUseCase{errToReturn: services.ErrInternalProcessing})
+	request := authenticatedCreditCardRequest(http.MethodDelete, "/credit-cards/credit-card-123", "")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
 	}
 }
 

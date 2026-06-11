@@ -266,6 +266,134 @@ func TestPostgresTransactionRepository_GetByUserIDRowsError_ReturnsErrTransactio
 	}
 }
 
+func TestPostgresTransactionRepository_GetByCreditCardIDWithoutFilter_UsesBaseQuery(t *testing.T) {
+	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: validStoredTransactionValues(nil)}}}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	transactions, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{})
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if len(transactions) != 1 {
+		t.Fatalf("expected one transaction, got %d", len(transactions))
+	}
+	if database.receivedSQL != getTransactionsByUserIDAndCreditCardIDQuery {
+		t.Errorf("expected credit card transaction query to be used")
+	}
+	if len(database.receivedArguments) != 2 {
+		t.Fatalf("expected two query arguments, got %d", len(database.receivedArguments))
+	}
+	if database.receivedArguments[1] != "credit-card-123" {
+		t.Errorf("expected credit card ID argument credit-card-123, got %v", database.receivedArguments[1])
+	}
+	if !rows.closed {
+		t.Fatal("expected rows to be closed")
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDWithDateRange_UsesRangeQuery(t *testing.T) {
+	startDate := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, 0)
+	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: validStoredTransactionValues(nil)}}}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{From: &startDate, To: &endDate})
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if database.receivedSQL != getTransactionsByUserIDAndCreditCardIDRangeQuery {
+		t.Errorf("expected credit card date range transaction query to be used")
+	}
+	if len(database.receivedArguments) != 4 {
+		t.Fatalf("expected four query arguments, got %d", len(database.receivedArguments))
+	}
+	if !database.receivedArguments[2].(time.Time).Equal(startDate) {
+		t.Errorf("expected start date argument %v, got %v", startDate, database.receivedArguments[2])
+	}
+	if !database.receivedArguments[3].(time.Time).Equal(endDate) {
+		t.Errorf("expected end date argument %v, got %v", endDate, database.receivedArguments[3])
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDWithFromFilter_UsesFromQuery(t *testing.T) {
+	startDate := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: validStoredTransactionValues(nil)}}}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{From: &startDate})
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if database.receivedSQL != getTransactionsByUserIDAndCreditCardIDFromQuery {
+		t.Errorf("expected credit card from transaction query to be used")
+	}
+	if len(database.receivedArguments) != 3 {
+		t.Fatalf("expected three query arguments, got %d", len(database.receivedArguments))
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDWithToFilter_UsesToQuery(t *testing.T) {
+	endDate := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: validStoredTransactionValues(nil)}}}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{To: &endDate})
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if database.receivedSQL != getTransactionsByUserIDAndCreditCardIDToQuery {
+		t.Errorf("expected credit card to transaction query to be used")
+	}
+	if len(database.receivedArguments) != 3 {
+		t.Fatalf("expected three query arguments, got %d", len(database.receivedArguments))
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDQueryFailure_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
+	database := &fakePostgresTransactionDatabase{queryError: errors.New("query failure")}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{})
+
+	if !errors.Is(err, ports.ErrTransactionRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTransactionRepositoryUnavailable, err)
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDScanFailure_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
+	values := validStoredTransactionValues(nil)
+	values[3] = "TRANSFER"
+	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: values}}}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{})
+
+	if !errors.Is(err, ports.ErrTransactionRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTransactionRepositoryUnavailable, err)
+	}
+}
+
+func TestPostgresTransactionRepository_GetByCreditCardIDRowsError_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
+	rows := &fakePostgresTransactionRows{errToReturn: errors.New("rows failure")}
+	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
+	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
+
+	_, err := repository.GetByCreditCardID(context.Background(), "user-123", "credit-card-123", ports.TransactionDateFilter{})
+
+	if !errors.Is(err, ports.ErrTransactionRepositoryUnavailable) {
+		t.Errorf("expected error %v, got %v", ports.ErrTransactionRepositoryUnavailable, err)
+	}
+}
+
 func TestPostgresTransactionRepository_UpdateValidTransaction_ReturnsNil(t *testing.T) {
 	database := &fakePostgresTransactionDatabase{}
 	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
