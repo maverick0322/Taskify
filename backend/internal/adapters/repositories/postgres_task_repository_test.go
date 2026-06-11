@@ -247,7 +247,6 @@ func TestPostgresTaskRepository_GetByIDGlobalTask_ReturnsTaskWithNilBoardID(t *t
 	}
 }
 
-
 func TestPostgresTaskRepository_GetByIDMissingTask_ReturnsErrTaskNotFound(t *testing.T) {
 	// Arrange
 	database := &fakePostgresTaskDatabase{rowToReturn: fakePostgresTaskRow{err: pgx.ErrNoRows}}
