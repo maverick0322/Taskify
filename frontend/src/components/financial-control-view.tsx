@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, type ElementType } from "react"
+import { useMemo, useState, type ElementType } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
   ArrowDownRight,
@@ -54,6 +55,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  createTransaction,
+  getFinancialSummary,
+  getTransactions,
+  type CreateTransactionInput,
+  type FinancialTransaction,
+} from "@/services/financial_api"
 
 type TransactionType = "income" | "expense"
 
@@ -67,74 +75,6 @@ interface Transaction {
   msi?: string
 }
 
-const TRANSACTIONS: Transaction[] = [
-  {
-    id: "1",
-    date: "10 Jun 2026",
-    concept: "Sueldo Mensual",
-    category: "Ingresos",
-    type: "income",
-    amount: 48000,
-  },
-  {
-    id: "2",
-    date: "08 Jun 2026",
-    concept: 'MacBook Pro 14"',
-    category: "Tecnologia",
-    type: "expense",
-    amount: 42999,
-    msi: "3/12 MSI",
-  },
-  {
-    id: "3",
-    date: "06 Jun 2026",
-    concept: "Freelance - Diseno UI",
-    category: "Ingresos",
-    type: "income",
-    amount: 12500,
-  },
-  {
-    id: "4",
-    date: "05 Jun 2026",
-    concept: "Supermercado La Comer",
-    category: "Alimentos",
-    type: "expense",
-    amount: 2340,
-  },
-  {
-    id: "5",
-    date: "03 Jun 2026",
-    concept: "Netflix Premium",
-    category: "Suscripciones",
-    type: "expense",
-    amount: 349,
-  },
-  {
-    id: "6",
-    date: "02 Jun 2026",
-    concept: "Consultoria Estrategica",
-    category: "Ingresos",
-    type: "income",
-    amount: 8000,
-  },
-  {
-    id: "7",
-    date: "01 Jun 2026",
-    concept: "Renta Departamento",
-    category: "Vivienda",
-    type: "expense",
-    amount: 14500,
-  },
-  {
-    id: "8",
-    date: "01 Jun 2026",
-    concept: "Gasolina",
-    category: "Transporte",
-    type: "expense",
-    amount: 1200,
-  },
-]
-
 interface PendingPayment {
   id: string
   service: string
@@ -143,41 +83,6 @@ interface PendingPayment {
   isUrgent: boolean
   amount: number
 }
-
-const PENDING_PAYMENTS: PendingPayment[] = [
-  {
-    id: "1",
-    service: "CFE - Luz",
-    icon: Zap,
-    dueDate: "12 Jun 2026",
-    isUrgent: true,
-    amount: 980,
-  },
-  {
-    id: "2",
-    service: "Telmex - Internet",
-    icon: Wifi,
-    dueDate: "15 Jun 2026",
-    isUrgent: true,
-    amount: 599,
-  },
-  {
-    id: "3",
-    service: "AT&T - Celular",
-    icon: Phone,
-    dueDate: "20 Jun 2026",
-    isUrgent: false,
-    amount: 450,
-  },
-  {
-    id: "4",
-    service: "Predial Anual",
-    icon: Building2,
-    dueDate: "30 Jun 2026",
-    isUrgent: false,
-    amount: 3200,
-  },
-]
 
 interface CreditCardItem {
   id: string
@@ -227,16 +132,6 @@ const CREDIT_CARDS: CreditCardItem[] = [
     border: "border-rose-600",
   },
 ]
-
-const totalIncome = TRANSACTIONS.filter((transaction) => transaction.type === "income").reduce(
-  (total, transaction) => total + transaction.amount,
-  0,
-)
-const totalExpense = TRANSACTIONS.filter((transaction) => transaction.type === "expense").reduce(
-  (total, transaction) => total + transaction.amount,
-  0,
-)
-const profitMargin = totalIncome - totalExpense
 
 const RECURRENCE_OPTIONS = [
   { value: "once", label: "Solo una vez" },
@@ -301,16 +196,140 @@ function fmt(value: number) {
   }).format(value)
 }
 
+function amountToCents(value: string) {
+  return Math.round(Number(value || "0") * 100)
+}
+
+function centsToAmount(value: number) {
+  return value / 100
+}
+
+function currentMonthRange() {
+  const currentDate = new Date()
+  const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+  const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+
+  return {
+    startDate: formatDateInput(startDate),
+    endDate: formatDateInput(endDate),
+    label: new Intl.DateTimeFormat("es-MX", {
+      month: "long",
+      year: "numeric",
+    }).format(startDate),
+  }
+}
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
+}
+
+function formatDisplayDate(rawDate: string) {
+  const [year, month, day] = rawDate.split("-").map(Number)
+  if (!year || !month || !day) {
+    return rawDate
+  }
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day))
+}
+
+function mapTransaction(transaction: FinancialTransaction): Transaction {
+  return {
+    id: transaction.id,
+    date: formatDisplayDate(transaction.date),
+    concept: transaction.concept,
+    category: transaction.category,
+    type: transaction.type === "INCOME" ? "income" : "expense",
+    amount: centsToAmount(transaction.amountCents),
+    msi: transaction.msi ? `${transaction.msi} MSI` : undefined,
+  }
+}
+
+function mapPendingPayment(transaction: FinancialTransaction): PendingPayment {
+  return {
+    id: transaction.id,
+    service: transaction.concept,
+    icon: iconForCategory(transaction.category),
+    dueDate: formatDisplayDate(transaction.date),
+    isUrgent: isUrgentPayment(transaction.date),
+    amount: centsToAmount(transaction.amountCents),
+  }
+}
+
+function iconForCategory(category: string): ElementType {
+  const normalizedCategory = category.toLowerCase()
+  if (normalizedCategory.includes("electric") || normalizedCategory.includes("luz")) {
+    return Zap
+  }
+  if (normalizedCategory.includes("internet")) {
+    return Wifi
+  }
+  if (normalizedCategory.includes("telefon") || normalizedCategory.includes("celular")) {
+    return Phone
+  }
+  if (normalizedCategory.includes("vivienda") || normalizedCategory.includes("predial")) {
+    return Building2
+  }
+
+  return Wallet
+}
+
+function isUrgentPayment(rawDate: string) {
+  const [year, month, day] = rawDate.split("-").map(Number)
+  if (!year || !month || !day) {
+    return false
+  }
+
+  const dueDate = new Date(year, month - 1, day)
+  const currentDate = new Date()
+  const differenceInMilliseconds = dueDate.getTime() - currentDate.getTime()
+  const differenceInDays = Math.ceil(differenceInMilliseconds / 86400000)
+
+  return differenceInDays <= 7
+}
+
+function financialQueryKeys(startDate: string, endDate: string) {
+  return {
+    transactions: ["financial", "transactions", startDate, endDate] as const,
+    summary: ["financial", "summary", startDate, endDate] as const,
+  }
+}
+
 function NewMovementDialog({
   open,
   onClose,
+  onSubmit,
+  isSaving,
 }: {
   open: boolean
   onClose: () => void
+  onSubmit: (data: CreateTransactionInput) => void
+  isSaving: boolean
 }) {
   const [tipo, setTipo] = useState("")
   const [categoria, setCategoria] = useState("")
   const [recurrencia, setRecurrencia] = useState("once")
+  const [monto, setMonto] = useState("")
+  const [concepto, setConcepto] = useState("")
+
+  const handleSubmit = () => {
+    onSubmit({
+      type: tipo === "income" ? "INCOME" : "EXPENSE",
+      concept: concepto,
+      category: categoria,
+      amountCents: amountToCents(monto),
+      date: formatDateInput(new Date()),
+      status: "PAID",
+      msi: null,
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
@@ -329,13 +348,25 @@ function NewMovementDialog({
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                 $
               </span>
-              <Input id="monto" type="number" placeholder="0.00" className="pl-7" />
+              <Input
+                id="monto"
+                type="number"
+                placeholder="0.00"
+                className="pl-7"
+                value={monto}
+                onChange={(event) => setMonto(event.target.value)}
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="concepto">Concepto</Label>
-            <Input id="concepto" placeholder="Ej. Sueldo mensual, Netflix..." />
+            <Input
+              id="concepto"
+              placeholder="Ej. Sueldo mensual, Netflix..."
+              value={concepto}
+              onChange={(event) => setConcepto(event.target.value)}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -400,8 +431,13 @@ function NewMovementDialog({
         </div>
 
         <DialogFooter showCloseButton>
-          <Button type="submit" className="w-full sm:w-auto">
-            Guardar movimiento
+          <Button
+            type="submit"
+            className="w-full sm:w-auto"
+            disabled={isSaving}
+            onClick={handleSubmit}
+          >
+            {isSaving ? "Guardando..." : "Guardar movimiento"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -412,12 +448,33 @@ function NewMovementDialog({
 function NewPaymentDialog({
   open,
   onClose,
+  onSubmit,
+  isSaving,
 }: {
   open: boolean
   onClose: () => void
+  onSubmit: (data: CreateTransactionInput) => void
+  isSaving: boolean
 }) {
   const [categoria, setCategoria] = useState("")
   const [recurrencia, setRecurrencia] = useState("monthly")
+  const [servicio, setServicio] = useState("")
+  const [monto, setMonto] = useState("")
+  const [fechaVence, setFechaVence] = useState("")
+
+  const handleSubmit = () => {
+    const selectedService = SERVICES_ICONS.find((service) => service.value === categoria)
+
+    onSubmit({
+      type: "EXPENSE",
+      concept: servicio,
+      category: selectedService?.label ?? categoria,
+      amountCents: amountToCents(monto),
+      date: fechaVence,
+      status: "PENDING",
+      msi: null,
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
@@ -432,7 +489,12 @@ function NewPaymentDialog({
         <div className="flex flex-col gap-5 py-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="servicio">Servicio / Concepto</Label>
-            <Input id="servicio" placeholder="Ej. CFE - Luz, Predial..." />
+            <Input
+              id="servicio"
+              placeholder="Ej. CFE - Luz, Predial..."
+              value={servicio}
+              onChange={(event) => setServicio(event.target.value)}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -442,12 +504,24 @@ function NewPaymentDialog({
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                   $
                 </span>
-                <Input id="monto-pago" type="number" placeholder="0.00" className="pl-7" />
+                <Input
+                  id="monto-pago"
+                  type="number"
+                  placeholder="0.00"
+                  className="pl-7"
+                  value={monto}
+                  onChange={(event) => setMonto(event.target.value)}
+                />
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="fecha-vence">Fecha de vencimiento</Label>
-              <Input id="fecha-vence" type="date" />
+              <Input
+                id="fecha-vence"
+                type="date"
+                value={fechaVence}
+                onChange={(event) => setFechaVence(event.target.value)}
+              />
             </div>
           </div>
 
@@ -497,8 +571,13 @@ function NewPaymentDialog({
         </div>
 
         <DialogFooter showCloseButton>
-          <Button type="submit" className="w-full sm:w-auto">
-            Guardar pago
+          <Button
+            type="submit"
+            className="w-full sm:w-auto"
+            disabled={isSaving}
+            onClick={handleSubmit}
+          >
+            {isSaving ? "Guardando..." : "Guardar pago"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -660,6 +739,56 @@ export function FinancialControlView() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [addCardDialogOpen, setAddCardDialogOpen] = useState(false)
+  const queryClient = useQueryClient()
+  const monthRange = useMemo(() => currentMonthRange(), [])
+  const queryKeys = useMemo(
+    () => financialQueryKeys(monthRange.startDate, monthRange.endDate),
+    [monthRange.endDate, monthRange.startDate],
+  )
+
+  const { data: apiTransactions = [] } = useQuery({
+    queryKey: queryKeys.transactions,
+    queryFn: () =>
+      getTransactions({
+        startDate: monthRange.startDate,
+        endDate: monthRange.endDate,
+      }),
+  })
+  const { data: financialSummary } = useQuery({
+    queryKey: queryKeys.summary,
+    queryFn: () => getFinancialSummary(monthRange.startDate, monthRange.endDate),
+  })
+  const createTransactionMutation = useMutation({
+    mutationFn: createTransaction,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.transactions }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.summary }),
+      ])
+      setDialogOpen(false)
+      setPaymentDialogOpen(false)
+    },
+  })
+
+  const transactions = useMemo(
+    () => apiTransactions.map(mapTransaction),
+    [apiTransactions],
+  )
+  const pendingPayments = useMemo(
+    () =>
+      apiTransactions
+        .filter(
+          (transaction) =>
+            transaction.type === "EXPENSE" && transaction.status === "PENDING",
+        )
+        .map(mapPendingPayment),
+    [apiTransactions],
+  )
+  const totalIncome = centsToAmount(financialSummary?.totalIncomeCents ?? 0)
+  const totalExpense = centsToAmount(financialSummary?.totalExpenseCents ?? 0)
+  const profitMargin = centsToAmount(financialSummary?.profitMarginCents ?? 0)
+  const availableIncomePercentage =
+    totalIncome > 0 ? ((profitMargin / totalIncome) * 100).toFixed(1) : "0.0"
 
   return (
     <main className="flex h-full min-h-screen flex-col gap-8 overflow-y-auto bg-slate-50 p-8 dark:bg-background">
@@ -685,7 +814,7 @@ export function FinancialControlView() {
                     </CardTitle>
                   </div>
                   <CardDescription>
-                    Junio 2026 - todas las cuentas
+                    {monthRange.label} - todas las cuentas
                   </CardDescription>
                 </div>
                 <Button
@@ -743,7 +872,7 @@ export function FinancialControlView() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {TRANSACTIONS.map((transaction) => (
+                      {transactions.map((transaction) => (
                         <TableRow key={transaction.id}>
                           <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                             {transaction.date}
@@ -870,7 +999,7 @@ export function FinancialControlView() {
                     </CardTitle>
                   </div>
                   <CardDescription>
-                    {PENDING_PAYMENTS.length} pendientes este mes
+                    {pendingPayments.length} pendientes este mes
                   </CardDescription>
                 </div>
                 <Button
@@ -886,7 +1015,7 @@ export function FinancialControlView() {
             </CardHeader>
             <CardContent className="p-6 pt-0">
               <div className="flex flex-col gap-4">
-                {PENDING_PAYMENTS.map((payment) => {
+                {pendingPayments.map((payment) => {
                   const Icon = payment.icon
                   return (
                     <div
@@ -936,7 +1065,7 @@ export function FinancialControlView() {
                   Resumen Mensual
                 </CardTitle>
               </div>
-              <CardDescription>Junio 2026</CardDescription>
+              <CardDescription>{monthRange.label}</CardDescription>
             </CardHeader>
             <CardContent className="p-6 pt-0">
               <div className="flex flex-col gap-1">
@@ -976,7 +1105,7 @@ export function FinancialControlView() {
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {profitMargin >= 0
-                    ? `${((profitMargin / totalIncome) * 100).toFixed(1)}% de tus ingresos disponibles`
+                    ? `${availableIncomePercentage}% de tus ingresos disponibles`
                     : "Deficit este mes"}
                 </span>
               </div>
@@ -985,10 +1114,17 @@ export function FinancialControlView() {
         </div>
       </div>
 
-      <NewMovementDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <NewMovementDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSubmit={(data) => createTransactionMutation.mutate(data)}
+        isSaving={createTransactionMutation.isPending}
+      />
       <NewPaymentDialog
         open={paymentDialogOpen}
         onClose={() => setPaymentDialogOpen(false)}
+        onSubmit={(data) => createTransactionMutation.mutate(data)}
+        isSaving={createTransactionMutation.isPending}
       />
       <AddCardDialog
         open={addCardDialogOpen}
