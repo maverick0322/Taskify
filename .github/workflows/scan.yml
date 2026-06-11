@@ -32,9 +32,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          projectBaseDir: backend
           args: >
             -Dsonar.organization=maverick0322
             -Dsonar.projectKey=maverick0322_Taskify
             -Dsonar.sources=.
-            -Dsonar.coverage.exclusions=frontend/**,backend/cmd/**,backend/internal/core/ports/**
+            -Dsonar.exclusions=**/*.sql
+            -Dsonar.coverage.exclusions=cmd/**,internal/core/ports/**
             -Dsonar.go.coverage.reportPaths=coverage.out
