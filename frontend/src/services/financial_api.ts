@@ -22,6 +22,20 @@ export interface FinancialSummary {
   profitMarginCents: number;
 }
 
+export interface CreditCardSummary {
+  id: string;
+  name: string;
+  bank: string;
+  last4: string;
+  cutoffDay: number;
+  paymentDay: number;
+  limitCents: number;
+  color: string;
+  currentDebtCents: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TransactionDateRange {
   startDate?: string;
   endDate?: string;
@@ -38,6 +52,16 @@ export interface CreateTransactionInput {
 }
 
 export type UpdateTransactionInput = CreateTransactionInput;
+
+export interface CreateCreditCardInput {
+  name: string;
+  bank: string;
+  last4: string;
+  cutoffDay: number;
+  paymentDay: number;
+  limitCents: number;
+  color: string;
+}
 
 export async function getTransactions(
   range: TransactionDateRange = {},
@@ -76,6 +100,19 @@ export async function updateTransaction(
 export async function deleteTransaction(id: string): Promise<void> {
   await apiRequest<void>(`/transactions/${id}`, {
     method: "DELETE",
+  });
+}
+
+export async function getCreditCards(): Promise<CreditCardSummary[]> {
+  return apiRequest<CreditCardSummary[]>("/credit-cards");
+}
+
+export async function createCreditCard(
+  data: CreateCreditCardInput,
+): Promise<CreditCardSummary> {
+  return apiRequest<CreditCardSummary>("/credit-cards", {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }
 

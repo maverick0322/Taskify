@@ -56,9 +56,12 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  createCreditCard,
   createTransaction,
+  getCreditCards,
   getFinancialSummary,
   getTransactions,
+  type CreateCreditCardInput,
   type CreateTransactionInput,
   type FinancialTransaction,
 } from "@/services/financial_api"
@@ -83,55 +86,6 @@ interface PendingPayment {
   isUrgent: boolean
   amount: number
 }
-
-interface CreditCardItem {
-  id: string
-  bank: string
-  lastFour: string
-  cutDate: string
-  limit: number
-  gradient: string
-  border: string
-}
-
-const CREDIT_CARDS: CreditCardItem[] = [
-  {
-    id: "1",
-    bank: "BBVA Bancomer",
-    lastFour: "4821",
-    cutDate: "22 Jun 2026",
-    limit: 80000,
-    gradient: "from-blue-700 to-blue-900",
-    border: "border-blue-600",
-  },
-  {
-    id: "2",
-    bank: "Citibanamex",
-    lastFour: "3047",
-    cutDate: "28 Jun 2026",
-    limit: 50000,
-    gradient: "from-slate-700 to-slate-900",
-    border: "border-slate-600",
-  },
-  {
-    id: "3",
-    bank: "HSBC",
-    lastFour: "9163",
-    cutDate: "05 Jul 2026",
-    limit: 30000,
-    gradient: "from-red-800 to-red-950",
-    border: "border-red-700",
-  },
-  {
-    id: "4",
-    bank: "Santander",
-    lastFour: "6205",
-    cutDate: "10 Jul 2026",
-    limit: 45000,
-    gradient: "from-rose-700 to-rose-900",
-    border: "border-rose-600",
-  },
-]
 
 const RECURRENCE_OPTIONS = [
   { value: "once", label: "Solo una vez" },
@@ -299,7 +253,19 @@ function financialQueryKeys(startDate: string, endDate: string) {
   return {
     transactions: ["financial", "transactions", startDate, endDate] as const,
     summary: ["financial", "summary", startDate, endDate] as const,
+    creditCards: ["financial", "credit-cards"] as const,
   }
+}
+
+function cardVisualForColor(color: string) {
+  return (
+    CARD_GRADIENTS.find((gradient) => gradient.gradient === color) ??
+    CARD_GRADIENTS[0]
+  )
+}
+
+function cardCutoffLabel(cutoffDay: number) {
+  return `Dia ${cutoffDay}`
 }
 
 function NewMovementDialog({
@@ -588,13 +554,33 @@ function NewPaymentDialog({
 function AddCardDialog({
   open,
   onClose,
+  onSubmit,
+  isSaving,
 }: {
   open: boolean
   onClose: () => void
+  onSubmit: (data: CreateCreditCardInput) => void
+  isSaving: boolean
 }) {
-  const [cardType, setCardType] = useState<"credit" | "debit">("credit")
+  const [name, setName] = useState("")
   const [bank, setBank] = useState("")
+  const [last4, setLast4] = useState("")
+  const [cutoffDay, setCutoffDay] = useState("")
+  const [paymentDay, setPaymentDay] = useState("")
+  const [limit, setLimit] = useState("")
   const [selectedGradient, setSelectedGradient] = useState(CARD_GRADIENTS[0])
+
+  const handleSubmit = () => {
+    onSubmit({
+      name,
+      bank,
+      last4,
+      cutoffDay: Number(cutoffDay),
+      paymentDay: Number(paymentDay),
+      limitCents: amountToCents(limit),
+      color: selectedGradient.gradient,
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
@@ -602,47 +588,19 @@ function AddCardDialog({
         <DialogHeader>
           <DialogTitle>Agregar Tarjeta</DialogTitle>
           <DialogDescription>
-            Vincula una tarjeta de credito o debito a tu control financiero.
+            Vincula una tarjeta de credito a tu control financiero.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 py-2">
-          <div className="flex flex-col gap-2">
-            <Label>Tipo de tarjeta</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setCardType("credit")}
-                className={cn(
-                  "flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 px-4 py-4 transition-all",
-                  cardType === "credit"
-                    ? "border-primary bg-primary/5 text-foreground"
-                    : "border-border bg-transparent text-muted-foreground hover:bg-muted/40",
-                )}
-              >
-                <CreditCard className="size-6" />
-                <span className="text-sm font-semibold">Credito</span>
-                <span className="text-center text-xs leading-tight opacity-70">
-                  Limite de credito y fecha de corte
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCardType("debit")}
-                className={cn(
-                  "flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 px-4 py-4 transition-all",
-                  cardType === "debit"
-                    ? "border-primary bg-primary/5 text-foreground"
-                    : "border-border bg-transparent text-muted-foreground hover:bg-muted/40",
-                )}
-              >
-                <Wallet className="size-6" />
-                <span className="text-sm font-semibold">Debito</span>
-                <span className="text-center text-xs leading-tight opacity-70">
-                  Saldo disponible en cuenta
-                </span>
-              </button>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="card-name">Nombre de la tarjeta</Label>
+            <Input
+              id="card-name"
+              placeholder="Ej. Clasica, Oro, LikeU..."
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -671,37 +629,56 @@ function AddCardDialog({
                 placeholder="0000"
                 maxLength={4}
                 className="font-mono tracking-widest"
+                value={last4}
+                onChange={(event) =>
+                  setLast4(event.target.value.replace(/\D/g, "").slice(0, 4))
+                }
               />
             </div>
-            {cardType === "credit" ? (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cut-date">Fecha de corte</Label>
-                <Input id="cut-date" type="date" />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="balance">Saldo disponible</Label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                    $
-                  </span>
-                  <Input id="balance" type="number" placeholder="0.00" className="pl-7" />
-                </div>
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cutoff-day">Dia de corte</Label>
+              <Input
+                id="cutoff-day"
+                type="number"
+                min={1}
+                max={31}
+                placeholder="15"
+                value={cutoffDay}
+                onChange={(event) => setCutoffDay(event.target.value)}
+              />
+            </div>
           </div>
 
-          {cardType === "credit" ? (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="payment-day">Dia limite de pago</Label>
+              <Input
+                id="payment-day"
+                type="number"
+                min={1}
+                max={31}
+                placeholder="5"
+                value={paymentDay}
+                onChange={(event) => setPaymentDay(event.target.value)}
+              />
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="limit">Limite de credito</Label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                   $
                 </span>
-                <Input id="limit" type="number" placeholder="0.00" className="pl-7" />
+                <Input
+                  id="limit"
+                  type="number"
+                  placeholder="0.00"
+                  className="pl-7"
+                  value={limit}
+                  onChange={(event) => setLimit(event.target.value)}
+                />
               </div>
             </div>
-          ) : null}
+          </div>
 
           <div className="flex flex-col gap-2">
             <Label>Color del plastico</Label>
@@ -726,8 +703,13 @@ function AddCardDialog({
         </div>
 
         <DialogFooter showCloseButton>
-          <Button type="submit" className="w-full sm:w-auto">
-            Agregar tarjeta
+          <Button
+            type="submit"
+            className="w-full sm:w-auto"
+            disabled={isSaving}
+            onClick={handleSubmit}
+          >
+            {isSaving ? "Guardando..." : "Agregar tarjeta"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -758,6 +740,10 @@ export function FinancialControlView() {
     queryKey: queryKeys.summary,
     queryFn: () => getFinancialSummary(monthRange.startDate, monthRange.endDate),
   })
+  const { data: creditCards = [] } = useQuery({
+    queryKey: queryKeys.creditCards,
+    queryFn: getCreditCards,
+  })
   const createTransactionMutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: async () => {
@@ -767,6 +753,13 @@ export function FinancialControlView() {
       ])
       setDialogOpen(false)
       setPaymentDialogOpen(false)
+    },
+  })
+  const createCreditCardMutation = useMutation({
+    mutationFn: createCreditCard,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      setAddCardDialogOpen(false)
     },
   })
 
@@ -925,52 +918,62 @@ export function FinancialControlView() {
                   className="mt-0 pt-4 data-[state=inactive]:hidden"
                 >
                   <div className="grid grid-cols-1 gap-6 pt-4 md:grid-cols-2">
-                    {CREDIT_CARDS.map((card) => (
-                      <div
-                        key={card.id}
-                        className={cn(
-                          "flex aspect-[1.586/1] w-full flex-col justify-between rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
-                          card.gradient,
-                          card.border,
-                        )}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex flex-col gap-0.5">
-                            <CreditCard className="size-8 opacity-90" />
-                            <span className="mt-2 text-xs font-medium opacity-70">
-                              {card.bank}
-                            </span>
-                          </div>
-                          <span className="text-xs font-bold uppercase tracking-widest opacity-60">
-                            VISA
-                          </span>
-                        </div>
+                    {creditCards.map((card) => {
+                      const visual = cardVisualForColor(card.color)
 
-                        <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
-                          .... .... .... {card.lastFour}
-                        </div>
+                      return (
+                        <div
+                          key={card.id}
+                          className={cn(
+                            "flex aspect-[1.586/1] w-full flex-col justify-between rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
+                            visual.gradient,
+                            visual.border,
+                          )}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex flex-col gap-0.5">
+                              <CreditCard className="size-8 opacity-90" />
+                              <span className="mt-2 text-xs font-medium opacity-70">
+                                {card.bank}
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest opacity-60">
+                              VISA
+                            </span>
+                          </div>
 
-                        <div className="flex items-end justify-between">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider opacity-50">
-                              Fecha de corte
-                            </span>
-                            <span className="flex items-center gap-1 text-sm font-semibold">
-                              <Calendar className="size-3.5 opacity-70" />
-                              {card.cutDate}
-                            </span>
+                          <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
+                            .... .... .... {card.last4}
                           </div>
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider opacity-50">
-                              Limite
-                            </span>
-                            <span className="text-sm font-bold">
-                              {fmt(card.limit)}
-                            </span>
+
+                          <div className="flex items-end justify-between">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                Fecha de corte
+                              </span>
+                              <span className="flex items-center gap-1 text-sm font-semibold">
+                                <Calendar className="size-3.5 opacity-70" />
+                                {cardCutoffLabel(card.cutoffDay)}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                Pago dia {card.paymentDay}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                Deuda actual
+                              </span>
+                              <span className="text-sm font-bold">
+                                {fmt(centsToAmount(card.currentDebtCents))}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                Limite {fmt(centsToAmount(card.limitCents))}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
 
                     <button
                       type="button"
@@ -1129,6 +1132,8 @@ export function FinancialControlView() {
       <AddCardDialog
         open={addCardDialogOpen}
         onClose={() => setAddCardDialogOpen(false)}
+        onSubmit={(data) => createCreditCardMutation.mutate(data)}
+        isSaving={createCreditCardMutation.isPending}
       />
 
       <div className="h-24" />
