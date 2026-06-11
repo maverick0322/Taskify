@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -22,45 +22,27 @@ import { MobileTaskList } from "@/components/taskify/mobile-task-list";
 import type { CurrentView } from "@/components/taskify/navigation";
 import { Sidebar } from "@/components/taskify/sidebar";
 import { FinancialControlView } from "@/components/financial-control-view";
+import { parseTaskDueDate } from "@/lib/task-dates";
 import { getBoards } from "@/services/boardService";
+import {
+  getFinancialSummary,
+  getTransactions,
+  type FinancialTransaction,
+} from "@/services/financial_api";
 import { getTasks, type Task } from "@/services/taskService";
 import { useAuthStore } from "@/store/useAuthStore";
 import { AllTasksView } from "@/components/AllTasksView";
 
-const FINANCIAL = {
-  income: 124_500,
-  expenses: 87_320,
-  get margin() {
-    return this.income - this.expenses;
-  },
-  get marginPct() {
-    return ((this.margin / this.income) * 100).toFixed(1);
-  },
+type DashboardAlert = {
+  id: string;
+  dueDate: Date;
+  icon: typeof AlertCircle;
+  badge: string;
+  badgeVariant: "destructive" | "secondary";
+  className: string;
+  title: string;
+  detail: string;
 };
-
-const ALERTS = [
-  {
-    id: 1,
-    type: "task",
-    icon: AlertCircle,
-    badge: "Urgente",
-    badgeVariant: "destructive" as const,
-    className:
-      "border-0 bg-[oklab(0.57701_0.217634_0.112472_/_0.1)] text-red-700 hover:bg-[oklab(0.57701_0.217634_0.112472_/_0.16)] dark:text-red-400",
-    title: "Tarea por vencer: Informe Q2",
-    detail: "Vence hoy a las 18:00 h",
-  },
-  {
-    id: 2,
-    type: "payment",
-    icon: Clock,
-    badge: "Próximo",
-    badgeVariant: "secondary" as const,
-    className: "",
-    title: "Pago a proveedor: Acme Corp.",
-    detail: "Vence el 15 jun · $3,200",
-  },
-];
 
 function formatCurrency(value: number) {
   return value.toLocaleString("es-MX", {
@@ -79,25 +61,8 @@ function getTodayLabel() {
   });
 }
 
-function parseTaskDate(dueDate: string) {
-  if (!dueDate.trim()) {
-    return null;
-  }
-
-  const dateOnlyMatch = dueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const date = dateOnlyMatch
-    ? new Date(
-        Number(dateOnlyMatch[1]),
-        Number(dateOnlyMatch[2]) - 1,
-        Number(dateOnlyMatch[3]),
-      )
-    : new Date(dueDate);
-
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function isTaskDueToday(task: Task) {
-  const dueDate = parseTaskDate(task.dueDate);
+  const dueDate = parseTaskDueDate(task.dueDate);
   if (!dueDate) {
     return false;
   }
@@ -110,10 +75,112 @@ function isTaskDueToday(task: Task) {
   );
 }
 
+function getCurrentMonthRange() {
+  const currentDate = new Date();
+  const startDate = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1,
+  );
+  const endDate = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + 1,
+    0,
+  );
+
+  return {
+    startDate: formatDateForAPI(startDate),
+    endDate: formatDateForAPI(endDate),
+    label: new Intl.DateTimeFormat("es-MX", {
+      month: "long",
+      year: "numeric",
+    }).format(startDate),
+  };
+}
+
+function formatDateForAPI(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function centsToCurrency(cents: number) {
+  return cents / 100;
+}
+
+function financialPercentage(numerator: number, denominator: number) {
+  if (denominator <= 0) {
+    return "0.0";
+  }
+
+  return ((numerator / denominator) * 100).toFixed(1);
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isTaskOverdueOrDueToday(task: Task) {
+  if (task.status === "done") {
+    return false;
+  }
+
+  const dueDate = parseTaskDueDate(task.dueDate);
+  if (!dueDate) {
+    return false;
+  }
+
+  return startOfLocalDay(dueDate).getTime() <= startOfLocalDay(new Date()).getTime();
+}
+
+function taskAlertDetail(dueDate: Date) {
+  const today = startOfLocalDay(new Date()).getTime();
+  const taskDay = startOfLocalDay(dueDate).getTime();
+  const timeLabel = new Intl.DateTimeFormat("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(dueDate);
+
+  if (taskDay === today) {
+    return `Vence hoy a las ${timeLabel}`;
+  }
+
+  return `Venció el ${formatAlertDate(dueDate)} · ${timeLabel}`;
+}
+
+function paymentAlertDetail(transaction: FinancialTransaction, dueDate: Date) {
+  return `Vence el ${formatAlertDate(dueDate)} · ${formatCurrency(
+    centsToCurrency(transaction.amountCents),
+  )}`;
+}
+
+function parseFinancialDate(date: string) {
+  const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsedDate = dateOnlyMatch
+    ? new Date(
+        Number(dateOnlyMatch[1]),
+        Number(dateOnlyMatch[2]) - 1,
+        Number(dateOnlyMatch[3]),
+      )
+    : new Date(date);
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function formatAlertDate(date: Date) {
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+  }).format(date);
+}
+
 export function TaskifyDashboard() {
   const user = useAuthStore((state) => state.user);
   const [currentView, setCurrentView] = useState<CurrentView>("tasks");
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  const currentMonthRange = useMemo(() => getCurrentMonthRange(), []);
   const {
     data: boards = [],
     isLoading: boardsLoading,
@@ -139,6 +206,34 @@ export function TaskifyDashboard() {
     queryFn: () => getTasks(),
     enabled: currentView === "dashboard",
   });
+  const { data: financialSummary } = useQuery({
+    queryKey: [
+      "financial",
+      "summary",
+      currentMonthRange.startDate,
+      currentMonthRange.endDate,
+    ],
+    queryFn: () =>
+      getFinancialSummary(
+        currentMonthRange.startDate,
+        currentMonthRange.endDate,
+      ),
+    enabled: currentView === "dashboard",
+  });
+  const { data: financialTransactions = [] } = useQuery({
+    queryKey: [
+      "financial",
+      "transactions",
+      currentMonthRange.startDate,
+      currentMonthRange.endDate,
+    ],
+    queryFn: () =>
+      getTransactions({
+        startDate: currentMonthRange.startDate,
+        endDate: currentMonthRange.endDate,
+      }),
+    enabled: currentView === "dashboard",
+  });
 
   const taskErrorMessage =
     error instanceof Error ? error.message : "No se pudo cargar el tablero";
@@ -157,6 +252,64 @@ export function TaskifyDashboard() {
     globalTasks.length === 0
       ? 0
       : Math.round((completedTaskCount / globalTasks.length) * 100);
+  const totalIncome = centsToCurrency(financialSummary?.totalIncomeCents ?? 0);
+  const totalExpenses = centsToCurrency(
+    financialSummary?.totalExpenseCents ?? 0,
+  );
+  const profitMargin = centsToCurrency(
+    financialSummary?.profitMarginCents ?? 0,
+  );
+  const expensesPercentage = financialPercentage(totalExpenses, totalIncome);
+  const marginPercentage = financialPercentage(profitMargin, totalIncome);
+  const alerts = useMemo(() => {
+    const taskAlerts: DashboardAlert[] = globalTasks
+      .filter(isTaskOverdueOrDueToday)
+      .flatMap((task) => {
+        const dueDate = parseTaskDueDate(task.dueDate);
+        if (!dueDate) {
+          return [];
+        }
+
+        return {
+          id: `task-${task.id}`,
+          dueDate,
+          icon: AlertCircle,
+          badge: "Urgente",
+          badgeVariant: "destructive" as const,
+          className:
+            "border-0 bg-[oklab(0.57701_0.217634_0.112472_/_0.1)] text-red-700 hover:bg-[oklab(0.57701_0.217634_0.112472_/_0.16)] dark:text-red-400",
+          title: `Tarea por vencer: ${task.title}`,
+          detail: taskAlertDetail(dueDate),
+        };
+      });
+    const paymentAlerts: DashboardAlert[] = financialTransactions
+      .filter(
+        (transaction) =>
+          transaction.type === "EXPENSE" && transaction.status === "PENDING",
+      )
+      .flatMap((transaction) => {
+        const dueDate = parseFinancialDate(transaction.date);
+        if (!dueDate) {
+          return [];
+        }
+
+        return {
+          id: `payment-${transaction.id}`,
+          dueDate,
+          icon: Clock,
+          badge: "Próximo",
+          badgeVariant: "secondary" as const,
+          className: "",
+          title: `Pago pendiente: ${transaction.concept}`,
+          detail: paymentAlertDetail(transaction, dueDate),
+        };
+      });
+
+    return [...taskAlerts, ...paymentAlerts].sort(
+      (firstAlert, secondAlert) =>
+        firstAlert.dueDate.getTime() - secondAlert.dueDate.getTime(),
+    );
+  }, [financialTransactions, globalTasks]);
   const metrics = [
     {
       title: "Tareas para hoy",
@@ -314,7 +467,7 @@ export function TaskifyDashboard() {
                       Resumen Financiero Flash
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      Período: junio 2025
+                      Período: {currentMonthRange.label}
                     </p>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-5 p-6 pt-0">
@@ -324,10 +477,10 @@ export function TaskifyDashboard() {
                           Ingreso total
                         </span>
                         <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(FINANCIAL.income)}
+                          {formatCurrency(totalIncome)}
                         </span>
                       </div>
-                      <Badge variant="secondary">+12% vs mes anterior</Badge>
+                      <Badge variant="secondary">{marginPercentage}% margen</Badge>
                     </div>
 
                     <div className="my-4 h-px w-full bg-border" />
@@ -338,10 +491,10 @@ export function TaskifyDashboard() {
                           Gasto acumulado
                         </span>
                         <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(FINANCIAL.expenses)}
+                          {formatCurrency(totalExpenses)}
                         </span>
                       </div>
-                      <Badge variant="outline">70.1% del ingreso</Badge>
+                      <Badge variant="outline">{expensesPercentage}% del ingreso</Badge>
                     </div>
 
                     <div className="my-4 h-px w-full bg-border" />
@@ -352,10 +505,10 @@ export function TaskifyDashboard() {
                           Margen de utilidad
                         </span>
                         <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(FINANCIAL.margin)}
+                          {formatCurrency(profitMargin)}
                         </span>
                       </div>
-                      <Badge>{FINANCIAL.marginPct}%</Badge>
+                      <Badge>{marginPercentage}%</Badge>
                     </div>
                   </CardContent>
                 </Card>
@@ -366,50 +519,56 @@ export function TaskifyDashboard() {
                       Alertas Críticas
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {ALERTS.length} alertas activas
+                      {alerts.length} alertas activas
                     </p>
                   </CardHeader>
                   <CardContent className="p-6 pt-0">
-                    <ul className="flex flex-col gap-4">
-                      {ALERTS.map(
-                        ({
-                          id,
-                          icon: Icon,
-                          badge,
-                          badgeVariant,
-                          className,
-                          title,
-                          detail,
-                        }) => (
-                          <li
-                            key={id}
-                            className="flex items-start gap-3 rounded-lg border border-border/40 bg-muted/30 p-4"
-                          >
-                            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant={badgeVariant}
-                                  className={
-                                    className
-                                      ? `${className} shrink-0`
-                                      : "shrink-0"
-                                  }
-                                >
-                                  {badge}
-                                </Badge>
+                    {alerts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Todo al día, no hay alertas urgentes
+                      </p>
+                    ) : (
+                      <ul className="flex flex-col gap-4">
+                        {alerts.map(
+                          ({
+                            id,
+                            icon: Icon,
+                            badge,
+                            badgeVariant,
+                            className,
+                            title,
+                            detail,
+                          }) => (
+                            <li
+                              key={id}
+                              className="flex items-start gap-3 rounded-lg border border-border/40 bg-muted/30 p-4"
+                            >
+                              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant={badgeVariant}
+                                    className={
+                                      className
+                                        ? `${className} shrink-0`
+                                        : "shrink-0"
+                                    }
+                                  >
+                                    {badge}
+                                  </Badge>
+                                </div>
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {title}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {detail}
+                                </p>
                               </div>
-                              <p className="truncate text-sm font-medium text-foreground">
-                                {title}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {detail}
-                              </p>
-                            </div>
-                          </li>
-                        ),
-                      )}
-                    </ul>
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    )}
                   </CardContent>
                 </Card>
               </div>

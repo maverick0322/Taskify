@@ -55,6 +55,7 @@ type Transaction struct {
 	date            time.Time
 	status          TransactionStatus
 	msi             *int
+	creditCardID    *string
 	createdAt       time.Time
 	updatedAt       time.Time
 }
@@ -69,8 +70,9 @@ func NewTransaction(
 	date time.Time,
 	status TransactionStatus,
 	msi *int,
+	creditCardID *string,
 ) (*Transaction, error) {
-	transactionFields, err := validateTransactionFields(id, userID, transactionType, concept, category, amountCents, date, status, msi)
+	transactionFields, err := validateTransactionFields(id, userID, transactionType, concept, category, amountCents, date, status, msi, creditCardID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +88,7 @@ func NewTransaction(
 		date:            date,
 		status:          status,
 		msi:             normalizeOptionalTransactionMSI(msi),
+		creditCardID:    transactionFields.creditCardID,
 		createdAt:       currentTime,
 		updatedAt:       currentTime,
 	}, nil
@@ -101,10 +104,11 @@ func RehydrateTransaction(
 	date time.Time,
 	status TransactionStatus,
 	msi *int,
+	creditCardID *string,
 	createdAt,
 	updatedAt time.Time,
 ) (*Transaction, error) {
-	transactionFields, err := validateTransactionFields(id, userID, transactionType, concept, category, amountCents, date, status, msi)
+	transactionFields, err := validateTransactionFields(id, userID, transactionType, concept, category, amountCents, date, status, msi, creditCardID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +129,7 @@ func RehydrateTransaction(
 		date:            date,
 		status:          status,
 		msi:             normalizeOptionalTransactionMSI(msi),
+		creditCardID:    transactionFields.creditCardID,
 		createdAt:       createdAt,
 		updatedAt:       updatedAt,
 	}, nil
@@ -138,8 +143,9 @@ func (transaction *Transaction) Update(
 	date time.Time,
 	status TransactionStatus,
 	msi *int,
+	creditCardID *string,
 ) error {
-	transactionFields, err := validateTransactionFields(transaction.id, transaction.userID, transactionType, concept, category, amountCents, date, status, msi)
+	transactionFields, err := validateTransactionFields(transaction.id, transaction.userID, transactionType, concept, category, amountCents, date, status, msi, creditCardID)
 	if err != nil {
 		return err
 	}
@@ -151,6 +157,7 @@ func (transaction *Transaction) Update(
 	transaction.date = date
 	transaction.status = status
 	transaction.msi = normalizeOptionalTransactionMSI(msi)
+	transaction.creditCardID = transactionFields.creditCardID
 	transaction.touch()
 	return nil
 }
@@ -191,6 +198,10 @@ func (transaction *Transaction) MSI() *int {
 	return normalizeOptionalTransactionMSI(transaction.msi)
 }
 
+func (transaction *Transaction) CreditCardID() *string {
+	return normalizeOptionalTransactionCreditCardID(transaction.creditCardID)
+}
+
 func (transaction *Transaction) CreatedAt() time.Time {
 	return transaction.createdAt
 }
@@ -213,6 +224,7 @@ func validateTransactionFields(
 	date time.Time,
 	status TransactionStatus,
 	msi *int,
+	creditCardID *string,
 ) (validatedTransactionFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
@@ -255,18 +267,20 @@ func validateTransactionFields(
 	}
 
 	return validatedTransactionFields{
-		id:       trimmedID,
-		userID:   trimmedUserID,
-		concept:  trimmedConcept,
-		category: trimmedCategory,
+		id:           trimmedID,
+		userID:       trimmedUserID,
+		concept:      trimmedConcept,
+		category:     trimmedCategory,
+		creditCardID: normalizeOptionalTransactionCreditCardID(creditCardID),
 	}, nil
 }
 
 type validatedTransactionFields struct {
-	id       string
-	userID   string
-	concept  string
-	category string
+	id           string
+	userID       string
+	concept      string
+	category     string
+	creditCardID *string
 }
 
 func normalizeOptionalTransactionMSI(msi *int) *int {
@@ -276,4 +290,17 @@ func normalizeOptionalTransactionMSI(msi *int) *int {
 
 	normalizedMSI := *msi
 	return &normalizedMSI
+}
+
+func normalizeOptionalTransactionCreditCardID(creditCardID *string) *string {
+	if creditCardID == nil {
+		return nil
+	}
+
+	trimmedCreditCardID := strings.TrimSpace(*creditCardID)
+	if trimmedCreditCardID == "" {
+		return nil
+	}
+
+	return &trimmedCreditCardID
 }
