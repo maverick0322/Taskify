@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -23,6 +23,7 @@ import { MobileTaskList } from "@/components/taskify/mobile-task-list";
 import type { CurrentView } from "@/components/taskify/navigation";
 import { Sidebar } from "@/components/taskify/sidebar";
 import { FinancialControlView } from "@/components/financial-control-view";
+import { notifyCriticalAlerts } from "@/lib/notifications";
 import { parseTaskDueDate } from "@/lib/task-dates";
 import { getBoards } from "@/services/boardService";
 import {
@@ -44,6 +45,9 @@ type DashboardAlert = {
   title: string;
   detail: string;
 };
+
+const CRITICAL_ALERTS_NOTIFICATION_SESSION_KEY =
+  "taskify-critical-alerts-notified";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("es-MX", {
@@ -181,6 +185,7 @@ export function TaskifyDashboard() {
   const user = useAuthStore((state) => state.user);
   const [currentView, setCurrentView] = useState<CurrentView>("tasks");
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  const criticalAlertsNotificationAttemptedRef = useRef(false);
   const currentMonthRange = useMemo(() => getCurrentMonthRange(), []);
   const {
     data: boards = [],
@@ -202,6 +207,7 @@ export function TaskifyDashboard() {
     data: globalTasks = [],
     isLoading: globalTasksLoading,
     isError: globalTasksIsError,
+    isSuccess: globalTasksIsSuccess,
   } = useQuery({
     queryKey: ["tasks", "global"],
     queryFn: () => getTasks(),
@@ -227,6 +233,7 @@ export function TaskifyDashboard() {
   const {
     data: financialTransactions = [],
     isLoading: financialTransactionsLoading,
+    isSuccess: financialTransactionsIsSuccess,
   } = useQuery({
     queryKey: [
       "financial",
@@ -364,6 +371,42 @@ export function TaskifyDashboard() {
       setSelectedBoardId(null);
     }
   }, [boards, selectedBoardId]);
+
+  useEffect(() => {
+    const alertsReady =
+      currentView === "dashboard" &&
+      globalTasksIsSuccess &&
+      financialTransactionsIsSuccess &&
+      !globalTasksLoading &&
+      !financialTransactionsLoading;
+
+    if (!alertsReady || alerts.length === 0) {
+      return;
+    }
+
+    if (criticalAlertsNotificationAttemptedRef.current) {
+      return;
+    }
+    criticalAlertsNotificationAttemptedRef.current = true;
+
+    try {
+      if (sessionStorage.getItem(CRITICAL_ALERTS_NOTIFICATION_SESSION_KEY)) {
+        return;
+      }
+
+      sessionStorage.setItem(CRITICAL_ALERTS_NOTIFICATION_SESSION_KEY, "true");
+      void notifyCriticalAlerts(alerts.length);
+    } catch {
+      void notifyCriticalAlerts(alerts.length);
+    }
+  }, [
+    alerts.length,
+    currentView,
+    financialTransactionsIsSuccess,
+    financialTransactionsLoading,
+    globalTasksIsSuccess,
+    globalTasksLoading,
+  ]);
 
   function handleViewChange(view: CurrentView) {
     if (view === "tasks" || view === "agenda" || view === "financial") {
