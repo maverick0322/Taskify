@@ -93,12 +93,15 @@ func run() error {
 	taskRepository := repositories.NewPostgresTaskRepository(postgresPool, applicationLogger)
 	boardRepository := repositories.NewPostgresBoardRepository(postgresPool, applicationLogger)
 	columnRepository := repositories.NewPostgresColumnRepository(postgresPool, applicationLogger)
+	transactionRepository := repositories.NewPostgresTransactionRepository(postgresPool, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
+	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
 	boardHandler := handlers.NewBoardHandler(boardUseCase, applicationLogger)
+	transactionHandler := handlers.NewTransactionHandler(transactionUseCase, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
@@ -109,6 +112,7 @@ func run() error {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
 		taskHandler.RegisterRoutes(protectedRouter)
 		boardHandler.RegisterRoutes(protectedRouter)
+		transactionHandler.RegisterRoutes(protectedRouter)
 	})
 
 	server := &http.Server{
