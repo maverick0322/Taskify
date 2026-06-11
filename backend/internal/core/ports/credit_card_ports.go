@@ -15,6 +15,18 @@ type CreditCardRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
+type CreditCardWithSummary struct {
+	CreditCard       *domain.CreditCard
+	CurrentDebtCents int64
+}
+
+type CreditCardUseCase interface {
+	CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*domain.CreditCard, error)
+	GetCardsWithSummary(ctx context.Context, userID string) ([]CreditCardWithSummary, error)
+	UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) error
+	DeleteCreditCard(ctx context.Context, userID, creditCardID string) error
+}
+
 var (
 	ErrCreditCardNotFound              = errors.New("repository: credit card not found")
 	ErrCreditCardAlreadyExists         = errors.New("repository: credit card already exists")
