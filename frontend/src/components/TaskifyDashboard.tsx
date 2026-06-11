@@ -5,7 +5,6 @@ import {
   CheckCircle,
   Clock,
   Layout,
-  PieChart,
   TrendingUp,
 } from "lucide-react";
 
@@ -17,15 +16,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { EmptyState } from "@/components/taskify/empty-state";
 import { Header } from "@/components/taskify/header";
 import { KanbanBoard } from "@/components/taskify/kanban-board";
 import { MobileTaskList } from "@/components/taskify/mobile-task-list";
 import type { CurrentView } from "@/components/taskify/navigation";
 import { Sidebar } from "@/components/taskify/sidebar";
+import { FinancialControlView } from "@/components/financial-control-view";
 import { getBoards } from "@/services/boardService";
 import { getTasks, type Task } from "@/services/taskService";
 import { useAuthStore } from "@/store/useAuthStore";
+import { AllTasksView } from "@/components/AllTasksView";
 
 const FINANCIAL = {
   income: 124_500,
@@ -245,17 +245,13 @@ export function TaskifyDashboard() {
               {selectedBoardId ? (
                 <MobileTaskList />
               ) : (
-                <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-muted-foreground">
-                  Selecciona un tablero del menú lateral para ver sus tareas
-                </div>
+                <AllTasksView />
               )}
             </div>
 
             <div className="hidden flex-1 overflow-hidden md:flex">
               {!selectedBoardId ? (
-                <div className="flex flex-1 items-center justify-center bg-canvas px-6 text-center text-sm font-medium text-muted-foreground">
-                  Selecciona un tablero del menú lateral para ver sus tareas
-                </div>
+                <AllTasksView />
               ) : isLoading ? (
                 <div className="flex flex-1 items-center justify-center bg-canvas text-sm font-medium text-muted-foreground">
                   Cargando tablero...
@@ -422,7 +418,7 @@ export function TaskifyDashboard() {
         ) : null}
 
         {currentView === "financial" ? (
-          <EmptyState icon={PieChart} title="Control financiero" />
+          <FinancialControlView />
         ) : null}
       </div>
     </div>
