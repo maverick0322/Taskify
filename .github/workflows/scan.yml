@@ -36,4 +36,5 @@ jobs:
           args: >
             -Dsonar.organization=maverick0322
             -Dsonar.projectKey=maverick0322_Taskify
+            -Dsonar.coverage.exclusions=frontend/**
             -Dsonar.go.coverage.reportPaths=coverage.out
