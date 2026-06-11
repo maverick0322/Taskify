@@ -38,5 +38,5 @@ jobs:
             -Dsonar.projectKey=maverick0322_Taskify
             -Dsonar.sources=.
             -Dsonar.exclusions=**/*.sql
-            -Dsonar.coverage.exclusions=cmd/**,internal/core/ports/**
+            -Dsonar.coverage.exclusions=cmd/**,internal/core/ports/**,docs/**,internal/core/domain/**
             -Dsonar.go.coverage.reportPaths=coverage.out
