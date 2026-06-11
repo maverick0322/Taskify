@@ -8,6 +8,7 @@ import { useState } from "react"
 import { KanbanColumn } from "@/components/taskify/kanban-column"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import { formatTaskDueDateLabel } from "@/lib/task-dates"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -180,7 +181,7 @@ function taskResponseToKanbanTask(task: Task): KanbanTask {
     title: task.title,
     description: task.description || undefined,
     priority: priorityToKanbanPriority(task.priority),
-    dueDate: task.dueDate || "Sin fecha",
+    dueDate: formatTaskDueDateLabel(task.dueDate),
     tag: task.tag,
     assignees: task.assignees ?? [],
     comments: task.comments ?? 0,

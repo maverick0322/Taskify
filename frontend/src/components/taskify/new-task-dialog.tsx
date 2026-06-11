@@ -30,6 +30,11 @@ import { Label } from "@/components/ui/label"
 import { CalendarIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import {
+  parseTaskDueDate,
+  taskDueDateInputTime,
+  taskDueDateToISOString,
+} from "@/lib/task-dates"
 import type { Board } from "@/services/boardService"
 import {
   createTask,
@@ -139,8 +144,11 @@ export function NewTaskDialog({
     setTitle(taskToEdit.title)
     setDescription(taskToEdit.description)
     setPriority(priorityLabelMap[taskToEdit.priority])
-    setDueDate(taskToEdit.dueDate ? parseAPIDate(taskToEdit.dueDate) : undefined)
-    setTime("")
+    const parsedDueDate = taskToEdit.dueDate
+      ? parseTaskDueDate(taskToEdit.dueDate)
+      : null
+    setDueDate(parsedDueDate ?? undefined)
+    setTime(parsedDueDate ? taskDueDateInputTime(parsedDueDate) : "")
     setSelectedTaskBoardId(taskToEdit.boardId ?? GLOBAL_BOARD_VALUE)
     setCalOpen(false)
     setErrorMessage("")
@@ -170,7 +178,7 @@ export function NewTaskDialog({
       title,
       description,
       priority: mappedPriority,
-      dueDate: dueDate ? formatDateForAPI(dueDate) : "",
+      dueDate: dueDate ? taskDueDateToISOString(dueDate, time) : "",
       ...(activeBoardId ? { boardId: activeBoardId } : {}),
     })
   }
@@ -300,7 +308,7 @@ export function NewTaskDialog({
                     mode="single"
                     selected={dueDate}
                     onSelect={(date) => {
-                      setDueDate(date)
+                      setDueDate(date ?? undefined)
                       setCalOpen(false)
                     }}
                   />
@@ -340,25 +348,4 @@ export function NewTaskDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-function formatDateForAPI(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-
-  return `${year}-${month}-${day}`
-}
-
-function parseAPIDate(rawDate: string): Date | undefined {
-  if (!rawDate) {
-    return undefined
-  }
-
-  const [year, month, day] = rawDate.split("-").map(Number)
-  if (!year || !month || !day) {
-    return undefined
-  }
-
-  return new Date(year, month - 1, day)
 }

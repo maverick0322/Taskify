@@ -20,6 +20,7 @@ type mockTaskUseCase struct {
 	tasksToReturn    []*domain.Task
 	errToReturn      error
 	requestedBoardID string
+	requestedDueDate time.Time
 	userTasksCalled  bool
 	boardTasksCalled bool
 }
@@ -28,6 +29,7 @@ func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID string, b
 	if boardID != nil {
 		useCase.requestedBoardID = *boardID
 	}
+	useCase.requestedDueDate = dueDate
 	return useCase.taskToReturn, useCase.errToReturn
 }
 
@@ -47,6 +49,7 @@ func (useCase *mockTaskUseCase) GetBoardTasks(ctx context.Context, userID, board
 }
 
 func (useCase *mockTaskUseCase) UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error {
+	useCase.requestedDueDate = dueDate
 	return useCase.errToReturn
 }
 
@@ -68,7 +71,8 @@ func (useCase *mockTaskUseCase) DeleteTask(ctx context.Context, userID, taskID s
 
 func TestTaskHandler_CreateTaskValidRequest_ReturnsCreated(t *testing.T) {
 	// Arrange
-	router := createTaskTestRouter(&mockTaskUseCase{taskToReturn: createHandlerTask(t)})
+	useCase := &mockTaskUseCase{taskToReturn: createHandlerTask(t)}
+	router := createTaskTestRouter(useCase)
 	request := authenticatedTaskRequest(http.MethodPost, "/tasks", validCreateTaskJSON())
 	response := httptest.NewRecorder()
 
@@ -82,12 +86,18 @@ func TestTaskHandler_CreateTaskValidRequest_ReturnsCreated(t *testing.T) {
 	if !strings.Contains(response.Body.String(), `"id":"task-123"`) {
 		t.Errorf("expected response to contain task ID")
 	}
+	if !strings.Contains(response.Body.String(), `"dueDate":"2026-06-12T16:00:00Z"`) {
+		t.Errorf("expected response to contain RFC3339 due date, got %s", response.Body.String())
+	}
+	if !useCase.requestedDueDate.Equal(validHandlerTaskDueDate()) {
+		t.Errorf("expected requested due date %v, got %v", validHandlerTaskDueDate(), useCase.requestedDueDate)
+	}
 }
 
 func TestTaskHandler_CreateTaskWithoutBoardID_ReturnsCreated(t *testing.T) {
 	// Arrange
 	router := createTaskTestRouter(&mockTaskUseCase{taskToReturn: createGlobalHandlerTask(t)})
-	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`)
+	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01T15:30:00Z"}`)
 	response := httptest.NewRecorder()
 
 	// Act
@@ -105,7 +115,7 @@ func TestTaskHandler_CreateTaskWithoutBoardID_ReturnsCreated(t *testing.T) {
 func TestTaskHandler_CreateTaskWithNullBoardID_ReturnsCreated(t *testing.T) {
 	// Arrange
 	router := createTaskTestRouter(&mockTaskUseCase{taskToReturn: createGlobalHandlerTask(t)})
-	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"boardId":null,"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`)
+	request := authenticatedTaskRequest(http.MethodPost, "/tasks", `{"boardId":null,"title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01T15:30:00Z"}`)
 	response := httptest.NewRecorder()
 
 	// Act
@@ -260,8 +270,9 @@ func TestTaskHandler_GetTaskNotFound_ReturnsNotFound(t *testing.T) {
 
 func TestTaskHandler_UpdateTaskValidRequest_ReturnsNoContent(t *testing.T) {
 	// Arrange
-	router := createTaskTestRouter(&mockTaskUseCase{})
-	request := authenticatedTaskRequest(http.MethodPatch, "/tasks/task-123", `{"title":"Review code","description":"Check handler","priority":"high","dueDate":"2027-01-01"}`)
+	useCase := &mockTaskUseCase{}
+	router := createTaskTestRouter(useCase)
+	request := authenticatedTaskRequest(http.MethodPatch, "/tasks/task-123", `{"title":"Review code","description":"Check handler","priority":"high","dueDate":"2026-06-12T16:00:00Z"}`)
 	response := httptest.NewRecorder()
 
 	// Act
@@ -270,6 +281,9 @@ func TestTaskHandler_UpdateTaskValidRequest_ReturnsNoContent(t *testing.T) {
 	// Assert
 	if response.Code != http.StatusNoContent {
 		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if !useCase.requestedDueDate.Equal(validHandlerTaskDueDate()) {
+		t.Errorf("expected requested due date %v, got %v", validHandlerTaskDueDate(), useCase.requestedDueDate)
 	}
 }
 
@@ -538,7 +552,7 @@ func createHandlerTask(t *testing.T) *domain.Task {
 		domain.TaskPriorityMedium,
 		time.Now().Add(-2*time.Hour),
 		time.Now().Add(-time.Hour),
-		time.Now().Add(24*time.Hour),
+		validHandlerTaskDueDate(),
 	)
 	if err != nil {
 		t.Fatalf("expected task to be valid, got: %v", err)
@@ -560,7 +574,7 @@ func createGlobalHandlerTask(t *testing.T) *domain.Task {
 		domain.TaskPriorityMedium,
 		time.Now().Add(-2*time.Hour),
 		time.Now().Add(-time.Hour),
-		time.Now().Add(24*time.Hour),
+		validHandlerTaskDueDate(),
 	)
 	if err != nil {
 		t.Fatalf("expected task to be valid, got: %v", err)
@@ -574,5 +588,9 @@ func handlerBoardIDPtr(boardID string) *string {
 }
 
 func validCreateTaskJSON() string {
-	return `{"boardId":"board-123","title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2027-01-01"}`
+	return `{"boardId":"board-123","title":"Write tests","description":"Cover handler","priority":"medium","dueDate":"2026-06-12T16:00:00Z"}`
+}
+
+func validHandlerTaskDueDate() time.Time {
+	return time.Date(2026, time.June, 12, 16, 0, 0, 0, time.UTC)
 }

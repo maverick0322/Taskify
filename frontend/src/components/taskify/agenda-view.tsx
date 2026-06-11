@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
+import { formatTaskDueDateTime, parseTaskDueDate } from "@/lib/task-dates"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
@@ -131,38 +132,10 @@ function getTasksByDay(
   return map
 }
 
-function parseDueDate(dueDate: string): Date | null {
-  if (!dueDate.trim()) {
-    return null
-  }
-
-  const dateOnlyMatch = dueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const date = dateOnlyMatch
-    ? new Date(
-        Number(dateOnlyMatch[1]),
-        Number(dateOnlyMatch[2]) - 1,
-        Number(dateOnlyMatch[3]),
-      )
-    : new Date(dueDate)
-
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-function formatTaskTime(dueDate: string, date: Date): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-    return "Todo el día"
-  }
-
-  return new Intl.DateTimeFormat("es", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
-}
-
 function toAgendaTasks(tasks: Task[]): AgendaTask[] {
   return tasks
     .flatMap((task) => {
-      const dueDate = parseDueDate(task.dueDate)
+      const dueDate = parseTaskDueDate(task.dueDate)
 
       if (!dueDate) {
         return []
@@ -177,20 +150,12 @@ function toAgendaTasks(tasks: Task[]): AgendaTask[] {
         year: dueDate.getFullYear(),
         month: dueDate.getMonth(),
         day: dueDate.getDate(),
-        time: formatTaskTime(task.dueDate, dueDate),
+        time: formatTaskDueDateTime(task.dueDate),
       }
     })
     .sort((firstTask, secondTask) => {
-      const firstDate = new Date(
-        firstTask.year,
-        firstTask.month,
-        firstTask.day,
-      ).getTime()
-      const secondDate = new Date(
-        secondTask.year,
-        secondTask.month,
-        secondTask.day,
-      ).getTime()
+      const firstDate = parseTaskDueDate(firstTask.task.dueDate)?.getTime() ?? 0
+      const secondDate = parseTaskDueDate(secondTask.task.dueDate)?.getTime() ?? 0
 
       return firstDate - secondDate
     })

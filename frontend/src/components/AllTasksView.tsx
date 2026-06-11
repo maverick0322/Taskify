@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { formatTaskDueDateLabel } from "@/lib/task-dates"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
@@ -290,30 +291,6 @@ function BoardGroupedList({
   )
 }
 
-function formatDueDate(dueDate: string) {
-  if (!dueDate.trim()) {
-    return "Sin fecha"
-  }
-
-  const dateOnlyMatch = dueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const date = dateOnlyMatch
-    ? new Date(
-        Number(dateOnlyMatch[1]),
-        Number(dateOnlyMatch[2]) - 1,
-        Number(dateOnlyMatch[3]),
-      )
-    : new Date(dueDate)
-
-  if (Number.isNaN(date.getTime())) {
-    return dueDate
-  }
-
-  return date.toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "short",
-  })
-}
-
 export function AllTasksView() {
   const queryClient = useQueryClient()
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
@@ -341,7 +318,7 @@ export function AllTasksView() {
       tasks.map((task) => ({
         task,
         boardName: task.boardId ? boardNamesByID.get(task.boardId) ?? "Sin tablero" : null,
-        dueDateLabel: formatDueDate(task.dueDate),
+        dueDateLabel: formatTaskDueDateLabel(task.dueDate),
         priority: priorityLabel[task.priority],
       })),
     [boardNamesByID, tasks],

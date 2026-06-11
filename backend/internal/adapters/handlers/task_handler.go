@@ -12,10 +12,6 @@ import (
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
 )
 
-const (
-	taskDueDateLayout = "2006-01-02"
-)
-
 type TaskHandler struct {
 	taskUseCase ports.TaskUseCase
 	logger      ports.Logger
@@ -371,7 +367,12 @@ func parseTaskDueDate(rawDueDate string) (time.Time, error) {
 		return time.Time{}, nil
 	}
 
-	return time.Parse(taskDueDateLayout, rawDueDate)
+	dueDate, err := time.Parse(time.RFC3339Nano, rawDueDate)
+	if err == nil {
+		return dueDate, nil
+	}
+
+	return time.Parse("2006-01-02", rawDueDate)
 }
 
 func taskResponseFromDomain(task *domain.Task) taskResponse {
@@ -402,7 +403,7 @@ func formatTaskDueDate(dueDate time.Time) string {
 		return ""
 	}
 
-	return dueDate.Format(taskDueDateLayout)
+	return dueDate.Format(time.RFC3339)
 }
 
 type createTaskRequest struct {

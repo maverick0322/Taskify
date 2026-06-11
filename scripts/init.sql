@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_board_id ON tasks(user_id, board_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
+ALTER TABLE tasks ALTER COLUMN due_date TYPE TIMESTAMPTZ USING due_date::timestamptz;
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS transactions (
