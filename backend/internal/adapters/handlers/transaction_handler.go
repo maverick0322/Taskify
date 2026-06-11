@@ -64,6 +64,7 @@ func (handler *TransactionHandler) CreateTransaction(response http.ResponseWrite
 		transactionDate,
 		domain.TransactionStatus(createRequest.Status),
 		createRequest.MSI,
+		createRequest.CreditCardID,
 	)
 	if err != nil {
 		handler.handleTransactionError(response, err)
@@ -122,6 +123,7 @@ func (handler *TransactionHandler) UpdateTransaction(response http.ResponseWrite
 		transactionDate,
 		domain.TransactionStatus(updateRequest.Status),
 		updateRequest.MSI,
+		updateRequest.CreditCardID,
 	)
 	if err != nil {
 		handler.handleTransactionError(response, err)
@@ -284,16 +286,17 @@ func parseTransactionDate(rawDate string) (time.Time, error) {
 
 func transactionResponseFromDomain(transaction *domain.Transaction) transactionResponse {
 	return transactionResponse{
-		ID:          transaction.ID(),
-		Type:        string(transaction.Type()),
-		Concept:     transaction.Concept(),
-		Category:    transaction.Category(),
-		AmountCents: transaction.AmountCents(),
-		Date:        transaction.Date().Format(transactionDateLayout),
-		Status:      string(transaction.Status()),
-		MSI:         transaction.MSI(),
-		CreatedAt:   transaction.CreatedAt().Format(time.RFC3339),
-		UpdatedAt:   transaction.UpdatedAt().Format(time.RFC3339),
+		ID:           transaction.ID(),
+		Type:         string(transaction.Type()),
+		Concept:      transaction.Concept(),
+		Category:     transaction.Category(),
+		AmountCents:  transaction.AmountCents(),
+		Date:         transaction.Date().Format(transactionDateLayout),
+		Status:       string(transaction.Status()),
+		MSI:          transaction.MSI(),
+		CreditCardID: transaction.CreditCardID(),
+		CreatedAt:    transaction.CreatedAt().Format(time.RFC3339),
+		UpdatedAt:    transaction.UpdatedAt().Format(time.RFC3339),
 	}
 }
 
@@ -315,26 +318,28 @@ func financialSummaryResponseFromDomain(summary ports.FinancialSummary) financia
 }
 
 type transactionRequest struct {
-	Type        string `json:"type"`
-	Concept     string `json:"concept"`
-	Category    string `json:"category"`
-	AmountCents int64  `json:"amountCents"`
-	Date        string `json:"date"`
-	Status      string `json:"status"`
-	MSI         *int   `json:"msi"`
+	Type         string  `json:"type"`
+	Concept      string  `json:"concept"`
+	Category     string  `json:"category"`
+	AmountCents  int64   `json:"amountCents"`
+	Date         string  `json:"date"`
+	Status       string  `json:"status"`
+	MSI          *int    `json:"msi"`
+	CreditCardID *string `json:"creditCardId"`
 }
 
 type transactionResponse struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Concept     string `json:"concept"`
-	Category    string `json:"category"`
-	AmountCents int64  `json:"amountCents"`
-	Date        string `json:"date"`
-	Status      string `json:"status"`
-	MSI         *int   `json:"msi"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	ID           string  `json:"id"`
+	Type         string  `json:"type"`
+	Concept      string  `json:"concept"`
+	Category     string  `json:"category"`
+	AmountCents  int64   `json:"amountCents"`
+	Date         string  `json:"date"`
+	Status       string  `json:"status"`
+	MSI          *int    `json:"msi"`
+	CreditCardID *string `json:"creditCardId"`
+	CreatedAt    string  `json:"createdAt"`
+	UpdatedAt    string  `json:"updatedAt"`
 }
 
 type financialSummaryResponse struct {

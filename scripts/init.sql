@@ -58,9 +58,35 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
 ALTER TABLE tasks ALTER COLUMN due_date TYPE TIMESTAMPTZ USING due_date::timestamptz;
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS credit_cards (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    bank TEXT NOT NULL,
+    last4 TEXT NOT NULL,
+    cutoff_day INTEGER NOT NULL,
+    payment_day INTEGER NOT NULL,
+    limit_cents BIGINT NOT NULL,
+    color TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_credit_cards_name_not_empty CHECK (char_length(trim(name)) > 0),
+    CONSTRAINT chk_credit_cards_bank_not_empty CHECK (char_length(trim(bank)) > 0),
+    CONSTRAINT chk_credit_cards_last4 CHECK (last4 ~ '^[0-9]{4}$'),
+    CONSTRAINT chk_credit_cards_cutoff_day CHECK (cutoff_day BETWEEN 1 AND 31),
+    CONSTRAINT chk_credit_cards_payment_day CHECK (payment_day BETWEEN 1 AND 31),
+    CONSTRAINT chk_credit_cards_limit_positive CHECK (limit_cents > 0),
+    CONSTRAINT chk_credit_cards_color_not_empty CHECK (char_length(trim(color)) > 0),
+    CONSTRAINT chk_credit_cards_created_at_not_zero CHECK (created_at > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
+    CONSTRAINT chk_credit_cards_updated_at_not_zero CHECK (updated_at > TIMESTAMPTZ '0001-01-01 00:00:00+00')
+);
+CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id ON credit_cards(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id_bank ON credit_cards(user_id, bank);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credit_card_id TEXT REFERENCES credit_cards(id) ON DELETE SET NULL,
     type TEXT NOT NULL,
     concept TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -80,7 +106,21 @@ CREATE TABLE IF NOT EXISTS transactions (
     CONSTRAINT chk_transactions_created_at_not_zero CHECK (created_at > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
     CONSTRAINT chk_transactions_updated_at_not_zero CHECK (updated_at > TIMESTAMPTZ '0001-01-01 00:00:00+00')
 );
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS credit_card_id TEXT NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_transactions_credit_card_id'
+    ) THEN
+        ALTER TABLE transactions
+            ADD CONSTRAINT fk_transactions_credit_card_id
+            FOREIGN KEY (credit_card_id) REFERENCES credit_cards(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_credit_card_id ON transactions(user_id, credit_card_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status);
 

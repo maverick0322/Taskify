@@ -29,7 +29,7 @@ type mockTransactionUseCase struct {
 	receivedEndDate      time.Time
 }
 
-func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int) (*domain.Transaction, error) {
+func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string) (*domain.Transaction, error) {
 	useCase.requestedUserID = userID
 	useCase.createdAmountCents = amountCents
 	return useCase.transactionToReturn, useCase.errToReturn
@@ -47,7 +47,7 @@ func (useCase *mockTransactionUseCase) GetUserTransactions(ctx context.Context, 
 	return useCase.transactionsToReturn, useCase.errToReturn
 }
 
-func (useCase *mockTransactionUseCase) UpdateTransaction(ctx context.Context, userID, transactionID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int) error {
+func (useCase *mockTransactionUseCase) UpdateTransaction(ctx context.Context, userID, transactionID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string) error {
 	useCase.requestedUserID = userID
 	useCase.requestedID = transactionID
 	useCase.updatedAmountCents = amountCents
@@ -331,6 +331,7 @@ func createHandlerTransaction(t *testing.T) *domain.Transaction {
 		12500,
 		time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC),
 		domain.TransactionStatusPaid,
+		nil,
 		nil,
 		time.Now().Add(-2*time.Hour),
 		time.Now().Add(-time.Hour),

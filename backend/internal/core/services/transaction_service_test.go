@@ -49,6 +49,12 @@ func (repository *mockTransactionRepository) GetByUserID(ctx context.Context, us
 	return repository.transactionsToReturn, repository.getByUserIDError
 }
 
+func (repository *mockTransactionRepository) GetByCreditCardID(ctx context.Context, userID, creditCardID string, filter ports.TransactionDateFilter) ([]*domain.Transaction, error) {
+	repository.requestedUserID = userID
+	repository.receivedFilter = filter
+	return repository.transactionsToReturn, repository.getByUserIDError
+}
+
 func (repository *mockTransactionRepository) Update(ctx context.Context, transaction *domain.Transaction) error {
 	repository.updatedTransaction = transaction
 	return repository.updateError
@@ -87,7 +93,7 @@ func TestCreateTransaction_ValidData_ReturnsTransactionAndCreates(t *testing.T) 
 	service := NewTransactionService(repository, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{})
 	transactionDate := time.Now()
 
-	transaction, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 150000, transactionDate, domain.TransactionStatusPaid, nil)
+	transaction, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 150000, transactionDate, domain.TransactionStatusPaid, nil, nil)
 
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
@@ -103,7 +109,7 @@ func TestCreateTransaction_ValidData_ReturnsTransactionAndCreates(t *testing.T) 
 func TestCreateTransaction_InvalidAmount_ReturnsDomainError(t *testing.T) {
 	service := NewTransactionService(&mockTransactionRepository{}, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{})
 
-	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 0, time.Now(), domain.TransactionStatusPaid, nil)
+	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 0, time.Now(), domain.TransactionStatusPaid, nil, nil)
 
 	if !errors.Is(err, domain.ErrInvalidTransactionAmount) {
 		t.Errorf("expected error %v, got %v", domain.ErrInvalidTransactionAmount, err)
@@ -114,7 +120,7 @@ func TestCreateTransaction_RepositoryFailure_ReturnsErrInternalProcessing(t *tes
 	repository := &mockTransactionRepository{createError: ports.ErrTransactionRepositoryUnavailable}
 	service := NewTransactionService(repository, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{})
 
-	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 150000, time.Now(), domain.TransactionStatusPaid, nil)
+	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeIncome, validTransactionServiceConcept, validTransactionServiceCategory, 150000, time.Now(), domain.TransactionStatusPaid, nil, nil)
 
 	if !errors.Is(err, ErrInternalProcessing) {
 		t.Errorf("expected error %v, got %v", ErrInternalProcessing, err)
@@ -176,7 +182,7 @@ func TestUpdateTransaction_OwnedTransaction_UpdatesAndPersists(t *testing.T) {
 	service := NewTransactionService(repository, &mockTransactionIDGenerator{}, &mockTransactionLogger{})
 	transactionDate := time.Now().Add(-24 * time.Hour)
 
-	err := service.UpdateTransaction(context.Background(), validTransactionServiceUserID, validTransactionServiceTransactionID, domain.TransactionTypeExpense, "CFE - Luz", "Servicios", 45000, transactionDate, domain.TransactionStatusPaid, transactionServiceMSIPtr(3))
+	err := service.UpdateTransaction(context.Background(), validTransactionServiceUserID, validTransactionServiceTransactionID, domain.TransactionTypeExpense, "CFE - Luz", "Servicios", 45000, transactionDate, domain.TransactionStatusPaid, transactionServiceMSIPtr(3), nil)
 
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
@@ -278,6 +284,7 @@ func createTransactionServiceTransaction(t *testing.T, userID string, transactio
 		amountCents,
 		time.Now(),
 		status,
+		nil,
 		nil,
 	)
 	if err != nil {

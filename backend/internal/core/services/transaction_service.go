@@ -37,9 +37,10 @@ func (service *transactionService) CreateTransaction(
 	date time.Time,
 	status domain.TransactionStatus,
 	msi *int,
+	creditCardID *string,
 ) (*domain.Transaction, error) {
 	transactionID := service.idGenerator.Generate()
-	transaction, err := domain.NewTransaction(transactionID, userID, transactionType, concept, category, amountCents, date, status, msi)
+	transaction, err := domain.NewTransaction(transactionID, userID, transactionType, concept, category, amountCents, date, status, msi, creditCardID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +78,14 @@ func (service *transactionService) UpdateTransaction(
 	date time.Time,
 	status domain.TransactionStatus,
 	msi *int,
+	creditCardID *string,
 ) error {
 	transaction, err := service.getAuthorizedTransaction(ctx, userID, transactionID)
 	if err != nil {
 		return err
 	}
 
-	if err := transaction.Update(transactionType, concept, category, amountCents, date, status, msi); err != nil {
+	if err := transaction.Update(transactionType, concept, category, amountCents, date, status, msi, creditCardID); err != nil {
 		return err
 	}
 

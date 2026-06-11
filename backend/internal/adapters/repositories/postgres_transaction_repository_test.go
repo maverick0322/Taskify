@@ -111,8 +111,8 @@ func TestPostgresTransactionRepository_CreateValidTransaction_ReturnsNil(t *test
 	if database.receivedSQL != createTransactionQuery {
 		t.Errorf("expected create transaction query to be used")
 	}
-	if len(database.receivedArguments) != 11 {
-		t.Errorf("expected eleven arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 12 {
+		t.Errorf("expected twelve arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -147,8 +147,8 @@ func TestPostgresTransactionRepository_CreateWithMSI_StoresMSIValue(t *testing.T
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedArguments[8] != 6 {
-		t.Errorf("expected MSI argument 6, got %v", database.receivedArguments[8])
+	if database.receivedArguments[9] != 6 {
+		t.Errorf("expected MSI argument 6, got %v", database.receivedArguments[9])
 	}
 }
 
@@ -182,7 +182,7 @@ func TestPostgresTransactionRepository_GetByIDMissingTransaction_ReturnsErrTrans
 
 func TestPostgresTransactionRepository_GetByIDCorruptedTransaction_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
 	values := validStoredTransactionValues(nil)
-	values[2] = "TRANSFER"
+	values[3] = "TRANSFER"
 	database := &fakePostgresTransactionDatabase{rowToReturn: fakePostgresTransactionRow{values: values}}
 	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
 
@@ -311,6 +311,13 @@ func assignTransactionScanValues(destinations []interface{}, values []interface{
 			*destination = value.(string)
 		case *int64:
 			*destination = value.(int64)
+		case **string:
+			if value == nil {
+				*destination = nil
+				continue
+			}
+			storedValue := value.(string)
+			*destination = &storedValue
 		case **int:
 			if value == nil {
 				*destination = nil
@@ -335,6 +342,7 @@ func validStoredTransactionValues(msi *int) []interface{} {
 	return []interface{}{
 		"transaction-123",
 		"user-123",
+		nil,
 		string(domain.TransactionTypeExpense),
 		"CFE - Luz",
 		"Servicios",
@@ -360,6 +368,7 @@ func createRepositoryTransaction(t *testing.T, msi *int) *domain.Transaction {
 		time.Now(),
 		domain.TransactionStatusPaid,
 		msi,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("expected transaction to be valid, got: %v", err)

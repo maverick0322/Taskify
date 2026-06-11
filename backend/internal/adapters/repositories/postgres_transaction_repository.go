@@ -14,41 +14,69 @@ import (
 
 const (
 	createTransactionQuery = `
-		INSERT INTO transactions (id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO transactions (id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	getTransactionByIDQuery = `
-		SELECT id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
 		WHERE id = $1
 	`
 
 	getTransactionsByUserIDQuery = `
-		SELECT id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDFromQuery = `
-		SELECT id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date >= $2
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDToQuery = `
-		SELECT id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date < $2
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDRangeQuery = `
-		SELECT id, user_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date >= $2 AND date < $3
+		ORDER BY date DESC
+	`
+
+	getTransactionsByUserIDAndCreditCardIDQuery = `
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		FROM transactions
+		WHERE user_id = $1 AND credit_card_id = $2
+		ORDER BY date DESC
+	`
+
+	getTransactionsByUserIDAndCreditCardIDFromQuery = `
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		FROM transactions
+		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3
+		ORDER BY date DESC
+	`
+
+	getTransactionsByUserIDAndCreditCardIDToQuery = `
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		FROM transactions
+		WHERE user_id = $1 AND credit_card_id = $2 AND date < $3
+		ORDER BY date DESC
+	`
+
+	getTransactionsByUserIDAndCreditCardIDRangeQuery = `
+		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
+		FROM transactions
+		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND date < $4
 		ORDER BY date DESC
 	`
 
@@ -61,7 +89,8 @@ const (
 			date = $6,
 			status = $7,
 			msi = $8,
-			updated_at = $9
+			credit_card_id = $9,
+			updated_at = $10
 		WHERE id = $1
 	`
 
@@ -101,6 +130,7 @@ func (repository *PostgresTransactionRepository) Create(ctx context.Context, tra
 		createTransactionQuery,
 		transaction.ID(),
 		transaction.UserID(),
+		nullableTransactionCreditCardID(transaction.CreditCardID()),
 		string(transaction.Type()),
 		transaction.Concept(),
 		transaction.Category(),
@@ -154,6 +184,33 @@ func (repository *PostgresTransactionRepository) GetByUserID(ctx context.Context
 	return transactions, nil
 }
 
+func (repository *PostgresTransactionRepository) GetByCreditCardID(ctx context.Context, userID, creditCardID string, filter ports.TransactionDateFilter) ([]*domain.Transaction, error) {
+	query, arguments := buildTransactionsByUserIDAndCreditCardIDQuery(userID, creditCardID, filter)
+	rows, err := repository.database.Query(ctx, query, arguments...)
+	if err != nil {
+		repository.logger.Error("failed to retrieve transactions by credit card id", "userID", userID, "creditCardID", creditCardID, "error", err)
+		return nil, ports.ErrTransactionRepositoryUnavailable
+	}
+	defer rows.Close()
+
+	transactions := make([]*domain.Transaction, 0)
+	for rows.Next() {
+		transaction, err := repository.scanTransaction(rows)
+		if err != nil {
+			repository.logger.Error("failed to scan credit card transaction row", "userID", userID, "creditCardID", creditCardID, "error", err)
+			return nil, ports.ErrTransactionRepositoryUnavailable
+		}
+		transactions = append(transactions, transaction)
+	}
+
+	if err := rows.Err(); err != nil {
+		repository.logger.Error("failed while iterating credit card transaction rows", "userID", userID, "creditCardID", creditCardID, "error", err)
+		return nil, ports.ErrTransactionRepositoryUnavailable
+	}
+
+	return transactions, nil
+}
+
 func (repository *PostgresTransactionRepository) Update(ctx context.Context, transaction *domain.Transaction) error {
 	if transaction == nil {
 		repository.logger.Error("cannot update nil transaction")
@@ -171,6 +228,7 @@ func (repository *PostgresTransactionRepository) Update(ctx context.Context, tra
 		transaction.Date(),
 		string(transaction.Status()),
 		nullableTransactionMSI(transaction.MSI()),
+		nullableTransactionCreditCardID(transaction.CreditCardID()),
 		transaction.UpdatedAt(),
 	); err != nil {
 		repository.logger.Error("failed to update transaction", "userID", transaction.UserID(), "transactionID", transaction.ID(), "error", err)
@@ -194,6 +252,7 @@ func (repository *PostgresTransactionRepository) scanTransaction(row pgx.Row) (*
 	if err := row.Scan(
 		&storedTransaction.id,
 		&storedTransaction.userID,
+		&storedTransaction.creditCardID,
 		&storedTransaction.transactionType,
 		&storedTransaction.concept,
 		&storedTransaction.category,
@@ -217,6 +276,7 @@ func (repository *PostgresTransactionRepository) scanTransaction(row pgx.Row) (*
 		storedTransaction.date,
 		domain.TransactionStatus(storedTransaction.status),
 		storedTransaction.msi,
+		storedTransaction.creditCardID,
 		storedTransaction.createdAt,
 		storedTransaction.updatedAt,
 	)
@@ -246,6 +306,7 @@ func (repository *PostgresTransactionRepository) mapWriteError(err error, messag
 type storedTransaction struct {
 	id              string
 	userID          string
+	creditCardID    *string
 	transactionType string
 	concept         string
 	category        string
@@ -271,10 +332,32 @@ func buildTransactionsByUserIDQuery(userID string, filter ports.TransactionDateF
 	return getTransactionsByUserIDQuery, []interface{}{userID}
 }
 
+func buildTransactionsByUserIDAndCreditCardIDQuery(userID, creditCardID string, filter ports.TransactionDateFilter) (string, []interface{}) {
+	if filter.From != nil && filter.To != nil {
+		return getTransactionsByUserIDAndCreditCardIDRangeQuery, []interface{}{userID, creditCardID, *filter.From, *filter.To}
+	}
+	if filter.From != nil {
+		return getTransactionsByUserIDAndCreditCardIDFromQuery, []interface{}{userID, creditCardID, *filter.From}
+	}
+	if filter.To != nil {
+		return getTransactionsByUserIDAndCreditCardIDToQuery, []interface{}{userID, creditCardID, *filter.To}
+	}
+
+	return getTransactionsByUserIDAndCreditCardIDQuery, []interface{}{userID, creditCardID}
+}
+
 func nullableTransactionMSI(msi *int) interface{} {
 	if msi == nil {
 		return nil
 	}
 
 	return *msi
+}
+
+func nullableTransactionCreditCardID(creditCardID *string) interface{} {
+	if creditCardID == nil {
+		return nil
+	}
+
+	return *creditCardID
 }
