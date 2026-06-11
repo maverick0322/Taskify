@@ -57,6 +57,32 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_id_board_id ON tasks(user_id, board_id
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    concept TEXT NOT NULL,
+    category TEXT NOT NULL,
+    amount_cents BIGINT NOT NULL,
+    date TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL,
+    msi INTEGER NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_transactions_type CHECK (type IN ('INCOME', 'EXPENSE')),
+    CONSTRAINT chk_transactions_concept_not_empty CHECK (char_length(trim(concept)) > 0),
+    CONSTRAINT chk_transactions_category_not_empty CHECK (char_length(trim(category)) > 0),
+    CONSTRAINT chk_transactions_amount_positive CHECK (amount_cents > 0),
+    CONSTRAINT chk_transactions_date_not_zero CHECK (date > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
+    CONSTRAINT chk_transactions_status CHECK (status IN ('PAID', 'PENDING')),
+    CONSTRAINT chk_transactions_msi_positive CHECK (msi IS NULL OR msi >= 1),
+    CONSTRAINT chk_transactions_created_at_not_zero CHECK (created_at > TIMESTAMPTZ '0001-01-01 00:00:00+00'),
+    CONSTRAINT chk_transactions_updated_at_not_zero CHECK (updated_at > TIMESTAMPTZ '0001-01-01 00:00:00+00')
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status);
+
 CREATE TABLE IF NOT EXISTS columns (
     id TEXT PRIMARY KEY,
     board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
