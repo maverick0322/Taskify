@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/taskify/header";
 import { KanbanBoard } from "@/components/taskify/kanban-board";
 import { MobileTaskList } from "@/components/taskify/mobile-task-list";
@@ -206,7 +207,10 @@ export function TaskifyDashboard() {
     queryFn: () => getTasks(),
     enabled: currentView === "dashboard",
   });
-  const { data: financialSummary } = useQuery({
+  const {
+    data: financialSummary,
+    isLoading: financialSummaryLoading,
+  } = useQuery({
     queryKey: [
       "financial",
       "summary",
@@ -220,7 +224,10 @@ export function TaskifyDashboard() {
       ),
     enabled: currentView === "dashboard",
   });
-  const { data: financialTransactions = [] } = useQuery({
+  const {
+    data: financialTransactions = [],
+    isLoading: financialTransactionsLoading,
+  } = useQuery({
     queryKey: [
       "financial",
       "transactions",
@@ -310,6 +317,7 @@ export function TaskifyDashboard() {
         firstAlert.dueDate.getTime() - secondAlert.dueDate.getTime(),
     );
   }, [financialTransactions, globalTasks]);
+  const alertsLoading = globalTasksLoading || financialTransactionsLoading;
   const metrics = [
     {
       title: "Tareas para hoy",
@@ -476,11 +484,19 @@ export function TaskifyDashboard() {
                         <span className="text-xs uppercase tracking-wide text-muted-foreground">
                           Ingreso total
                         </span>
-                        <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(totalIncome)}
-                        </span>
+                        {financialSummaryLoading ? (
+                          <Skeleton className="h-8 w-32" />
+                        ) : (
+                          <span className="text-2xl font-bold text-foreground">
+                            {formatCurrency(totalIncome)}
+                          </span>
+                        )}
                       </div>
-                      <Badge variant="secondary">{marginPercentage}% margen</Badge>
+                      {financialSummaryLoading ? (
+                        <Skeleton className="h-6 w-24 rounded-full" />
+                      ) : (
+                        <Badge variant="secondary">{marginPercentage}% margen</Badge>
+                      )}
                     </div>
 
                     <div className="my-4 h-px w-full bg-border" />
@@ -490,11 +506,19 @@ export function TaskifyDashboard() {
                         <span className="text-xs uppercase tracking-wide text-muted-foreground">
                           Gasto acumulado
                         </span>
-                        <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(totalExpenses)}
-                        </span>
+                        {financialSummaryLoading ? (
+                          <Skeleton className="h-8 w-32" />
+                        ) : (
+                          <span className="text-2xl font-bold text-foreground">
+                            {formatCurrency(totalExpenses)}
+                          </span>
+                        )}
                       </div>
-                      <Badge variant="outline">{expensesPercentage}% del ingreso</Badge>
+                      {financialSummaryLoading ? (
+                        <Skeleton className="h-6 w-32 rounded-full" />
+                      ) : (
+                        <Badge variant="outline">{expensesPercentage}% del ingreso</Badge>
+                      )}
                     </div>
 
                     <div className="my-4 h-px w-full bg-border" />
@@ -504,11 +528,19 @@ export function TaskifyDashboard() {
                         <span className="text-xs uppercase tracking-wide text-muted-foreground">
                           Margen de utilidad
                         </span>
-                        <span className="text-2xl font-bold text-foreground">
-                          {formatCurrency(profitMargin)}
-                        </span>
+                        {financialSummaryLoading ? (
+                          <Skeleton className="h-8 w-32" />
+                        ) : (
+                          <span className="text-2xl font-bold text-foreground">
+                            {formatCurrency(profitMargin)}
+                          </span>
+                        )}
                       </div>
-                      <Badge>{marginPercentage}%</Badge>
+                      {financialSummaryLoading ? (
+                        <Skeleton className="h-6 w-16 rounded-full" />
+                      ) : (
+                        <Badge>{marginPercentage}%</Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -523,7 +555,16 @@ export function TaskifyDashboard() {
                     </p>
                   </CardHeader>
                   <CardContent className="p-6 pt-0">
-                    {alerts.length === 0 ? (
+                    {alertsLoading ? (
+                      <div className="flex flex-col gap-4">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <Skeleton
+                            key={index}
+                            className="h-16 w-full rounded-lg"
+                          />
+                        ))}
+                      </div>
+                    ) : alerts.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
                         Todo al día, no hay alertas urgentes
                       </p>

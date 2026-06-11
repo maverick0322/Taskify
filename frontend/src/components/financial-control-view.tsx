@@ -54,6 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   createCreditCard,
@@ -728,7 +729,10 @@ export function FinancialControlView() {
     [monthRange.endDate, monthRange.startDate],
   )
 
-  const { data: apiTransactions = [] } = useQuery({
+  const {
+    data: apiTransactions = [],
+    isLoading: isTransactionsLoading,
+  } = useQuery({
     queryKey: queryKeys.transactions,
     queryFn: () =>
       getTransactions({
@@ -736,11 +740,17 @@ export function FinancialControlView() {
         endDate: monthRange.endDate,
       }),
   })
-  const { data: financialSummary } = useQuery({
+  const {
+    data: financialSummary,
+    isLoading: isSummaryLoading,
+  } = useQuery({
     queryKey: queryKeys.summary,
     queryFn: () => getFinancialSummary(monthRange.startDate, monthRange.endDate),
   })
-  const { data: creditCards = [] } = useQuery({
+  const {
+    data: creditCards = [],
+    isLoading: isCardsLoading,
+  } = useQuery({
     queryKey: queryKeys.creditCards,
     queryFn: getCreditCards,
   })
@@ -865,50 +875,70 @@ export function FinancialControlView() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {transactions.map((transaction) => (
-                        <TableRow key={transaction.id}>
-                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                            {transaction.date}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <span>{transaction.concept}</span>
-                            {transaction.msi ? (
-                              <Badge className="ml-2 border-0 bg-blue-100 text-xs text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400">
-                                {transaction.msi}
-                              </Badge>
-                            ) : null}
-                          </TableCell>
-                          <TableCell className="hidden text-muted-foreground md:table-cell">
-                            <Badge variant="secondary" className="font-normal">
-                              {transaction.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {transaction.type === "income" ? (
-                              <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                                <ArrowUpRight className="size-4" />
-                                Ingreso
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <ArrowDownRight className="size-4" />
-                                Egreso
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              "text-right font-semibold tabular-nums",
-                              transaction.type === "income"
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-foreground",
-                            )}
-                          >
-                            {transaction.type === "income" ? "+" : "-"}
-                            {fmt(transaction.amount)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {isTransactionsLoading
+                        ? Array.from({ length: 5 }).map((_, index) => (
+                            <TableRow key={index}>
+                              <TableCell>
+                                <Skeleton className="h-4 w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-full" />
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <Skeleton className="h-4 w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="ml-auto h-4 w-full" />
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        : transactions.map((transaction) => (
+                            <TableRow key={transaction.id}>
+                              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                {transaction.date}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <span>{transaction.concept}</span>
+                                {transaction.msi ? (
+                                  <Badge className="ml-2 border-0 bg-blue-100 text-xs text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400">
+                                    {transaction.msi}
+                                  </Badge>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="hidden text-muted-foreground md:table-cell">
+                                <Badge variant="secondary" className="font-normal">
+                                  {transaction.category}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {transaction.type === "income" ? (
+                                  <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                                    <ArrowUpRight className="size-4" />
+                                    Ingreso
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                                    <ArrowDownRight className="size-4" />
+                                    Egreso
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "text-right font-semibold tabular-nums",
+                                  transaction.type === "income"
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-foreground",
+                                )}
+                              >
+                                {transaction.type === "income" ? "+" : "-"}
+                                {fmt(transaction.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
                     </TableBody>
                   </Table>
                 </TabsContent>
@@ -918,71 +948,82 @@ export function FinancialControlView() {
                   className="mt-0 pt-4 data-[state=inactive]:hidden"
                 >
                   <div className="grid grid-cols-1 gap-6 pt-4 md:grid-cols-2">
-                    {creditCards.map((card) => {
-                      const visual = cardVisualForColor(card.color)
+                    {isCardsLoading ? (
+                      Array.from({ length: 3 }).map((_, index) => (
+                        <Skeleton
+                          key={index}
+                          className="aspect-[1.586/1] w-full rounded-xl"
+                        />
+                      ))
+                    ) : (
+                      <>
+                        {creditCards.map((card) => {
+                          const visual = cardVisualForColor(card.color)
 
-                      return (
-                        <div
-                          key={card.id}
-                          className={cn(
-                            "flex aspect-[1.586/1] w-full flex-col justify-between rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
-                            visual.gradient,
-                            visual.border,
-                          )}
+                          return (
+                            <div
+                              key={card.id}
+                              className={cn(
+                                "flex aspect-[1.586/1] w-full flex-col justify-between rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
+                                visual.gradient,
+                                visual.border,
+                              )}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex flex-col gap-0.5">
+                                  <CreditCard className="size-8 opacity-90" />
+                                  <span className="mt-2 text-xs font-medium opacity-70">
+                                    {card.bank}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-widest opacity-60">
+                                  VISA
+                                </span>
+                              </div>
+
+                              <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
+                                .... .... .... {card.last4}
+                              </div>
+
+                              <div className="flex items-end justify-between">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Fecha de corte
+                                  </span>
+                                  <span className="flex items-center gap-1 text-sm font-semibold">
+                                    <Calendar className="size-3.5 opacity-70" />
+                                    {cardCutoffLabel(card.cutoffDay)}
+                                  </span>
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Pago dia {card.paymentDay}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Deuda actual
+                                  </span>
+                                  <span className="text-sm font-bold">
+                                    {fmt(centsToAmount(card.currentDebtCents))}
+                                  </span>
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Limite {fmt(centsToAmount(card.limitCents))}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() => setAddCardDialogOpen(true)}
+                          className="flex aspect-[1.586/1] w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-transparent text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground"
                         >
-                          <div className="flex items-start justify-between">
-                            <div className="flex flex-col gap-0.5">
-                              <CreditCard className="size-8 opacity-90" />
-                              <span className="mt-2 text-xs font-medium opacity-70">
-                                {card.bank}
-                              </span>
-                            </div>
-                            <span className="text-xs font-bold uppercase tracking-widest opacity-60">
-                              VISA
-                            </span>
-                          </div>
-
-                          <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
-                            .... .... .... {card.last4}
-                          </div>
-
-                          <div className="flex items-end justify-between">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-wider opacity-50">
-                                Fecha de corte
-                              </span>
-                              <span className="flex items-center gap-1 text-sm font-semibold">
-                                <Calendar className="size-3.5 opacity-70" />
-                                {cardCutoffLabel(card.cutoffDay)}
-                              </span>
-                              <span className="text-[10px] uppercase tracking-wider opacity-50">
-                                Pago dia {card.paymentDay}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end gap-0.5">
-                              <span className="text-[10px] uppercase tracking-wider opacity-50">
-                                Deuda actual
-                              </span>
-                              <span className="text-sm font-bold">
-                                {fmt(centsToAmount(card.currentDebtCents))}
-                              </span>
-                              <span className="text-[10px] uppercase tracking-wider opacity-50">
-                                Limite {fmt(centsToAmount(card.limitCents))}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    <button
-                      type="button"
-                      onClick={() => setAddCardDialogOpen(true)}
-                      className="flex aspect-[1.586/1] w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-transparent text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground"
-                    >
-                      <PlusCircle className="size-7 opacity-50" />
-                      <span className="text-sm font-medium">Agregar Tarjeta</span>
-                    </button>
+                          <PlusCircle className="size-7 opacity-50" />
+                          <span className="text-sm font-medium">Agregar Tarjeta</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1002,7 +1043,11 @@ export function FinancialControlView() {
                     </CardTitle>
                   </div>
                   <CardDescription>
-                    {pendingPayments.length} pendientes este mes
+                    {isTransactionsLoading ? (
+                      <Skeleton className="h-4 w-32" />
+                    ) : (
+                      `${pendingPayments.length} pendientes este mes`
+                    )}
                   </CardDescription>
                 </div>
                 <Button
@@ -1018,44 +1063,51 @@ export function FinancialControlView() {
             </CardHeader>
             <CardContent className="p-6 pt-0">
               <div className="flex flex-col gap-4">
-                {pendingPayments.map((payment) => {
-                  const Icon = payment.icon
-                  return (
-                    <div
-                      key={payment.id}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <Icon className="size-4 text-muted-foreground" />
+                {isTransactionsLoading
+                  ? Array.from({ length: 3 }).map((_, index) => (
+                      <Skeleton
+                        key={index}
+                        className="h-16 w-full rounded-lg"
+                      />
+                    ))
+                  : pendingPayments.map((payment) => {
+                      const Icon = payment.icon
+                      return (
+                        <div
+                          key={payment.id}
+                          className="flex items-center justify-between gap-3"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                              <Icon className="size-4 text-muted-foreground" />
+                            </div>
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {payment.service}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-xs",
+                                  payment.isUrgent
+                                    ? "font-medium text-red-500 dark:text-red-400"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                Vence {payment.dueDate}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-sm font-semibold tabular-nums text-foreground">
+                              {fmt(payment.amount)}
+                            </span>
+                            <Button size="sm" variant="outline">
+                              Pagar
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {payment.service}
-                          </span>
-                          <span
-                            className={cn(
-                              "text-xs",
-                              payment.isUrgent
-                                ? "font-medium text-red-500 dark:text-red-400"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            Vence {payment.dueDate}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-sm font-semibold tabular-nums text-foreground">
-                          {fmt(payment.amount)}
-                        </span>
-                        <Button size="sm" variant="outline">
-                          Pagar
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
+                      )
+                    })}
               </div>
             </CardContent>
           </Card>
@@ -1076,17 +1128,25 @@ export function FinancialControlView() {
                   <span className="text-sm text-muted-foreground">
                     Ingreso Total
                   </span>
-                  <span className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    +{fmt(totalIncome)}
-                  </span>
+                  {isSummaryLoading ? (
+                    <Skeleton className="h-4 w-24" />
+                  ) : (
+                    <span className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      +{fmt(totalIncome)}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">
                     Gasto Acumulado
                   </span>
-                  <span className="text-sm font-semibold tabular-nums text-foreground">
-                    -{fmt(totalExpense)}
-                  </span>
+                  {isSummaryLoading ? (
+                    <Skeleton className="h-4 w-24" />
+                  ) : (
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
+                      -{fmt(totalExpense)}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1096,21 +1156,29 @@ export function FinancialControlView() {
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Margen de utilidad
                 </span>
-                <span
-                  className={cn(
-                    "text-4xl font-bold tabular-nums",
-                    profitMargin >= 0
-                      ? "text-foreground"
-                      : "text-red-500 dark:text-red-400",
-                  )}
-                >
-                  {fmt(profitMargin)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {profitMargin >= 0
-                    ? `${availableIncomePercentage}% de tus ingresos disponibles`
-                    : "Deficit este mes"}
-                </span>
+                {isSummaryLoading ? (
+                  <Skeleton className="h-10 w-40" />
+                ) : (
+                  <span
+                    className={cn(
+                      "text-4xl font-bold tabular-nums",
+                      profitMargin >= 0
+                        ? "text-foreground"
+                        : "text-red-500 dark:text-red-400",
+                    )}
+                  >
+                    {fmt(profitMargin)}
+                  </span>
+                )}
+                {isSummaryLoading ? (
+                  <Skeleton className="h-4 w-48" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {profitMargin >= 0
+                      ? `${availableIncomePercentage}% de tus ingresos disponibles`
+                      : "Deficit este mes"}
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
