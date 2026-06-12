@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	dbURLEnvKey           = "DB_URL"
 	jwtSecretEnvKey       = "JWT_SECRET"
 	accessTokenTTLEnvKey  = "ACCESS_TOKEN_TTL"
 	refreshTokenTTLEnvKey = "REFRESH_TOKEN_TTL"
@@ -25,7 +24,6 @@ var (
 )
 
 type appConfig struct {
-	databaseURL     string
 	jwtSecret       string
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
@@ -36,11 +34,6 @@ type appConfig struct {
 type getenvFunc func(string) string
 
 func loadAppConfig(getenv getenvFunc) (appConfig, error) {
-	databaseURL, err := requiredEnvironmentValue(getenv, dbURLEnvKey)
-	if err != nil {
-		return appConfig{}, err
-	}
-
 	jwtSecret, err := requiredEnvironmentValue(getenv, jwtSecretEnvKey)
 	if err != nil {
 		return appConfig{}, err
@@ -82,7 +75,6 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 	}
 
 	return appConfig{
-		databaseURL:     databaseURL,
 		jwtSecret:       jwtSecret,
 		accessTokenTTL:  accessTokenTTL,
 		refreshTokenTTL: refreshTokenTTL,

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	_ "github.com/maverick0322/taskify/backend/docs"
 	"github.com/maverick0322/taskify/backend/internal/adapters/auth"
@@ -30,7 +29,6 @@ import (
 const (
 	serverReadHeaderTimeout = 5 * time.Second
 	serverShutdownTimeout   = 10 * time.Second
-	postgresStartupTimeout  = 5 * time.Second
 	corsAllowedOrigin       = "*"
 	corsAllowedMethods      = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 	corsAllowedHeaders      = "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization"
@@ -60,18 +58,14 @@ func run() error {
 	baseLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	applicationLogger := logging.NewSlogLogger(baseLogger)
 
-	startupContext, cancelStartup := context.WithTimeout(context.Background(), postgresStartupTimeout)
+	startupContext, cancelStartup := context.WithTimeout(context.Background(), sqliteStartupTimeout)
 	defer cancelStartup()
 
-	postgresPool, err := pgxpool.New(startupContext, config.databaseURL)
+	sqliteDatabase, err := openLocalSQLiteDatabase(startupContext)
 	if err != nil {
-		return fmt.Errorf("failed to create postgres connection pool: %w", err)
+		return err
 	}
-	defer postgresPool.Close()
-
-	if err := postgresPool.Ping(startupContext); err != nil {
-		return fmt.Errorf("failed to connect to postgres: %w", err)
-	}
+	defer sqliteDatabase.Close()
 
 	passwordHasher, err := auth.NewBcryptHasher(config.bcryptCost)
 	if err != nil {
@@ -88,13 +82,13 @@ func run() error {
 	}
 
 	idGenerator := adapterutil.NewUUIDGenerator()
-	userRepository := repositories.NewPostgresUserRepository(postgresPool, applicationLogger)
-	sessionRepository := repositories.NewPostgresSessionRepository(postgresPool, applicationLogger)
-	taskRepository := repositories.NewPostgresTaskRepository(postgresPool, applicationLogger)
-	boardRepository := repositories.NewPostgresBoardRepository(postgresPool, applicationLogger)
-	columnRepository := repositories.NewPostgresColumnRepository(postgresPool, applicationLogger)
-	transactionRepository := repositories.NewPostgresTransactionRepository(postgresPool, applicationLogger)
-	creditCardRepository := repositories.NewPostgresCreditCardRepository(postgresPool, applicationLogger)
+	userRepository := repositories.NewSQLiteUserRepository(sqliteDatabase, applicationLogger)
+	sessionRepository := repositories.NewSQLiteSessionRepository(sqliteDatabase, applicationLogger)
+	taskRepository := repositories.NewSQLiteTaskRepository(sqliteDatabase, applicationLogger)
+	boardRepository := repositories.NewSQLiteBoardRepository(sqliteDatabase, applicationLogger)
+	columnRepository := repositories.NewSQLiteColumnRepository(sqliteDatabase, applicationLogger)
+	transactionRepository := repositories.NewSQLiteTransactionRepository(sqliteDatabase, applicationLogger)
+	creditCardRepository := repositories.NewSQLiteCreditCardRepository(sqliteDatabase, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
@@ -139,7 +133,7 @@ func run() error {
 	}
 	stopSignals()
 
-	// HTTP shutdown runs before closing Postgres so in-flight requests can finish their database work.
+	// HTTP shutdown runs before closing SQLite so in-flight requests can finish their database work.
 	gracefulShutdownContext, cancelGracefulShutdown := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancelGracefulShutdown()
 

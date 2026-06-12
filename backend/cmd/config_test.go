@@ -9,7 +9,6 @@ import (
 func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
 		jwtSecretEnvKey:       "local-secret",
 		accessTokenTTLEnvKey:  "5m",
 		refreshTokenTTLEnvKey: "24h",
@@ -24,9 +23,6 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if config.databaseURL == "" {
-		t.Fatal("expected database URL")
-	}
 	if config.accessTokenTTL != 5*time.Minute {
 		t.Errorf("expected access token ttl %v, got %v", 5*time.Minute, config.accessTokenTTL)
 	}
@@ -38,29 +34,9 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	}
 }
 
-func TestLoadAppConfig_MissingDatabaseURL_ReturnsErrMissingEnvironmentVariable(t *testing.T) {
-	// Arrange
-	getenv := mapGetenv(map[string]string{
-		jwtSecretEnvKey:       "local-secret",
-		accessTokenTTLEnvKey:  "5m",
-		refreshTokenTTLEnvKey: "24h",
-		portEnvKey:            "8080",
-		bcryptCostEnvKey:      "10",
-	})
-
-	// Act
-	_, err := loadAppConfig(getenv)
-
-	// Assert
-	if !errors.Is(err, ErrMissingEnvironmentVariable) {
-		t.Errorf("expected error %v, got %v", ErrMissingEnvironmentVariable, err)
-	}
-}
-
 func TestLoadAppConfig_InvalidBcryptCost_ReturnsErrInvalidBcryptCost(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
 		jwtSecretEnvKey:       "local-secret",
 		accessTokenTTLEnvKey:  "5m",
 		refreshTokenTTLEnvKey: "24h",
@@ -80,7 +56,6 @@ func TestLoadAppConfig_InvalidBcryptCost_ReturnsErrInvalidBcryptCost(t *testing.
 func TestLoadAppConfig_InvalidAccessTokenTTL_ReturnsErrInvalidAccessTokenTTL(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
 		jwtSecretEnvKey:       "local-secret",
 		accessTokenTTLEnvKey:  "0s",
 		refreshTokenTTLEnvKey: "24h",
@@ -100,7 +75,6 @@ func TestLoadAppConfig_InvalidAccessTokenTTL_ReturnsErrInvalidAccessTokenTTL(t *
 func TestLoadAppConfig_InvalidRefreshTokenTTL_ReturnsErrInvalidRefreshTokenTTL(t *testing.T) {
 	// Arrange
 	getenv := mapGetenv(map[string]string{
-		dbURLEnvKey:           "postgres://taskify:taskify@localhost:5432/taskify?sslmode=disable",
 		jwtSecretEnvKey:       "local-secret",
 		accessTokenTTLEnvKey:  "5m",
 		refreshTokenTTLEnvKey: "0s",
@@ -119,10 +93,10 @@ func TestLoadAppConfig_InvalidRefreshTokenTTL_ReturnsErrInvalidRefreshTokenTTL(t
 
 func TestRequiredEnvironmentValue_BlankValue_ReturnsErrMissingEnvironmentVariable(t *testing.T) {
 	// Arrange
-	getenv := mapGetenv(map[string]string{dbURLEnvKey: "   "})
+	getenv := mapGetenv(map[string]string{jwtSecretEnvKey: "   "})
 
 	// Act
-	_, err := requiredEnvironmentValue(getenv, dbURLEnvKey)
+	_, err := requiredEnvironmentValue(getenv, jwtSecretEnvKey)
 
 	// Assert
 	if !errors.Is(err, ErrMissingEnvironmentVariable) {

@@ -4,13 +4,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestRun_MissingConfiguration_ReturnsErrMissingEnvironmentVariable(t *testing.T) {
 	// Arrange
-	t.Setenv(dbURLEnvKey, "")
 	t.Setenv(jwtSecretEnvKey, "")
 	t.Setenv(accessTokenTTLEnvKey, "")
 	t.Setenv(refreshTokenTTLEnvKey, "")
@@ -26,21 +27,20 @@ func TestRun_MissingConfiguration_ReturnsErrMissingEnvironmentVariable(t *testin
 	}
 }
 
-func TestRun_InvalidDatabaseURL_ReturnsError(t *testing.T) {
+func TestLocalSQLiteDatabasePath_UsesUserConfigDirTaskifyDatabase(t *testing.T) {
 	// Arrange
-	t.Setenv(dbURLEnvKey, "://invalid")
-	t.Setenv(jwtSecretEnvKey, "local-secret")
-	t.Setenv(accessTokenTTLEnvKey, "5m")
-	t.Setenv(refreshTokenTTLEnvKey, "24h")
-	t.Setenv(portEnvKey, "8080")
-	t.Setenv(bcryptCostEnvKey, "10")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	// Act
-	err := run()
+	databasePath, err := localSQLiteDatabasePath()
 
 	// Assert
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	expectedSuffix := sqliteAppFolderName + string(filepath.Separator) + sqliteDatabaseName
+	if !strings.HasSuffix(databasePath, expectedSuffix) {
+		t.Fatalf("expected path to end with %q, got %q", expectedSuffix, databasePath)
 	}
 }
 
