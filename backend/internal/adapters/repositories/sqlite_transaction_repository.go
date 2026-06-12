@@ -19,62 +19,62 @@ const (
 	sqliteGetTransactionByIDQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetTransactionsByUserIDQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDFromQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND date >= ?
+		WHERE user_id = ? AND date >= ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDToQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND date < ?
+		WHERE user_id = ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDRangeQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND date >= ? AND date < ?
+		WHERE user_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND credit_card_id = ?
+		WHERE user_id = ? AND credit_card_id = ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDFromQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND credit_card_id = ? AND date >= ?
+		WHERE user_id = ? AND credit_card_id = ? AND date >= ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDToQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND credit_card_id = ? AND date < ?
+		WHERE user_id = ? AND credit_card_id = ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDRangeQuery = `
 		SELECT id, user_id, credit_card_id, type, concept, category, amount_cents, date, status, msi, created_at, updated_at
 		FROM transactions
-		WHERE user_id = ? AND credit_card_id = ? AND date >= ? AND date < ?
+		WHERE user_id = ? AND credit_card_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
@@ -93,7 +93,8 @@ const (
 	`
 
 	sqliteDeleteTransactionQuery = `
-		DELETE FROM transactions
+		UPDATE transactions
+		SET deleted_at = ?, updated_at = ?
 		WHERE id = ?
 	`
 )
@@ -183,7 +184,8 @@ func (repository *SQLiteTransactionRepository) Update(ctx context.Context, trans
 }
 
 func (repository *SQLiteTransactionRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTransactionQuery, id); err != nil {
+	deletedAt := timeValue(time.Now())
+	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTransactionQuery, deletedAt, deletedAt, id); err != nil {
 		repository.logger.Error("failed to delete transaction", "transactionID", id, "error", err)
 		return ports.ErrTransactionRepositoryUnavailable
 	}

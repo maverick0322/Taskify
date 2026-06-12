@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
@@ -18,13 +19,13 @@ const (
 	sqliteGetBoardByIDQuery = `
 		SELECT id, user_id, name, created_at, updated_at
 		FROM boards
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetBoardsByUserIDQuery = `
 		SELECT id, user_id, name, created_at, updated_at
 		FROM boards
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -36,8 +37,21 @@ const (
 	`
 
 	sqliteDeleteBoardQuery = `
-		DELETE FROM boards
+		UPDATE boards
+		SET deleted_at = ?, updated_at = ?
 		WHERE id = ?
+	`
+
+	sqliteSoftDeleteBoardColumnsQuery = `
+		UPDATE columns
+		SET deleted_at = ?, updated_at = ?
+		WHERE board_id = ? AND deleted_at IS NULL
+	`
+
+	sqliteSoftDeleteBoardTasksQuery = `
+		UPDATE tasks
+		SET deleted_at = ?, updated_at = ?
+		WHERE board_id = ? AND deleted_at IS NULL
 	`
 )
 
@@ -114,8 +128,28 @@ func (repository *SQLiteBoardRepository) Update(ctx context.Context, board *doma
 }
 
 func (repository *SQLiteBoardRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteBoardQuery, id); err != nil {
+	deletedAt := timeValue(time.Now())
+	tx, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		repository.logger.Error("failed to begin board soft delete", "boardID", id, "error", err)
+		return ports.ErrBoardRepositoryUnavailable
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, sqliteDeleteBoardQuery, deletedAt, deletedAt, id); err != nil {
 		repository.logger.Error("failed to delete board", "boardID", id, "error", err)
+		return ports.ErrBoardRepositoryUnavailable
+	}
+	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardColumnsQuery, deletedAt, deletedAt, id); err != nil {
+		repository.logger.Error("failed to delete board columns", "boardID", id, "error", err)
+		return ports.ErrBoardRepositoryUnavailable
+	}
+	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardTasksQuery, deletedAt, deletedAt, id); err != nil {
+		repository.logger.Error("failed to delete board tasks", "boardID", id, "error", err)
+		return ports.ErrBoardRepositoryUnavailable
+	}
+	if err := tx.Commit(); err != nil {
+		repository.logger.Error("failed to commit board soft delete", "boardID", id, "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}
 

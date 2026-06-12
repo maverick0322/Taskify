@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
@@ -18,13 +19,13 @@ const (
 	sqliteGetColumnByIDQuery = `
 		SELECT id, board_id, name, position, created_at, updated_at
 		FROM columns
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetColumnsByBoardIDQuery = `
 		SELECT id, board_id, name, position, created_at, updated_at
 		FROM columns
-		WHERE board_id = ?
+		WHERE board_id = ? AND deleted_at IS NULL
 		ORDER BY position ASC
 	`
 
@@ -44,7 +45,8 @@ const (
 	`
 
 	sqliteDeleteColumnQuery = `
-		DELETE FROM columns
+		UPDATE columns
+		SET deleted_at = ?, updated_at = ?
 		WHERE id = ?
 	`
 )
@@ -149,7 +151,8 @@ func (repository *SQLiteColumnRepository) UpdatePositions(ctx context.Context, c
 }
 
 func (repository *SQLiteColumnRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteColumnQuery, id); err != nil {
+	deletedAt := timeValue(time.Now())
+	if _, err := repository.database.ExecContext(ctx, sqliteDeleteColumnQuery, deletedAt, deletedAt, id); err != nil {
 		repository.logger.Error("failed to delete column", "columnID", id, "error", err)
 		return ports.ErrColumnRepositoryUnavailable
 	}

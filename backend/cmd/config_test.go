@@ -14,6 +14,7 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 		refreshTokenTTLEnvKey: "24h",
 		portEnvKey:            "8080",
 		bcryptCostEnvKey:      "10",
+		remoteDBURLEnvKey:     "postgres://remote.example/taskify",
 	})
 
 	// Act
@@ -31,6 +32,9 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	}
 	if config.bcryptCost != 10 {
 		t.Errorf("expected bcrypt cost 10, got %d", config.bcryptCost)
+	}
+	if config.remoteDatabaseURL != "postgres://remote.example/taskify" {
+		t.Errorf("expected remote database URL to be preserved, got %q", config.remoteDatabaseURL)
 	}
 }
 

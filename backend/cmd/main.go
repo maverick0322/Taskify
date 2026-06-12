@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -67,6 +68,16 @@ func run() error {
 	}
 	defer sqliteDatabase.Close()
 
+	var remoteDatabase *sql.DB
+	if config.remoteDatabaseURL != "" {
+		remoteDatabase, err = openRemotePostgresDatabase(startupContext, config.remoteDatabaseURL)
+		if err != nil {
+			applicationLogger.Warn("remote sync disabled because postgres initialization failed", "error", err)
+		} else {
+			defer remoteDatabase.Close()
+		}
+	}
+
 	passwordHasher, err := auth.NewBcryptHasher(config.bcryptCost)
 	if err != nil {
 		return fmt.Errorf("failed to initialize password hasher: %w", err)
@@ -121,6 +132,11 @@ func run() error {
 
 	shutdownContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
+
+	if remoteDatabase != nil {
+		syncService := services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
+		go startSyncWorker(shutdownContext, syncService, applicationLogger)
+	}
 
 	serverErrors := make(chan error, 1)
 	go startHTTPServer(server, serverErrors)

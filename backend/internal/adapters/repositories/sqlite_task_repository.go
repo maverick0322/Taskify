@@ -19,20 +19,20 @@ const (
 	sqliteGetTaskByIDQuery = `
 		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetTasksByUserIDQuery = `
 		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
 	sqliteGetTasksByUserIDAndBoardIDQuery = `
 		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE user_id = ? AND board_id = ?
+		WHERE user_id = ? AND board_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -49,7 +49,8 @@ const (
 	`
 
 	sqliteDeleteTaskQuery = `
-		DELETE FROM tasks
+		UPDATE tasks
+		SET deleted_at = ?, updated_at = ?
 		WHERE id = ?
 	`
 )
@@ -133,7 +134,8 @@ func (repository *SQLiteTaskRepository) Update(ctx context.Context, task *domain
 }
 
 func (repository *SQLiteTaskRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTaskQuery, id); err != nil {
+	deletedAt := timeValue(time.Now())
+	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTaskQuery, deletedAt, deletedAt, id); err != nil {
 		repository.logger.Error("failed to delete task", "taskID", id, "error", err)
 		return ports.ErrTaskRepositoryUnavailable
 	}

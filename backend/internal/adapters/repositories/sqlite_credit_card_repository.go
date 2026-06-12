@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
@@ -18,13 +19,13 @@ const (
 	sqliteGetCreditCardByIDQuery = `
 		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
 		FROM credit_cards
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetCreditCardsByUserIDQuery = `
 		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
 		FROM credit_cards
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -42,8 +43,15 @@ const (
 	`
 
 	sqliteDeleteCreditCardQuery = `
-		DELETE FROM credit_cards
+		UPDATE credit_cards
+		SET deleted_at = ?, updated_at = ?
 		WHERE id = ?
+	`
+
+	sqliteNullDeletedCreditCardTransactionsQuery = `
+		UPDATE transactions
+		SET credit_card_id = NULL, updated_at = ?
+		WHERE credit_card_id = ? AND deleted_at IS NULL
 	`
 )
 
@@ -145,8 +153,24 @@ func (repository *SQLiteCreditCardRepository) Update(ctx context.Context, credit
 }
 
 func (repository *SQLiteCreditCardRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteCreditCardQuery, id); err != nil {
+	deletedAt := timeValue(time.Now())
+	tx, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		repository.logger.Error("failed to begin credit card soft delete", "creditCardID", id, "error", err)
+		return ports.ErrCreditCardRepositoryUnavailable
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, sqliteDeleteCreditCardQuery, deletedAt, deletedAt, id); err != nil {
 		repository.logger.Error("failed to delete credit card", "creditCardID", id, "error", err)
+		return ports.ErrCreditCardRepositoryUnavailable
+	}
+	if _, err := tx.ExecContext(ctx, sqliteNullDeletedCreditCardTransactionsQuery, deletedAt, id); err != nil {
+		repository.logger.Error("failed to detach deleted credit card transactions", "creditCardID", id, "error", err)
+		return ports.ErrCreditCardRepositoryUnavailable
+	}
+	if err := tx.Commit(); err != nil {
+		repository.logger.Error("failed to commit credit card soft delete", "creditCardID", id, "error", err)
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
 

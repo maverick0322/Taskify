@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     birth_date DATETIME NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS boards (
     name TEXT NOT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_boards_name_length CHECK (length(trim(name)) >= 3),
     CONSTRAINT chk_boards_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
     CONSTRAINT chk_boards_updated_at_not_zero CHECK (updated_at > '0001-01-01 00:00:00+00:00')
@@ -44,6 +47,7 @@ CREATE TABLE IF NOT EXISTS columns (
     position INTEGER NOT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_columns_name_length CHECK (length(trim(name)) >= 3),
     CONSTRAINT chk_columns_position_non_negative CHECK (position >= 0),
     CONSTRAINT chk_columns_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
@@ -63,6 +67,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_tasks_title_length CHECK (length(trim(title)) >= 3),
     CONSTRAINT chk_tasks_status CHECK (status IN ('todo', 'in_progress', 'done')),
     CONSTRAINT chk_tasks_priority CHECK (priority IN ('low', 'medium', 'high'))
@@ -84,6 +89,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
     color TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_credit_cards_name_not_empty CHECK (length(trim(name)) > 0),
     CONSTRAINT chk_credit_cards_bank_not_empty CHECK (length(trim(bank)) > 0),
     CONSTRAINT chk_credit_cards_last4 CHECK (last4 GLOB '[0-9][0-9][0-9][0-9]'),
@@ -110,6 +116,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     msi INTEGER NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_transactions_type CHECK (type IN ('INCOME', 'EXPENSE')),
     CONSTRAINT chk_transactions_concept_not_empty CHECK (length(trim(concept)) > 0),
     CONSTRAINT chk_transactions_category_not_empty CHECK (length(trim(category)) > 0),
@@ -124,3 +131,9 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_credit_card_id ON transactions(user_id, credit_card_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    key TEXT PRIMARY KEY,
+    last_successful_sync_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

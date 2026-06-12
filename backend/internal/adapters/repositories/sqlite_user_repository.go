@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
@@ -11,20 +12,20 @@ import (
 
 const (
 	sqliteSaveUserQuery = `
-		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	sqliteGetUserByIDQuery = `
 		SELECT id, email, password_hash, first_name, last_name, birth_date
 		FROM users
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetUserByEmailQuery = `
 		SELECT id, email, password_hash, first_name, last_name, birth_date
 		FROM users
-		WHERE email = ?
+		WHERE email = ? AND deleted_at IS NULL
 	`
 )
 
@@ -53,6 +54,7 @@ func (repository *SQLiteUserRepository) Save(ctx context.Context, user *domain.U
 		profile.FirstName(),
 		profile.LastName(),
 		timeValue(profile.BirthDate()),
+		timeValue(time.Now()),
 	)
 	if err == nil {
 		return nil
