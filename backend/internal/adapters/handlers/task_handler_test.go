@@ -25,11 +25,15 @@ type mockTaskUseCase struct {
 	boardTasksCalled bool
 }
 
-func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID string, boardID *string, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error) {
+func (useCase *mockTaskUseCase) CreateTask(ctx context.Context, userID string, boardID *string, options ...interface{}) (*domain.Task, error) {
 	if boardID != nil {
 		useCase.requestedBoardID = *boardID
 	}
-	useCase.requestedDueDate = dueDate
+	if len(options) > 0 {
+		if dueDate, ok := options[len(options)-1].(time.Time); ok {
+			useCase.requestedDueDate = dueDate
+		}
+	}
 	return useCase.taskToReturn, useCase.errToReturn
 }
 
@@ -48,8 +52,12 @@ func (useCase *mockTaskUseCase) GetBoardTasks(ctx context.Context, userID, board
 	return useCase.tasksToReturn, useCase.errToReturn
 }
 
-func (useCase *mockTaskUseCase) UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error {
-	useCase.requestedDueDate = dueDate
+func (useCase *mockTaskUseCase) UpdateTask(ctx context.Context, userID, taskID, title, description string, options ...interface{}) error {
+	if len(options) > 0 {
+		if dueDate, ok := options[len(options)-1].(time.Time); ok {
+			useCase.requestedDueDate = dueDate
+		}
+	}
 	return useCase.errToReturn
 }
 
@@ -62,6 +70,10 @@ func (useCase *mockTaskUseCase) UpdateTaskStatus(ctx context.Context, userID, ta
 }
 
 func (useCase *mockTaskUseCase) UpdateTaskPriority(ctx context.Context, userID, taskID string, priority domain.TaskPriority) error {
+	return useCase.errToReturn
+}
+
+func (useCase *mockTaskUseCase) MoveTaskToColumn(ctx context.Context, userID, taskID string, columnID *string) error {
 	return useCase.errToReturn
 }
 

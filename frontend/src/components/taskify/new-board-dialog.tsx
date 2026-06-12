@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { getFriendlyErrorMessage } from "@/services/api"
 import { createBoard } from "@/services/boardService"
 
 interface NewBoardDialogProps {
@@ -35,9 +36,10 @@ export function NewBoardDialog({ open, onOpenChange }: NewBoardDialogProps) {
     },
     onError: (error) => {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "No pudimos crear el tablero. Intentalo de nuevo.",
+        getFriendlyErrorMessage(
+          error,
+          "No pudimos crear el tablero. Intentalo de nuevo.",
+        ),
       )
     },
   })

@@ -33,9 +33,10 @@ type BoardUseCase interface {
 	GetUserBoards(ctx context.Context, userID string) ([]*domain.Board, error)
 	UpdateBoardName(ctx context.Context, userID, boardID, name string) error
 	DeleteBoard(ctx context.Context, userID, boardID string) error
-	CreateColumn(ctx context.Context, userID, boardID, name string, position int) (*domain.Column, error)
+	CreateColumn(ctx context.Context, userID, boardID, name string, options ...interface{}) (*domain.Column, error)
 	GetBoardColumns(ctx context.Context, userID, boardID string) ([]*domain.Column, error)
 	UpdateColumnName(ctx context.Context, userID, columnID, name string) error
+	UpdateColumn(ctx context.Context, userID, columnID, name, color string) error
 	MoveColumn(ctx context.Context, userID, columnID string, position int) error
 	DeleteColumn(ctx context.Context, userID, columnID string) error
 }

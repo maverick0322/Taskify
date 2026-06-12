@@ -17,8 +17,10 @@ import { cn } from "@/lib/utils"
 import { formatTaskDueDateLabel } from "@/lib/task-dates"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import { getFriendlyErrorMessage } from "@/services/api"
 import { getBoards } from "@/services/boardService"
 import {
   deleteTask,
@@ -295,6 +297,7 @@ export function AllTasksView() {
   const queryClient = useQueryClient()
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null)
   const {
     data: tasks = [],
     isLoading: tasksLoading,
@@ -325,10 +328,10 @@ export function AllTasksView() {
   )
   const globalTasks = displayTasks.filter((task) => !task.task.boardId)
   const boardTasks = displayTasks.filter((task) => task.task.boardId)
-  const tasksErrorMessage =
-    tasksError instanceof Error
-      ? tasksError.message
-      : "No se pudieron cargar las tareas"
+  const tasksErrorMessage = getFriendlyErrorMessage(
+    tasksError,
+    "No se pudieron cargar las tareas",
+  )
 
   const statusMutation = useMutation({
     mutationFn: updateTaskStatus,
@@ -359,6 +362,7 @@ export function AllTasksView() {
     onSuccess: (_data, taskId) => {
       const task = tasks.find((currentTask) => currentTask.id === taskId)
       invalidateTaskCaches(queryClient, task?.boardId)
+      setTaskToDelete(null)
     },
   })
 
@@ -375,11 +379,15 @@ export function AllTasksView() {
   }
 
   function handleDeleteTask(task: Task) {
-    if (!window.confirm(`¿Eliminar la tarea "${task.title}"?`)) {
+    setTaskToDelete(task)
+  }
+
+  function handleConfirmDeleteTask() {
+    if (!taskToDelete) {
       return
     }
 
-    deleteMutation.mutate(task.id)
+    deleteMutation.mutate(taskToDelete.id)
   }
 
   function handleStatusChange(task: Task, status: TaskStatus) {
@@ -505,6 +513,23 @@ export function AllTasksView() {
         open={editDialogOpen}
         onOpenChange={handleEditDialogOpenChange}
         taskToEdit={taskToEdit}
+      />
+      <ConfirmDialog
+        open={Boolean(taskToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTaskToDelete(null)
+          }
+        }}
+        title="Eliminar tarea"
+        description={
+          taskToDelete
+            ? `Se eliminara "${taskToDelete.title}". Esta accion no se puede deshacer.`
+            : ""
+        }
+        confirmLabel="Eliminar tarea"
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDeleteTask}
       />
     </>
   )

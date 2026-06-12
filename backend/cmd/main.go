@@ -101,7 +101,7 @@ func run() error {
 	transactionRepository := repositories.NewSQLiteTransactionRepository(sqliteDatabase, applicationLogger)
 	creditCardRepository := repositories.NewSQLiteCreditCardRepository(sqliteDatabase, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
-	taskUseCase := services.NewTaskService(taskRepository, boardRepository, idGenerator, applicationLogger)
+	taskUseCase := services.NewTaskService(taskRepository, boardRepository, columnRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
 	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger)
 	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger)

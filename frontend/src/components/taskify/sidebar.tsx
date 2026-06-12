@@ -3,6 +3,7 @@
 import React, { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import type { CurrentView } from "@/components/taskify/navigation"
 import type { Board } from "@/services/boardService"
@@ -61,25 +62,48 @@ export function Sidebar({
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
   const [newBoardOpen, setNewBoardOpen] = useState(false)
+  const [boardToDelete, setBoardToDelete] = useState<Board | null>(null)
   const deleteBoardMutation = useMutation({
     mutationFn: deleteBoard,
     onSuccess: (_data, boardId) => {
       queryClient.invalidateQueries({ queryKey: ["boards"] })
       invalidateTaskCaches(queryClient, boardId)
+      setBoardToDelete(null)
     },
   })
 
   function handleDeleteBoard(board: Board) {
-    if (!window.confirm(`¿Eliminar el tablero "${board.name}"?`)) {
+    setBoardToDelete(board)
+  }
+
+  function handleConfirmDeleteBoard() {
+    if (!boardToDelete) {
       return
     }
 
-    deleteBoardMutation.mutate(board.id)
+    deleteBoardMutation.mutate(boardToDelete.id)
   }
 
   return (
     <TooltipProvider delayDuration={0}>
       <NewBoardDialog open={newBoardOpen} onOpenChange={setNewBoardOpen} />
+      <ConfirmDialog
+        open={Boolean(boardToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setBoardToDelete(null)
+          }
+        }}
+        title="Eliminar tablero"
+        description={
+          boardToDelete
+            ? `Se eliminara "${boardToDelete.name}" junto con sus columnas y tareas. Esta accion no se puede deshacer.`
+            : ""
+        }
+        confirmLabel="Eliminar tablero"
+        isPending={deleteBoardMutation.isPending}
+        onConfirm={handleConfirmDeleteBoard}
+      />
       <aside
         className={cn(
           "flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground",

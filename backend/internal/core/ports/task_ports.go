@@ -3,7 +3,6 @@ package ports
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 )
@@ -20,14 +19,15 @@ type TaskRepository interface {
 
 // TaskUseCase defines user-scoped application operations for task management.
 type TaskUseCase interface {
-	CreateTask(ctx context.Context, userID string, boardID *string, title, description string, priority domain.TaskPriority, dueDate time.Time) (*domain.Task, error)
+	CreateTask(ctx context.Context, userID string, boardID *string, options ...interface{}) (*domain.Task, error)
 	GetTask(ctx context.Context, userID, taskID string) (*domain.Task, error)
 	GetUserTasks(ctx context.Context, userID string) ([]*domain.Task, error)
 	GetBoardTasks(ctx context.Context, userID, boardID string) ([]*domain.Task, error)
-	UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error
+	UpdateTask(ctx context.Context, userID, taskID, title, description string, options ...interface{}) error
 	UpdateTaskDetails(ctx context.Context, userID, taskID, title, description string) error
 	UpdateTaskStatus(ctx context.Context, userID, taskID string, status domain.TaskStatus) error
 	UpdateTaskPriority(ctx context.Context, userID, taskID string, priority domain.TaskPriority) error
+	MoveTaskToColumn(ctx context.Context, userID, taskID string, columnID *string) error
 	DeleteTask(ctx context.Context, userID, taskID string) error
 }
 

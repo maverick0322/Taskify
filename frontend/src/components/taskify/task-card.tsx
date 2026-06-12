@@ -2,9 +2,10 @@
 
 import { Draggable } from "@hello-pangea/dnd"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import type { CSSProperties, MouseEvent } from "react"
+import { useState, type CSSProperties, type MouseEvent } from "react"
 
 import { cn } from "@/lib/utils"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -85,12 +86,14 @@ export function TaskCard({
 }: TaskCardProps) {
   const { label, className } = priorityConfig[priority]
   const queryClient = useQueryClient()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const boardTasksQueryKey = ["tasks", selectedBoardId]
   const globalTasksQueryKey = ["tasks", "global"]
   const deleteMutation = useMutation({
     mutationFn: deleteTask,
     onSuccess: () => {
       invalidateTaskCaches(queryClient, selectedBoardId)
+      setDeleteDialogOpen(false)
     },
   })
   const statusMutation = useMutation<
@@ -152,13 +155,12 @@ export function TaskCard({
     onEditTask(task)
   }
 
-  function handleDelete(event: MouseEvent<HTMLButtonElement>) {
+  function handleDeleteClick(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
+    setDeleteDialogOpen(true)
+  }
 
-    if (!window.confirm("¿Eliminar esta tarea?")) {
-      return
-    }
-
+  function handleConfirmDelete() {
     deleteMutation.mutate(id)
   }
 
@@ -171,11 +173,12 @@ export function TaskCard({
   }
 
   return (
-    <Draggable draggableId={id} index={index}>
-      {(provided) => {
-        const draggableStyle = provided.draggableProps.style as CSSProperties
+    <>
+      <Draggable draggableId={id} index={index}>
+        {(provided) => {
+          const draggableStyle = provided.draggableProps.style as CSSProperties
 
-        return (
+          return (
         <article
           ref={provided.innerRef}
           {...provided.draggableProps}
@@ -240,7 +243,7 @@ export function TaskCard({
                 className="size-6 text-muted-foreground hover:text-red-600"
                 aria-label="Eliminar tarea"
                 disabled={deleteMutation.isPending}
-                onClick={handleDelete}
+                onClick={handleDeleteClick}
               >
                 <Trash2 className="size-3.5" />
               </Button>
@@ -301,8 +304,18 @@ export function TaskCard({
             </div>
           </div>
         </article>
-        )
-      }}
-    </Draggable>
+          )
+        }}
+      </Draggable>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Eliminar tarea"
+        description={`Se eliminara "${title}". Esta accion no se puede deshacer.`}
+        confirmLabel="Eliminar tarea"
+        isPending={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+      />
+    </>
   )
 }

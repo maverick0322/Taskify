@@ -12,18 +12,18 @@ import (
 
 const (
 	sqliteSaveColumnQuery = `
-		INSERT INTO columns (id, board_id, name, position, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO columns (id, board_id, name, color, position, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	sqliteGetColumnByIDQuery = `
-		SELECT id, board_id, name, position, created_at, updated_at
+		SELECT id, board_id, name, color, position, created_at, updated_at
 		FROM columns
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetColumnsByBoardIDQuery = `
-		SELECT id, board_id, name, position, created_at, updated_at
+		SELECT id, board_id, name, color, position, created_at, updated_at
 		FROM columns
 		WHERE board_id = ? AND deleted_at IS NULL
 		ORDER BY position ASC
@@ -32,6 +32,7 @@ const (
 	sqliteUpdateColumnQuery = `
 		UPDATE columns
 		SET name = ?,
+			color = ?,
 			position = ?,
 			updated_at = ?
 		WHERE id = ?
@@ -66,7 +67,7 @@ func (repository *SQLiteColumnRepository) Save(ctx context.Context, column *doma
 		return ports.ErrColumnRepositoryUnavailable
 	}
 
-	_, err := repository.database.ExecContext(ctx, sqliteSaveColumnQuery, column.ID(), column.BoardID(), column.Name(), column.Position(), timeValue(column.CreatedAt()), timeValue(column.UpdatedAt()))
+	_, err := repository.database.ExecContext(ctx, sqliteSaveColumnQuery, column.ID(), column.BoardID(), column.Name(), column.Color(), column.Position(), timeValue(column.CreatedAt()), timeValue(column.UpdatedAt()))
 	if err != nil {
 		repository.logger.Error("failed to save column", "boardID", column.BoardID(), "columnID", column.ID(), "error", err)
 		return ports.ErrColumnRepositoryUnavailable
@@ -115,7 +116,7 @@ func (repository *SQLiteColumnRepository) Update(ctx context.Context, column *do
 		return ports.ErrColumnRepositoryUnavailable
 	}
 
-	if _, err := repository.database.ExecContext(ctx, sqliteUpdateColumnQuery, column.Name(), column.Position(), timeValue(column.UpdatedAt()), column.ID()); err != nil {
+	if _, err := repository.database.ExecContext(ctx, sqliteUpdateColumnQuery, column.Name(), column.Color(), column.Position(), timeValue(column.UpdatedAt()), column.ID()); err != nil {
 		repository.logger.Error("failed to update column", "boardID", column.BoardID(), "columnID", column.ID(), "error", err)
 		return ports.ErrColumnRepositoryUnavailable
 	}
@@ -164,11 +165,11 @@ func (repository *SQLiteColumnRepository) scanColumn(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.Column, error) {
 	var storedColumn storedColumn
-	if err := row.Scan(&storedColumn.id, &storedColumn.boardID, &storedColumn.name, &storedColumn.position, &storedColumn.createdAt, &storedColumn.updatedAt); err != nil {
+	if err := row.Scan(&storedColumn.id, &storedColumn.boardID, &storedColumn.name, &storedColumn.color, &storedColumn.position, &storedColumn.createdAt, &storedColumn.updatedAt); err != nil {
 		return nil, err
 	}
 
-	return domain.RehydrateColumn(storedColumn.id, storedColumn.boardID, storedColumn.name, storedColumn.position, storedColumn.createdAt, storedColumn.updatedAt)
+	return domain.RehydrateColumn(storedColumn.id, storedColumn.boardID, storedColumn.name, storedColumn.color, storedColumn.position, storedColumn.createdAt, storedColumn.updatedAt)
 }
 
 func (repository *SQLiteColumnRepository) mapReadError(err error, message string, keysAndValues ...interface{}) (*domain.Column, error) {

@@ -13,11 +13,20 @@ type TokenPairResponse = {
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly backendMessage?: string;
+  readonly technicalMessage?: string;
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    backendMessage?: string,
+    technicalMessage?: string,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.backendMessage = backendMessage;
+    this.technicalMessage = technicalMessage;
   }
 }
 
@@ -47,7 +56,7 @@ async function requestWithAuth<T>(
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await safeFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
   });
@@ -73,7 +82,10 @@ async function requestWithAuth<T>(
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessageFromResponse(response));
+    throw apiErrorFromResponse(
+      response.status,
+      await errorMessageFromResponse(response),
+    );
   }
 
   if (response.status === 204) {
@@ -106,10 +118,15 @@ async function performRefresh(): Promise<string> {
   const refreshToken = localStorage.getItem("refreshToken");
 
   if (!refreshToken) {
-    throw new ApiError(401, "missing refresh token");
+    throw new ApiError(
+      401,
+      "Tu sesion expiro. Inicia sesion nuevamente.",
+      undefined,
+      "missing refresh token",
+    );
   }
 
-  const response = await fetch(`${API_BASE_URL}/users/refresh`, {
+  const response = await safeFetch(`${API_BASE_URL}/users/refresh`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -118,13 +135,21 @@ async function performRefresh(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessageFromResponse(response));
+    throw apiErrorFromResponse(
+      response.status,
+      await errorMessageFromResponse(response),
+    );
   }
 
   const tokenPair = (await response.json()) as TokenPairResponse;
 
   if (!tokenPair.accessToken || !tokenPair.refreshToken) {
-    throw new ApiError(401, "invalid refresh response");
+    throw new ApiError(
+      401,
+      "Tu sesion expiro. Inicia sesion nuevamente.",
+      undefined,
+      "invalid refresh response",
+    );
   }
 
   localStorage.setItem("refreshToken", tokenPair.refreshToken);
@@ -138,6 +163,32 @@ function useAuthStoreLogout() {
   useAuthStore.getState().logout();
 }
 
+export function getFriendlyErrorMessage(
+  error: unknown,
+  fallback = "No pudimos completar la solicitud. Intentalo de nuevo.",
+): string {
+  return normalizeApiError(error, fallback).message;
+}
+
+export function normalizeApiError(
+  error: unknown,
+  fallback = "No pudimos completar la solicitud. Intentalo de nuevo.",
+): ApiError {
+  if (error instanceof ApiError) {
+    return error;
+  }
+
+  if (isNetworkError(error)) {
+    return networkApiError(error);
+  }
+
+  if (error instanceof Error) {
+    return new ApiError(0, fallback, undefined, error.message);
+  }
+
+  return new ApiError(0, fallback);
+}
+
 async function errorMessageFromResponse(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as ApiErrorResponse;
@@ -146,3 +197,110 @@ async function errorMessageFromResponse(response: Response): Promise<string> {
     return response.statusText;
   }
 }
+
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    throw networkApiError(error);
+  }
+}
+
+function networkApiError(error: unknown): ApiError {
+  return new ApiError(
+    0,
+    "Error de conexion: El servidor interno no responde.",
+    undefined,
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+function apiErrorFromResponse(status: number, backendMessage: string): ApiError {
+  return new ApiError(
+    status,
+    friendlyMessageFromStatus(status, backendMessage),
+    backendMessage,
+  );
+}
+
+function friendlyMessageFromStatus(
+  status: number,
+  backendMessage?: string,
+): string {
+  if (status >= 500) {
+    return "Ocurrio un error inesperado en el servidor.";
+  }
+
+  const normalizedMessage = normalizeBackendMessage(backendMessage);
+  const translatedMessage = translatedBackendMessages[normalizedMessage];
+  if (translatedMessage) {
+    return translatedMessage;
+  }
+
+  if (status === 401) {
+    return "Tu sesion expiro. Inicia sesion nuevamente.";
+  }
+
+  if (status === 403) {
+    return "No tienes permiso para realizar esta accion.";
+  }
+
+  if (status === 404) {
+    return "No encontramos el recurso solicitado.";
+  }
+
+  if (status === 409) {
+    return "La informacion entra en conflicto con un registro existente.";
+  }
+
+  if (status >= 400) {
+    return "No pudimos completar la solicitud. Revisa la informacion e intentalo de nuevo.";
+  }
+
+  return "No pudimos completar la solicitud. Intentalo de nuevo.";
+}
+
+function normalizeBackendMessage(message?: string): string {
+  return message?.trim().toLowerCase() ?? "";
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    error.name === "TypeError" ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error")
+  );
+}
+
+const translatedBackendMessages: Record<string, string> = {
+  "invalid credentials": "Credenciales invalidas. Revisa tu correo y contrasena.",
+  unauthorized: "Tu sesion expiro. Inicia sesion nuevamente.",
+  "invalid refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
+  "missing refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
+  "invalid refresh response": "Tu sesion expiro. Inicia sesion nuevamente.",
+  "invalid request body":
+    "La informacion enviada no es valida. Revisa los campos e intentalo de nuevo.",
+  "invalid birth date": "La fecha de nacimiento no es valida.",
+  "invalid due date": "La fecha de entrega no es valida.",
+  "invalid user data": "Revisa tu informacion personal e intentalo de nuevo.",
+  "user already exists": "Ya existe una cuenta con ese correo.",
+  "invalid board data": "Revisa los datos del tablero e intentalo de nuevo.",
+  "board not found": "No encontramos ese tablero.",
+  "column not found": "No encontramos esa columna.",
+  "invalid column data": "Revisa los datos de la columna e intentalo de nuevo.",
+  "invalid task data": "Revisa los datos de la tarea e intentalo de nuevo.",
+  "task not found": "No encontramos esa tarea.",
+  "invalid transaction data":
+    "Revisa los datos de la transaccion e intentalo de nuevo.",
+  "transaction not found": "No encontramos esa transaccion.",
+  "invalid credit card data":
+    "Revisa los datos de la tarjeta e intentalo de nuevo.",
+  "credit card not found": "No encontramos esa tarjeta.",
+  "internal server error": "Ocurrio un error inesperado en el servidor.",
+};

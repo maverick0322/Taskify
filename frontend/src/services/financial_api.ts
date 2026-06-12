@@ -116,6 +116,12 @@ export async function createCreditCard(
   });
 }
 
+export async function deleteCreditCard(id: string): Promise<void> {
+  await apiRequest<void>(`/credit-cards/${id}`, {
+    method: "DELETE",
+  });
+}
+
 function financialDateRangeQuery(range: TransactionDateRange): string {
   const params = new URLSearchParams();
 

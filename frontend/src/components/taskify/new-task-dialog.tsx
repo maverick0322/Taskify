@@ -35,12 +35,14 @@ import {
   taskDueDateInputTime,
   taskDueDateToISOString,
 } from "@/lib/task-dates"
+import { getFriendlyErrorMessage } from "@/services/api"
 import type { Board } from "@/services/boardService"
 import {
   createTask,
   updateTask,
   type Task,
   type TaskPriority,
+  type TaskStatus,
 } from "@/services/taskService"
 
 // Month names for formatting the selected date label
@@ -59,6 +61,8 @@ interface NewTaskDialogProps {
   boards?: Board[]
   selectedBoardId?: string
   taskToEdit?: Task | null
+  initialStatus?: TaskStatus
+  initialColumnId?: string
 }
 
 const GLOBAL_BOARD_VALUE = "__global__"
@@ -81,6 +85,8 @@ export function NewTaskDialog({
   boards = [],
   selectedBoardId,
   taskToEdit,
+  initialStatus,
+  initialColumnId,
 }: NewTaskDialogProps) {
   const queryClient = useQueryClient()
   const [title,       setTitle]       = useState("")
@@ -105,6 +111,8 @@ export function NewTaskDialog({
       priority: TaskPriority
       dueDate: string
       boardId?: string
+      status?: TaskStatus
+      columnId?: string | null
     }) => {
       if (taskToEdit) {
         await updateTask(taskToEdit.id, input)
@@ -123,9 +131,10 @@ export function NewTaskDialog({
     },
     onError: (error) => {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "No pudimos guardar la tarea. Intentalo de nuevo."
+        getFriendlyErrorMessage(
+          error,
+          "No pudimos guardar la tarea. Intentalo de nuevo.",
+        )
       )
     },
   })
@@ -179,6 +188,9 @@ export function NewTaskDialog({
       description,
       priority: mappedPriority,
       dueDate: dueDate ? taskDueDateToISOString(dueDate, time) : "",
+      ...(initialStatus && !isEditing ? { status: initialStatus } : {}),
+      ...(!isEditing && initialColumnId ? { columnId: initialColumnId } : {}),
+      ...(isEditing ? { columnId: taskToEdit?.columnId ?? null } : {}),
       ...(activeBoardId ? { boardId: activeBoardId } : {}),
     })
   }

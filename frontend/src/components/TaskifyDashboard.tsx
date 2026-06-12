@@ -25,6 +25,7 @@ import { Sidebar } from "@/components/taskify/sidebar";
 import { FinancialControlView } from "@/components/financial-control-view";
 import { notifyCriticalAlerts } from "@/lib/notifications";
 import { parseTaskDueDate } from "@/lib/task-dates";
+import { getFriendlyErrorMessage } from "@/services/api";
 import { getBoards } from "@/services/boardService";
 import {
   getFinancialSummary,
@@ -249,12 +250,14 @@ export function TaskifyDashboard() {
     enabled: currentView === "dashboard",
   });
 
-  const taskErrorMessage =
-    error instanceof Error ? error.message : "No se pudo cargar el tablero";
-  const boardsErrorMessage =
-    boardsError instanceof Error
-      ? boardsError.message
-      : "No se pudieron cargar los tableros";
+  const taskErrorMessage = getFriendlyErrorMessage(
+    error,
+    "No se pudo cargar el tablero",
+  );
+  const boardsErrorMessage = getFriendlyErrorMessage(
+    boardsError,
+    "No se pudieron cargar los tableros",
+  );
   const selectedBoard = boards.find((board) => board.id === selectedBoardId);
   const todayTaskCount = globalTasks.filter(
     (task) => isTaskDueToday(task) && task.status !== "done",

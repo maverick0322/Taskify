@@ -56,16 +56,13 @@ func localSQLiteDatabasePath() (string, error) {
 }
 
 func sqliteDSN(databasePath string) string {
-	databaseURL := url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(databasePath),
-	}
-	query := databaseURL.Query()
+	cleanPath := filepath.ToSlash(databasePath)
+	query := url.Values{}
 	query.Set("_pragma", "foreign_keys(1)")
 	query.Add("_pragma", "journal_mode(WAL)")
 	query.Add("_pragma", "busy_timeout(5000)")
-	databaseURL.RawQuery = query.Encode()
-	return databaseURL.String()
+
+	return fmt.Sprintf("file:///%s?%s", cleanPath, query.Encode())
 }
 
 func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
@@ -91,6 +88,15 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 		if _, err := database.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL", table)); err != nil {
 			return fmt.Errorf("failed to backfill sqlite updated_at for %s: %w", table, err)
 		}
+	}
+	if err := ensureSQLiteColumn(ctx, database, "columns", "color", "TEXT NOT NULL DEFAULT 'slate'"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "tasks", "column_id", "TEXT REFERENCES columns(id) ON DELETE SET NULL"); err != nil {
+		return err
+	}
+	if _, err := database.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_tasks_user_id_column_id ON tasks(user_id, column_id)"); err != nil {
+		return fmt.Errorf("failed to create sqlite task column index: %w", err)
 	}
 
 	return nil

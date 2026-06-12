@@ -53,6 +53,7 @@ type Task struct {
 	id          string
 	userID      string
 	boardID     *string
+	columnID    *string
 	title       string
 	description string
 	status      TaskStatus
@@ -63,8 +64,12 @@ type Task struct {
 }
 
 // NewTask centralizes invariants so invalid task state cannot enter the domain.
-func NewTask(id, userID string, boardID *string, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (*Task, error) {
-	taskFields, err := validateTaskFields(id, userID, boardID, title, description, status, priority, dueDate)
+func NewTask(id, userID string, boardID *string, taskOptions ...interface{}) (*Task, error) {
+	columnID, title, description, status, priority, dueDate, err := parseTaskOptions(taskOptions...)
+	if err != nil {
+		return nil, err
+	}
+	taskFields, err := validateTaskFields(id, userID, boardID, columnID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +79,7 @@ func NewTask(id, userID string, boardID *string, title, description string, stat
 		id:          taskFields.id,
 		userID:      taskFields.userID,
 		boardID:     taskFields.boardID,
+		columnID:    taskFields.columnID,
 		title:       taskFields.title,
 		description: taskFields.description,
 		status:      status,
@@ -89,15 +95,13 @@ func RehydrateTask(
 	id,
 	userID string,
 	boardID *string,
-	title,
-	description string,
-	status TaskStatus,
-	priority TaskPriority,
-	createdAt,
-	updatedAt,
-	dueDate time.Time,
+	taskOptions ...interface{},
 ) (*Task, error) {
-	taskFields, err := validateTaskFields(id, userID, boardID, title, description, status, priority, dueDate)
+	columnID, title, description, status, priority, createdAt, updatedAt, dueDate, err := parseRehydrateTaskOptions(taskOptions...)
+	if err != nil {
+		return nil, err
+	}
+	taskFields, err := validateTaskFields(id, userID, boardID, columnID, title, description, status, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +116,7 @@ func RehydrateTask(
 		id:          taskFields.id,
 		userID:      taskFields.userID,
 		boardID:     taskFields.boardID,
+		columnID:    taskFields.columnID,
 		title:       taskFields.title,
 		description: taskFields.description,
 		status:      status,
@@ -122,7 +127,7 @@ func RehydrateTask(
 	}, nil
 }
 
-func validateTaskFields(id, userID string, boardID *string, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
+func validateTaskFields(id, userID string, boardID, columnID *string, title, description string, status TaskStatus, priority TaskPriority, dueDate time.Time) (validatedTaskFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return validatedTaskFields{}, ErrEmptyTaskID
@@ -134,6 +139,7 @@ func validateTaskFields(id, userID string, boardID *string, title, description s
 	}
 
 	trimmedBoardID := normalizeOptionalTaskBoardID(boardID)
+	trimmedColumnID := normalizeOptionalTaskBoardID(columnID)
 
 	trimmedTitle, err := validateTaskTitle(title)
 	if err != nil {
@@ -152,9 +158,15 @@ func validateTaskFields(id, userID string, boardID *string, title, description s
 		id:          trimmedID,
 		userID:      trimmedUserID,
 		boardID:     trimmedBoardID,
+		columnID:    trimmedColumnID,
 		title:       trimmedTitle,
 		description: strings.TrimSpace(description),
 	}, nil
+}
+
+func (task *Task) MoveToColumn(columnID *string) {
+	task.columnID = normalizeOptionalTaskBoardID(columnID)
+	task.touch()
 }
 
 func (task *Task) ChangeStatus(newStatus TaskStatus) error {
@@ -218,6 +230,10 @@ func (task *Task) BoardID() *string {
 	return task.boardID
 }
 
+func (task *Task) ColumnID() *string {
+	return task.columnID
+}
+
 func (task *Task) Title() string {
 	return task.title
 }
@@ -263,6 +279,7 @@ type validatedTaskFields struct {
 	id          string
 	userID      string
 	boardID     *string
+	columnID    *string
 	title       string
 	description string
 }
@@ -278,4 +295,64 @@ func normalizeOptionalTaskBoardID(boardID *string) *string {
 	}
 
 	return &trimmedBoardID
+}
+
+func parseTaskOptions(taskOptions ...interface{}) (*string, string, string, TaskStatus, TaskPriority, time.Time, error) {
+	switch len(taskOptions) {
+	case 5:
+		title, titleOK := taskOptions[0].(string)
+		description, descriptionOK := taskOptions[1].(string)
+		status, statusOK := taskOptions[2].(TaskStatus)
+		priority, priorityOK := taskOptions[3].(TaskPriority)
+		dueDate, dueDateOK := taskOptions[4].(time.Time)
+		if !titleOK || !descriptionOK || !statusOK || !priorityOK || !dueDateOK {
+			return nil, "", "", "", "", time.Time{}, ErrInvalidTaskStatus
+		}
+		return nil, title, description, status, priority, dueDate, nil
+	case 6:
+		columnID, columnOK := taskOptions[0].(*string)
+		title, titleOK := taskOptions[1].(string)
+		description, descriptionOK := taskOptions[2].(string)
+		status, statusOK := taskOptions[3].(TaskStatus)
+		priority, priorityOK := taskOptions[4].(TaskPriority)
+		dueDate, dueDateOK := taskOptions[5].(time.Time)
+		if !columnOK || !titleOK || !descriptionOK || !statusOK || !priorityOK || !dueDateOK {
+			return nil, "", "", "", "", time.Time{}, ErrInvalidTaskStatus
+		}
+		return columnID, title, description, status, priority, dueDate, nil
+	default:
+		return nil, "", "", "", "", time.Time{}, ErrInvalidTaskStatus
+	}
+}
+
+func parseRehydrateTaskOptions(taskOptions ...interface{}) (*string, string, string, TaskStatus, TaskPriority, time.Time, time.Time, time.Time, error) {
+	switch len(taskOptions) {
+	case 7:
+		title, titleOK := taskOptions[0].(string)
+		description, descriptionOK := taskOptions[1].(string)
+		status, statusOK := taskOptions[2].(TaskStatus)
+		priority, priorityOK := taskOptions[3].(TaskPriority)
+		createdAt, createdOK := taskOptions[4].(time.Time)
+		updatedAt, updatedOK := taskOptions[5].(time.Time)
+		dueDate, dueDateOK := taskOptions[6].(time.Time)
+		if !titleOK || !descriptionOK || !statusOK || !priorityOK || !createdOK || !updatedOK || !dueDateOK {
+			return nil, "", "", "", "", time.Time{}, time.Time{}, time.Time{}, ErrInvalidTaskStatus
+		}
+		return nil, title, description, status, priority, createdAt, updatedAt, dueDate, nil
+	case 8:
+		columnID, columnOK := taskOptions[0].(*string)
+		title, titleOK := taskOptions[1].(string)
+		description, descriptionOK := taskOptions[2].(string)
+		status, statusOK := taskOptions[3].(TaskStatus)
+		priority, priorityOK := taskOptions[4].(TaskPriority)
+		createdAt, createdOK := taskOptions[5].(time.Time)
+		updatedAt, updatedOK := taskOptions[6].(time.Time)
+		dueDate, dueDateOK := taskOptions[7].(time.Time)
+		if !columnOK || !titleOK || !descriptionOK || !statusOK || !priorityOK || !createdOK || !updatedOK || !dueDateOK {
+			return nil, "", "", "", "", time.Time{}, time.Time{}, time.Time{}, ErrInvalidTaskStatus
+		}
+		return columnID, title, description, status, priority, createdAt, updatedAt, dueDate, nil
+	default:
+		return nil, "", "", "", "", time.Time{}, time.Time{}, time.Time{}, ErrInvalidTaskStatus
+	}
 }

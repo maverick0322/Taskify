@@ -18,7 +18,7 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   boardId?: string | null;
-  columnId?: string;
+  columnId?: string | null;
   tag?: string;
   assignees?: TaskAssignee[];
   comments?: number;
@@ -30,7 +30,9 @@ export interface CreateTaskInput {
   description: string;
   priority: TaskPriority;
   boardId?: string | null;
+  columnId?: string | null;
   dueDate?: string;
+  status?: TaskStatus;
 }
 
 export interface UpdateTaskStatusInput {
@@ -46,16 +48,24 @@ export async function getTasks(boardId?: string): Promise<Task[]> {
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
-  return apiRequest<Task>("/tasks", {
+  const task = await apiRequest<Task>("/tasks", {
     method: "POST",
     body: JSON.stringify({
       title: input.title,
       description: input.description,
       priority: input.priority,
       ...(input.boardId ? { boardId: input.boardId } : {}),
+      ...(input.columnId ? { columnId: input.columnId } : {}),
       dueDate: input.dueDate ?? "",
     }),
   });
+
+  if (input.status && input.status !== task.status) {
+    await updateTaskStatus({ taskId: task.id, status: input.status });
+    return { ...task, status: input.status };
+  }
+
+  return task;
 }
 
 export async function updateTaskStatus({
@@ -77,9 +87,20 @@ export async function updateTask(
     body: JSON.stringify({
       title: data.title ?? "",
       description: data.description ?? "",
+      columnId: data.columnId ?? null,
       priority: data.priority ?? "medium",
       dueDate: data.dueDate ?? "",
     }),
+  });
+}
+
+export async function moveTaskToColumn(
+  taskId: string,
+  columnId: string | null,
+): Promise<void> {
+  await apiRequest<void>(`/tasks/${taskId}/column`, {
+    method: "PATCH",
+    body: JSON.stringify({ columnId }),
   });
 }
 

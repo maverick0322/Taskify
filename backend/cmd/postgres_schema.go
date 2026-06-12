@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS columns (
     id TEXT PRIMARY KEY,
     board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT 'slate',
     position INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
+    column_id TEXT REFERENCES columns(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,
@@ -52,6 +54,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_board_id ON tasks(user_id, board_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id_column_id ON tasks(user_id, column_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_status ON tasks(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id_due_date ON tasks(user_id, due_date) WHERE due_date IS NOT NULL;
 

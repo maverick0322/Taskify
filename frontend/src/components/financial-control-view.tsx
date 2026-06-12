@@ -9,9 +9,11 @@ import {
   Building2,
   Calendar,
   CreditCard,
+  Pencil,
   Phone,
   Plus,
   PlusCircle,
+  Trash2,
   Wallet,
   Wifi,
   Zap,
@@ -20,6 +22,7 @@ import {
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   Card,
   CardContent,
@@ -59,11 +62,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   createCreditCard,
   createTransaction,
+  deleteCreditCard,
+  deleteTransaction,
   getCreditCards,
   getFinancialSummary,
   getTransactions,
   type CreateCreditCardInput,
   type CreateTransactionInput,
+  type CreditCardSummary,
   type FinancialTransaction,
 } from "@/services/financial_api"
 
@@ -285,11 +291,17 @@ function NewMovementDialog({
   const [recurrencia, setRecurrencia] = useState("once")
   const [monto, setMonto] = useState("")
   const [concepto, setConcepto] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
 
   const handleSubmit = () => {
+    if (!concepto.trim() || !tipo || !categoria || amountToCents(monto) <= 0) {
+      setErrorMessage("Completa concepto, tipo, categoria y un monto valido.")
+      return
+    }
+
     onSubmit({
       type: tipo === "income" ? "INCOME" : "EXPENSE",
-      concept: concepto,
+      concept: concepto.trim(),
       category: categoria,
       amountCents: amountToCents(monto),
       date: formatDateInput(new Date()),
@@ -395,6 +407,11 @@ function NewMovementDialog({
               ))}
             </RadioGroup>
           </div>
+          {errorMessage ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter showCloseButton>
@@ -428,13 +445,18 @@ function NewPaymentDialog({
   const [servicio, setServicio] = useState("")
   const [monto, setMonto] = useState("")
   const [fechaVence, setFechaVence] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
 
   const handleSubmit = () => {
     const selectedService = SERVICES_ICONS.find((service) => service.value === categoria)
+    if (!servicio.trim() || !categoria || !fechaVence || amountToCents(monto) <= 0) {
+      setErrorMessage("Completa servicio, categoria, fecha y un monto valido.")
+      return
+    }
 
     onSubmit({
       type: "EXPENSE",
-      concept: servicio,
+      concept: servicio.trim(),
       category: selectedService?.label ?? categoria,
       amountCents: amountToCents(monto),
       date: fechaVence,
@@ -535,6 +557,11 @@ function NewPaymentDialog({
               ))}
             </RadioGroup>
           </div>
+          {errorMessage ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter showCloseButton>
@@ -722,6 +749,10 @@ export function FinancialControlView() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [addCardDialogOpen, setAddCardDialogOpen] = useState(false)
+  const [transactionToDelete, setTransactionToDelete] =
+    useState<FinancialTransaction | null>(null)
+  const [creditCardToDelete, setCreditCardToDelete] =
+    useState<CreditCardSummary | null>(null)
   const queryClient = useQueryClient()
   const monthRange = useMemo(() => currentMonthRange(), [])
   const queryKeys = useMemo(
@@ -758,11 +789,21 @@ export function FinancialControlView() {
     mutationFn: createTransaction,
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.transactions }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.summary }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
       ])
       setDialogOpen(false)
       setPaymentDialogOpen(false)
+    },
+  })
+  const deleteTransactionMutation = useMutation({
+    mutationFn: deleteTransaction,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+      ])
+      setTransactionToDelete(null)
     },
   })
   const createCreditCardMutation = useMutation({
@@ -770,6 +811,13 @@ export function FinancialControlView() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
       setAddCardDialogOpen(false)
+    },
+  })
+  const deleteCreditCardMutation = useMutation({
+    mutationFn: deleteCreditCard,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      setCreditCardToDelete(null)
     },
   })
 
@@ -792,6 +840,32 @@ export function FinancialControlView() {
   const profitMargin = centsToAmount(financialSummary?.profitMarginCents ?? 0)
   const availableIncomePercentage =
     totalIncome > 0 ? ((profitMargin / totalIncome) * 100).toFixed(1) : "0.0"
+  const transactionToDeleteLabel = transactionToDelete?.concept ?? "este movimiento"
+
+  function handleDeleteTransaction(transactionId: string) {
+    const transaction = apiTransactions.find(
+      (currentTransaction) => currentTransaction.id === transactionId,
+    )
+    if (transaction) {
+      setTransactionToDelete(transaction)
+    }
+  }
+
+  function handleConfirmDeleteTransaction() {
+    if (!transactionToDelete) {
+      return
+    }
+
+    deleteTransactionMutation.mutate(transactionToDelete.id)
+  }
+
+  function handleConfirmDeleteCreditCard() {
+    if (!creditCardToDelete) {
+      return
+    }
+
+    deleteCreditCardMutation.mutate(creditCardToDelete.id)
+  }
 
   return (
     <main className="flex h-full min-h-screen flex-col gap-8 overflow-y-auto bg-slate-50 p-8 dark:bg-background">
@@ -872,6 +946,9 @@ export function FinancialControlView() {
                         <TableHead className="text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Monto
                         </TableHead>
+                        <TableHead className="w-10 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Acciones
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -892,6 +969,9 @@ export function FinancialControlView() {
                               </TableCell>
                               <TableCell>
                                 <Skeleton className="ml-auto h-4 w-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="ml-auto h-8 w-8" />
                               </TableCell>
                             </TableRow>
                           ))
@@ -937,6 +1017,18 @@ export function FinancialControlView() {
                                 {transaction.type === "income" ? "+" : "-"}
                                 {fmt(transaction.amount)}
                               </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-8 text-muted-foreground hover:text-red-600"
+                                  aria-label={`Eliminar movimiento ${transaction.concept}`}
+                                  disabled={deleteTransactionMutation.isPending}
+                                  onClick={() => handleDeleteTransaction(transaction.id)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                     </TableBody>
@@ -964,11 +1056,39 @@ export function FinancialControlView() {
                             <div
                               key={card.id}
                               className={cn(
-                                "flex aspect-[1.586/1] w-full flex-col justify-between rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
+                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
                                 visual.gradient,
                                 visual.border,
                               )}
                             >
+                              <div
+                                className="pointer-events-none absolute inset-0 z-10 bg-black/0 transition-colors duration-150 group-hover:bg-black/35"
+                                aria-hidden="true"
+                              />
+                              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
+                                  aria-label={`Editar tarjeta ${card.name}`}
+                                  title="Editar tarjeta"
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-red-600 shadow-lg hover:bg-white hover:text-red-700"
+                                  aria-label={`Eliminar tarjeta ${card.name}`}
+                                  title="Eliminar tarjeta"
+                                  disabled={deleteCreditCardMutation.isPending}
+                                  onClick={() => setCreditCardToDelete(card)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
                               <div className="flex items-start justify-between">
                                 <div className="flex flex-col gap-0.5">
                                   <CreditCard className="size-8 opacity-90" />
@@ -1104,6 +1224,16 @@ export function FinancialControlView() {
                             <Button size="sm" variant="outline">
                               Pagar
                             </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 text-muted-foreground hover:text-red-600"
+                              aria-label={`Eliminar cuenta por pagar ${payment.service}`}
+                              disabled={deleteTransactionMutation.isPending}
+                              onClick={() => handleDeleteTransaction(payment.id)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
                           </div>
                         </div>
                       )
@@ -1202,6 +1332,36 @@ export function FinancialControlView() {
         onClose={() => setAddCardDialogOpen(false)}
         onSubmit={(data) => createCreditCardMutation.mutate(data)}
         isSaving={createCreditCardMutation.isPending}
+      />
+      <ConfirmDialog
+        open={Boolean(transactionToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTransactionToDelete(null)
+          }
+        }}
+        title="Eliminar movimiento"
+        description={`Se eliminara "${transactionToDeleteLabel}" del control financiero. Esta accion no se puede deshacer.`}
+        confirmLabel="Eliminar movimiento"
+        isPending={deleteTransactionMutation.isPending}
+        onConfirm={handleConfirmDeleteTransaction}
+      />
+      <ConfirmDialog
+        open={Boolean(creditCardToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreditCardToDelete(null)
+          }
+        }}
+        title="Eliminar tarjeta"
+        description={
+          creditCardToDelete
+            ? `Se eliminara la tarjeta "${creditCardToDelete.name}" terminacion ${creditCardToDelete.last4}. Esta accion no se puede deshacer.`
+            : ""
+        }
+        confirmLabel="Eliminar tarjeta"
+        isPending={deleteCreditCardMutation.isPending}
+        onConfirm={handleConfirmDeleteCreditCard}
       />
 
       <div className="h-24" />

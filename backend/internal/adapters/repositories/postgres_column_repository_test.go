@@ -151,8 +151,8 @@ func TestPostgresColumnRepository_SaveValidColumn_ReturnsNil(t *testing.T) {
 	if database.receivedSQL != saveColumnQuery {
 		t.Errorf("expected save column query to be used")
 	}
-	if len(database.receivedArguments) != 6 {
-		t.Errorf("expected six arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 7 {
+		t.Errorf("expected seven arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -512,6 +512,7 @@ func validStoredColumnValues(columnID string, position int) []interface{} {
 		columnID,
 		"board-123",
 		"Backlog",
+		"slate",
 		position,
 		time.Now().Add(-2 * time.Hour),
 		time.Now().Add(-time.Hour),
@@ -520,7 +521,7 @@ func validStoredColumnValues(columnID string, position int) []interface{} {
 
 func corruptedStoredColumnValues() []interface{} {
 	values := validStoredColumnValues("column-123", 0)
-	values[3] = -1
+	values[4] = -1
 	return values
 }
 

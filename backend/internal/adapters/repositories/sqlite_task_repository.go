@@ -12,25 +12,25 @@ import (
 
 const (
 	sqliteSaveTaskQuery = `
-		INSERT INTO tasks (id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	sqliteGetTaskByIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetTasksByUserIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
 		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
 	sqliteGetTasksByUserIDAndBoardIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
 		WHERE user_id = ? AND board_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -39,6 +39,7 @@ const (
 	sqliteUpdateTaskQuery = `
 		UPDATE tasks
 		SET board_id = ?,
+			column_id = ?,
 			title = ?,
 			description = ?,
 			status = ?,
@@ -76,6 +77,7 @@ func (repository *SQLiteTaskRepository) Save(ctx context.Context, task *domain.T
 		task.ID(),
 		task.UserID(),
 		nullableString(task.BoardID()),
+		nullableString(task.ColumnID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -118,6 +120,7 @@ func (repository *SQLiteTaskRepository) Update(ctx context.Context, task *domain
 		ctx,
 		sqliteUpdateTaskQuery,
 		nullableString(task.BoardID()),
+		nullableString(task.ColumnID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -177,6 +180,7 @@ func (repository *SQLiteTaskRepository) scanTask(row interface {
 		&storedTask.id,
 		&storedTask.userID,
 		&storedTask.boardID,
+		&storedTask.columnID,
 		&storedTask.title,
 		&storedTask.description,
 		&storedTask.status,
@@ -192,6 +196,7 @@ func (repository *SQLiteTaskRepository) scanTask(row interface {
 		storedTask.id,
 		storedTask.userID,
 		scanNullableString(storedTask.boardID),
+		scanNullableString(storedTask.columnID),
 		storedTask.title,
 		storedTask.description,
 		domain.TaskStatus(storedTask.status),
@@ -227,6 +232,7 @@ type sqliteStoredTask struct {
 	id          string
 	userID      string
 	boardID     sql.NullString
+	columnID    sql.NullString
 	title       string
 	description string
 	status      string

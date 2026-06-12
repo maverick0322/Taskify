@@ -7,6 +7,7 @@ import { formatTaskDueDateTime, parseTaskDueDate } from "@/lib/task-dates"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
+import { getFriendlyErrorMessage } from "@/services/api"
 import { getTasks, type Task, type TaskPriority, type TaskStatus } from "@/services/taskService"
 import { Clock, Circle, ChevronLeft, ChevronRight } from "lucide-react"
 
@@ -545,8 +546,10 @@ export function AgendaView() {
   })
 
   const agendaTasks = useMemo(() => toAgendaTasks(tasks), [tasks])
-  const errorMessage =
-    error instanceof Error ? error.message : "No se pudo cargar la agenda"
+  const errorMessage = getFriendlyErrorMessage(
+    error,
+    "No se pudo cargar la agenda",
+  )
 
   function prevMonth() {
     if (month === 0) {

@@ -9,6 +9,7 @@ import (
 const (
 	minBoardNameLength  = 3
 	minColumnNameLength = 3
+	defaultColumnColor  = "slate"
 )
 
 var (
@@ -21,6 +22,7 @@ var (
 	ErrInvalidColumnID        = errors.New("domain: column ID cannot be empty")
 	ErrInvalidColumnBoardID   = errors.New("domain: column board ID cannot be empty")
 	ErrInvalidColumnName      = errors.New("domain: column name does not meet minimum length")
+	ErrInvalidColumnColor     = errors.New("domain: column color cannot be empty")
 	ErrInvalidColumnPosition  = errors.New("domain: column position cannot be negative")
 	ErrInvalidColumnCreatedAt = errors.New("domain: column created at cannot be zero")
 	ErrInvalidColumnUpdatedAt = errors.New("domain: column updated at cannot be zero")
@@ -114,14 +116,19 @@ type Column struct {
 	id        string
 	boardID   string
 	name      string
+	color     string
 	position  int
 	createdAt time.Time
 	updatedAt time.Time
 }
 
 // NewColumn centralizes invariants so invalid column state cannot enter the domain.
-func NewColumn(id, boardID, name string, position int) (*Column, error) {
-	columnFields, err := validateColumnFields(id, boardID, name, position)
+func NewColumn(id, boardID, name string, columnOptions ...interface{}) (*Column, error) {
+	color, position, err := parseColumnOptions(columnOptions...)
+	if err != nil {
+		return nil, err
+	}
+	columnFields, err := validateColumnFields(id, boardID, name, color, position)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +138,7 @@ func NewColumn(id, boardID, name string, position int) (*Column, error) {
 		id:        columnFields.id,
 		boardID:   columnFields.boardID,
 		name:      columnFields.name,
+		color:     columnFields.color,
 		position:  position,
 		createdAt: currentTime,
 		updatedAt: currentTime,
@@ -138,8 +146,12 @@ func NewColumn(id, boardID, name string, position int) (*Column, error) {
 }
 
 // RehydrateColumn restores persisted state without exposing mutation-oriented setters.
-func RehydrateColumn(id, boardID, name string, position int, createdAt, updatedAt time.Time) (*Column, error) {
-	columnFields, err := validateColumnFields(id, boardID, name, position)
+func RehydrateColumn(id, boardID, name string, columnOptions ...interface{}) (*Column, error) {
+	color, position, createdAt, updatedAt, err := parseRehydrateColumnOptions(columnOptions...)
+	if err != nil {
+		return nil, err
+	}
+	columnFields, err := validateColumnFields(id, boardID, name, color, position)
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +166,7 @@ func RehydrateColumn(id, boardID, name string, position int, createdAt, updatedA
 		id:        columnFields.id,
 		boardID:   columnFields.boardID,
 		name:      columnFields.name,
+		color:     columnFields.color,
 		position:  position,
 		createdAt: createdAt,
 		updatedAt: updatedAt,
@@ -167,6 +180,22 @@ func (column *Column) UpdateName(newName string) error {
 	}
 
 	column.name = trimmedName
+	column.touch()
+	return nil
+}
+
+func (column *Column) Update(newName, newColor string) error {
+	trimmedName, err := validateColumnName(newName)
+	if err != nil {
+		return err
+	}
+	trimmedColor, err := validateColumnColor(newColor)
+	if err != nil {
+		return err
+	}
+
+	column.name = trimmedName
+	column.color = trimmedColor
 	column.touch()
 	return nil
 }
@@ -191,6 +220,10 @@ func (column *Column) BoardID() string {
 
 func (column *Column) Name() string {
 	return column.name
+}
+
+func (column *Column) Color() string {
+	return column.color
 }
 
 func (column *Column) Position() int {
@@ -232,7 +265,7 @@ func validateBoardFields(id, userID, name string) (validatedBoardFields, error) 
 	}, nil
 }
 
-func validateColumnFields(id, boardID, name string, position int) (validatedColumnFields, error) {
+func validateColumnFields(id, boardID, name, color string, position int) (validatedColumnFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return validatedColumnFields{}, ErrInvalidColumnID
@@ -248,6 +281,11 @@ func validateColumnFields(id, boardID, name string, position int) (validatedColu
 		return validatedColumnFields{}, err
 	}
 
+	trimmedColor, err := validateColumnColor(color)
+	if err != nil {
+		return validatedColumnFields{}, err
+	}
+
 	if position < 0 {
 		return validatedColumnFields{}, ErrInvalidColumnPosition
 	}
@@ -256,6 +294,7 @@ func validateColumnFields(id, boardID, name string, position int) (validatedColu
 		id:      trimmedID,
 		boardID: trimmedBoardID,
 		name:    trimmedName,
+		color:   trimmedColor,
 	}, nil
 }
 
@@ -277,6 +316,77 @@ func validateColumnName(name string) (string, error) {
 	return trimmedName, nil
 }
 
+func validateColumnColor(color string) (string, error) {
+	trimmedColor := strings.TrimSpace(color)
+	if trimmedColor == "" {
+		return "", ErrInvalidColumnColor
+	}
+
+	return trimmedColor, nil
+}
+
+func parseColumnOptions(columnOptions ...interface{}) (string, int, error) {
+	switch len(columnOptions) {
+	case 1:
+		position, ok := columnOptions[0].(int)
+		if !ok {
+			return "", 0, ErrInvalidColumnPosition
+		}
+		return defaultColumnColor, position, nil
+	case 2:
+		color, ok := columnOptions[0].(string)
+		if !ok {
+			return "", 0, ErrInvalidColumnColor
+		}
+		position, ok := columnOptions[1].(int)
+		if !ok {
+			return "", 0, ErrInvalidColumnPosition
+		}
+		return color, position, nil
+	default:
+		return "", 0, ErrInvalidColumnPosition
+	}
+}
+
+func parseRehydrateColumnOptions(columnOptions ...interface{}) (string, int, time.Time, time.Time, error) {
+	switch len(columnOptions) {
+	case 3:
+		position, ok := columnOptions[0].(int)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnPosition
+		}
+		createdAt, ok := columnOptions[1].(time.Time)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnCreatedAt
+		}
+		updatedAt, ok := columnOptions[2].(time.Time)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnUpdatedAt
+		}
+		return defaultColumnColor, position, createdAt, updatedAt, nil
+	case 4:
+		color, ok := columnOptions[0].(string)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnColor
+		}
+		position, ok := columnOptions[1].(int)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnPosition
+		}
+		createdAt, ok := columnOptions[2].(time.Time)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnCreatedAt
+		}
+		updatedAt, ok := columnOptions[3].(time.Time)
+		if !ok {
+			return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnUpdatedAt
+		}
+		return color, position, createdAt, updatedAt, nil
+	default:
+		return "", 0, time.Time{}, time.Time{}, ErrInvalidColumnPosition
+	}
+}
+
 type validatedBoardFields struct {
 	id     string
 	userID string
@@ -287,4 +397,5 @@ type validatedColumnFields struct {
 	id      string
 	boardID string
 	name    string
+	color   string
 }

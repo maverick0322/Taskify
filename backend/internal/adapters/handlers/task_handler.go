@@ -32,6 +32,7 @@ func (handler *TaskHandler) RegisterRoutes(router chi.Router) {
 	router.Patch("/tasks/{id}/details", handler.UpdateTaskDetails)
 	router.Patch("/tasks/{id}/status", handler.UpdateTaskStatus)
 	router.Patch("/tasks/{id}/priority", handler.UpdateTaskPriority)
+	router.Patch("/tasks/{id}/column", handler.MoveTaskToColumn)
 	router.Delete("/tasks/{id}", handler.DeleteTask)
 }
 
@@ -71,6 +72,7 @@ func (handler *TaskHandler) CreateTask(response http.ResponseWriter, request *ht
 		request.Context(),
 		userID,
 		createRequest.BoardID,
+		createRequest.ColumnID,
 		createRequest.Title,
 		createRequest.Description,
 		domain.TaskPriority(createRequest.Priority),
@@ -182,9 +184,32 @@ func (handler *TaskHandler) UpdateTask(response http.ResponseWriter, request *ht
 		chi.URLParam(request, "id"),
 		updateRequest.Title,
 		updateRequest.Description,
+		updateRequest.ColumnID,
 		domain.TaskPriority(updateRequest.Priority),
 		dueDate,
 	)
+	if err != nil {
+		handler.handleTaskError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *TaskHandler) MoveTaskToColumn(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var moveRequest moveTaskToColumnRequest
+	if err := json.NewDecoder(request.Body).Decode(&moveRequest); err != nil {
+		handler.logger.Warn("move task to column request contains invalid json", "userID", userID)
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	err := handler.taskUseCase.MoveTaskToColumn(request.Context(), userID, chi.URLParam(request, "id"), moveRequest.ColumnID)
 	if err != nil {
 		handler.handleTaskError(response, err)
 		return
@@ -344,6 +369,8 @@ func (handler *TaskHandler) handleTaskError(response http.ResponseWriter, err er
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "task not found"})
 	case errors.Is(err, ports.ErrBoardNotFound):
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "board not found"})
+	case errors.Is(err, ports.ErrColumnNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "column not found"})
 	case isTaskDomainValidationError(err):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid task data"})
 	default:
@@ -379,6 +406,7 @@ func taskResponseFromDomain(task *domain.Task) taskResponse {
 	return taskResponse{
 		ID:          task.ID(),
 		BoardID:     task.BoardID(),
+		ColumnID:    task.ColumnID(),
 		Title:       task.Title(),
 		Description: task.Description(),
 		Status:      string(task.Status()),
@@ -408,6 +436,7 @@ func formatTaskDueDate(dueDate time.Time) string {
 
 type createTaskRequest struct {
 	BoardID     *string `json:"boardId"`
+	ColumnID    *string `json:"columnId"`
 	Title       string  `json:"title"`
 	Description string  `json:"description"`
 	Priority    string  `json:"priority"`
@@ -415,10 +444,11 @@ type createTaskRequest struct {
 }
 
 type updateTaskRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Priority    string `json:"priority"`
-	DueDate     string `json:"dueDate"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	ColumnID    *string `json:"columnId"`
+	Priority    string  `json:"priority"`
+	DueDate     string  `json:"dueDate"`
 }
 
 type updateTaskDetailsRequest struct {
@@ -434,9 +464,14 @@ type updateTaskPriorityRequest struct {
 	Priority string `json:"priority"`
 }
 
+type moveTaskToColumnRequest struct {
+	ColumnID *string `json:"columnId"`
+}
+
 type taskResponse struct {
 	ID          string  `json:"id"`
 	BoardID     *string `json:"boardId"`
+	ColumnID    *string `json:"columnId"`
 	Title       string  `json:"title"`
 	Description string  `json:"description"`
 	Status      string  `json:"status"`

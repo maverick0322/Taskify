@@ -14,44 +14,46 @@ import (
 
 const (
 	saveTaskQuery = `
-		INSERT INTO tasks (id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO tasks (id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	getTaskByIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	getTasksByUserIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
 	getTasksByUserIDAndBoardIDQuery = `
-		SELECT id, user_id, board_id, title, description, status, priority, due_date, created_at, updated_at
+		SELECT id, user_id, board_id, column_id, title, description, status, priority, due_date, created_at, updated_at
 		FROM tasks
-		WHERE user_id = $1 AND board_id = $2
+		WHERE user_id = $1 AND board_id = $2 AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
 	updateTaskQuery = `
 		UPDATE tasks
 		SET board_id = $2,
-			title = $3,
-			description = $4,
-			status = $5,
-			priority = $6,
-			due_date = $7,
-			updated_at = $8
+			column_id = $3,
+			title = $4,
+			description = $5,
+			status = $6,
+			priority = $7,
+			due_date = $8,
+			updated_at = $9
 		WHERE id = $1
 	`
 
 	deleteTaskQuery = `
-		DELETE FROM tasks
+		UPDATE tasks
+		SET deleted_at = $2, updated_at = $2
 		WHERE id = $1
 	`
 )
@@ -88,6 +90,7 @@ func (repository *PostgresTaskRepository) Save(ctx context.Context, task *domain
 		task.ID(),
 		task.UserID(),
 		nullableTaskBoardID(task.BoardID()),
+		nullableTaskBoardID(task.ColumnID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -175,6 +178,7 @@ func (repository *PostgresTaskRepository) Update(ctx context.Context, task *doma
 		updateTaskQuery,
 		task.ID(),
 		nullableTaskBoardID(task.BoardID()),
+		nullableTaskBoardID(task.ColumnID()),
 		task.Title(),
 		task.Description(),
 		string(task.Status()),
@@ -191,7 +195,8 @@ func (repository *PostgresTaskRepository) Update(ctx context.Context, task *doma
 }
 
 func (repository *PostgresTaskRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.Exec(ctx, deleteTaskQuery, id); err != nil {
+	deletedAt := time.Now().UTC()
+	if _, err := repository.database.Exec(ctx, deleteTaskQuery, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete task", "taskID", id, "error", err)
 		return ports.ErrTaskRepositoryUnavailable
 	}
@@ -205,6 +210,7 @@ func (repository *PostgresTaskRepository) scanTask(row pgx.Row) (*domain.Task, e
 		&storedTask.id,
 		&storedTask.userID,
 		&storedTask.boardID,
+		&storedTask.columnID,
 		&storedTask.title,
 		&storedTask.description,
 		&storedTask.status,
@@ -220,6 +226,7 @@ func (repository *PostgresTaskRepository) scanTask(row pgx.Row) (*domain.Task, e
 		storedTask.id,
 		storedTask.userID,
 		storedTask.boardID,
+		storedTask.columnID,
 		storedTask.title,
 		storedTask.description,
 		domain.TaskStatus(storedTask.status),
@@ -255,6 +262,7 @@ type storedTask struct {
 	id          string
 	userID      string
 	boardID     *string
+	columnID    *string
 	title       string
 	description string
 	status      string

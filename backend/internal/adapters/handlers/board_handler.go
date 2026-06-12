@@ -33,6 +33,7 @@ func (handler *BoardHandler) RegisterRoutes(router chi.Router) {
 	router.Delete("/boards/{id}", handler.DeleteBoard)
 	router.Post("/boards/{id}/columns", handler.CreateColumn)
 	router.Get("/boards/{id}/columns", handler.GetBoardColumns)
+	router.Patch("/columns/{id}", handler.UpdateColumn)
 	router.Patch("/columns/{id}/name", handler.UpdateColumnName)
 	router.Patch("/columns/{id}/position", handler.MoveColumn)
 	router.Delete("/columns/{id}", handler.DeleteColumn)
@@ -211,7 +212,7 @@ func (handler *BoardHandler) CreateColumn(response http.ResponseWriter, request 
 		return
 	}
 
-	column, err := handler.boardUseCase.CreateColumn(request.Context(), userID, chi.URLParam(request, "id"), createRequest.Name, createRequest.Position)
+	column, err := handler.boardUseCase.CreateColumn(request.Context(), userID, chi.URLParam(request, "id"), createRequest.Name, createRequest.Color, createRequest.Position)
 	if err != nil {
 		handler.handleColumnError(response, err)
 		return
@@ -244,6 +245,28 @@ func (handler *BoardHandler) GetBoardColumns(response http.ResponseWriter, reque
 	}
 
 	writeJSON(response, http.StatusOK, columnListResponseFromDomain(columns))
+}
+
+func (handler *BoardHandler) UpdateColumn(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var updateRequest updateColumnRequest
+	if err := json.NewDecoder(request.Body).Decode(&updateRequest); err != nil {
+		handler.logger.Warn("update column request contains invalid json")
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	err := handler.boardUseCase.UpdateColumn(request.Context(), userID, chi.URLParam(request, "id"), updateRequest.Name, updateRequest.Color)
+	if err != nil {
+		handler.handleColumnError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
 }
 
 // UpdateColumnName updates a Kanban column name.
@@ -393,6 +416,7 @@ func isColumnDomainValidationError(err error) bool {
 	return errors.Is(err, domain.ErrInvalidColumnID) ||
 		errors.Is(err, domain.ErrInvalidColumnBoardID) ||
 		errors.Is(err, domain.ErrInvalidColumnName) ||
+		errors.Is(err, domain.ErrInvalidColumnColor) ||
 		errors.Is(err, domain.ErrInvalidColumnPosition) ||
 		errors.Is(err, domain.ErrInvalidColumnCreatedAt) ||
 		errors.Is(err, domain.ErrInvalidColumnUpdatedAt)
@@ -421,6 +445,7 @@ func columnResponseFromDomain(column *domain.Column) columnResponse {
 		ID:        column.ID(),
 		BoardID:   column.BoardID(),
 		Name:      column.Name(),
+		Color:     column.Color(),
 		Position:  column.Position(),
 		CreatedAt: column.CreatedAt().Format(time.RFC3339),
 		UpdatedAt: column.UpdatedAt().Format(time.RFC3339),
@@ -442,7 +467,13 @@ type boardNameRequest struct {
 
 type createColumnRequest struct {
 	Name     string `json:"name"`
+	Color    string `json:"color"`
 	Position int    `json:"position"`
+}
+
+type updateColumnRequest struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
 }
 
 type moveColumnRequest struct {
@@ -460,6 +491,7 @@ type columnResponse struct {
 	ID        string `json:"id"`
 	BoardID   string `json:"boardId"`
 	Name      string `json:"name"`
+	Color     string `json:"color"`
 	Position  int    `json:"position"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`

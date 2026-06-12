@@ -11,23 +11,36 @@ import (
 
 // taskService keeps task application rules separate from transport and persistence details.
 type taskService struct {
-	taskRepository  ports.TaskRepository
-	boardRepository ports.BoardRepository
-	idGenerator     ports.IDGenerator
-	logger          ports.Logger
+	taskRepository   ports.TaskRepository
+	boardRepository  ports.BoardRepository
+	columnRepository ports.ColumnRepository
+	idGenerator      ports.IDGenerator
+	logger           ports.Logger
 }
 
 func NewTaskService(
 	taskRepository ports.TaskRepository,
 	boardRepository ports.BoardRepository,
-	idGenerator ports.IDGenerator,
-	logger ports.Logger,
+	serviceOptions ...interface{},
 ) ports.TaskUseCase {
+	var columnRepository ports.ColumnRepository
+	var idGenerator ports.IDGenerator
+	var logger ports.Logger
+	if len(serviceOptions) == 3 {
+		columnRepository, _ = serviceOptions[0].(ports.ColumnRepository)
+		idGenerator, _ = serviceOptions[1].(ports.IDGenerator)
+		logger, _ = serviceOptions[2].(ports.Logger)
+	} else if len(serviceOptions) == 2 {
+		idGenerator, _ = serviceOptions[0].(ports.IDGenerator)
+		logger, _ = serviceOptions[1].(ports.Logger)
+	}
+
 	return &taskService{
-		taskRepository:  taskRepository,
-		boardRepository: boardRepository,
-		idGenerator:     idGenerator,
-		logger:          logger,
+		taskRepository:   taskRepository,
+		boardRepository:  boardRepository,
+		columnRepository: columnRepository,
+		idGenerator:      idGenerator,
+		logger:           logger,
 	}
 }
 
@@ -35,13 +48,14 @@ func (service *taskService) CreateTask(
 	ctx context.Context,
 	userID string,
 	boardID *string,
-	title,
-	description string,
-	priority domain.TaskPriority,
-	dueDate time.Time,
+	options ...interface{},
 ) (*domain.Task, error) {
+	columnID, title, description, priority, dueDate, err := parseTaskCreationOptions(options...)
+	if err != nil {
+		return nil, err
+	}
 	taskID := service.idGenerator.Generate()
-	task, err := domain.NewTask(taskID, userID, boardID, title, description, domain.TaskStatusTodo, priority, dueDate)
+	task, err := domain.NewTask(taskID, userID, boardID, columnID, title, description, domain.TaskStatusTodo, priority, dueDate)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +64,9 @@ func (service *taskService) CreateTask(
 		if _, err := service.getAuthorizedBoard(ctx, userID, *task.BoardID()); err != nil {
 			return nil, err
 		}
+	}
+	if err := service.validateTaskColumn(ctx, userID, task.BoardID(), task.ColumnID()); err != nil {
+		return nil, err
 	}
 
 	if err := service.taskRepository.Save(ctx, task); err != nil {
@@ -89,7 +106,11 @@ func (service *taskService) GetBoardTasks(ctx context.Context, userID, boardID s
 	return tasks, nil
 }
 
-func (service *taskService) UpdateTask(ctx context.Context, userID, taskID, title, description string, priority domain.TaskPriority, dueDate time.Time) error {
+func (service *taskService) UpdateTask(ctx context.Context, userID, taskID, title, description string, options ...interface{}) error {
+	columnID, priority, dueDate, err := parseTaskUpdateOptions(options...)
+	if err != nil {
+		return err
+	}
 	task, err := service.getAuthorizedTask(ctx, userID, taskID)
 	if err != nil {
 		return err
@@ -98,6 +119,10 @@ func (service *taskService) UpdateTask(ctx context.Context, userID, taskID, titl
 	if err := task.Update(title, description, priority, dueDate); err != nil {
 		return err
 	}
+	if err := service.validateTaskColumn(ctx, userID, task.BoardID(), columnID); err != nil {
+		return err
+	}
+	task.MoveToColumn(columnID)
 
 	return service.persistTaskUpdate(ctx, task, "failed to update task")
 }
@@ -139,6 +164,20 @@ func (service *taskService) UpdateTaskPriority(ctx context.Context, userID, task
 	}
 
 	return service.persistTaskUpdate(ctx, task, "failed to update task priority")
+}
+
+func (service *taskService) MoveTaskToColumn(ctx context.Context, userID, taskID string, columnID *string) error {
+	task, err := service.getAuthorizedTask(ctx, userID, taskID)
+	if err != nil {
+		return err
+	}
+
+	if err := service.validateTaskColumn(ctx, userID, task.BoardID(), columnID); err != nil {
+		return err
+	}
+	task.MoveToColumn(columnID)
+
+	return service.persistTaskUpdate(ctx, task, "failed to move task to column")
 }
 
 func (service *taskService) DeleteTask(ctx context.Context, userID, taskID string) error {
@@ -204,6 +243,80 @@ func (service *taskService) getAuthorizedBoard(ctx context.Context, userID, boar
 	return board, nil
 }
 
+func (service *taskService) validateTaskColumn(ctx context.Context, userID string, boardID, columnID *string) error {
+	if columnID == nil {
+		return nil
+	}
+	if boardID == nil {
+		return ports.ErrBoardNotFound
+	}
+
+	column, err := service.columnRepository.GetByID(ctx, *columnID)
+	if errors.Is(err, ports.ErrColumnNotFound) {
+		return ports.ErrColumnNotFound
+	}
+	if err != nil {
+		service.logger.Error("failed to retrieve task column", "userID", userID, "columnID", *columnID, "error", err)
+		return ErrInternalProcessing
+	}
+	if column == nil || column.BoardID() != *boardID {
+		return ports.ErrColumnNotFound
+	}
+	if _, err := service.getAuthorizedBoard(ctx, userID, column.BoardID()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func isTaskOwnedByUser(task *domain.Task, userID string) bool {
 	return task.UserID() == userID
+}
+
+func parseTaskCreationOptions(options ...interface{}) (*string, string, string, domain.TaskPriority, time.Time, error) {
+	switch len(options) {
+	case 4:
+		title, titleOK := options[0].(string)
+		description, descriptionOK := options[1].(string)
+		priority, priorityOK := options[2].(domain.TaskPriority)
+		dueDate, dueDateOK := options[3].(time.Time)
+		if !titleOK || !descriptionOK || !priorityOK || !dueDateOK {
+			return nil, "", "", "", time.Time{}, domain.ErrInvalidTaskPriority
+		}
+		return nil, title, description, priority, dueDate, nil
+	case 5:
+		columnID, columnOK := options[0].(*string)
+		title, titleOK := options[1].(string)
+		description, descriptionOK := options[2].(string)
+		priority, priorityOK := options[3].(domain.TaskPriority)
+		dueDate, dueDateOK := options[4].(time.Time)
+		if !columnOK || !titleOK || !descriptionOK || !priorityOK || !dueDateOK {
+			return nil, "", "", "", time.Time{}, domain.ErrInvalidTaskPriority
+		}
+		return columnID, title, description, priority, dueDate, nil
+	default:
+		return nil, "", "", "", time.Time{}, domain.ErrInvalidTaskPriority
+	}
+}
+
+func parseTaskUpdateOptions(options ...interface{}) (*string, domain.TaskPriority, time.Time, error) {
+	switch len(options) {
+	case 2:
+		priority, priorityOK := options[0].(domain.TaskPriority)
+		dueDate, dueDateOK := options[1].(time.Time)
+		if !priorityOK || !dueDateOK {
+			return nil, "", time.Time{}, domain.ErrInvalidTaskPriority
+		}
+		return nil, priority, dueDate, nil
+	case 3:
+		columnID, columnOK := options[0].(*string)
+		priority, priorityOK := options[1].(domain.TaskPriority)
+		dueDate, dueDateOK := options[2].(time.Time)
+		if !columnOK || !priorityOK || !dueDateOK {
+			return nil, "", time.Time{}, domain.ErrInvalidTaskPriority
+		}
+		return columnID, priority, dueDate, nil
+	default:
+		return nil, "", time.Time{}, domain.ErrInvalidTaskPriority
+	}
 }

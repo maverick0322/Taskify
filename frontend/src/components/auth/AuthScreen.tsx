@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { getFriendlyErrorMessage } from "@/services/api";
 import { login, register } from "@/services/authService";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -64,11 +65,12 @@ export function AuthScreen() {
       localStorage.setItem("refreshToken", tokenPair.refreshToken);
       setAuthenticatedSession(tokenPair.accessToken);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "No pudimos completar la autenticacion.";
-      setErrorMessage(message);
+      setErrorMessage(
+        getFriendlyErrorMessage(
+          error,
+          "No pudimos completar la autenticacion.",
+        ),
+      );
     } finally {
       setIsLoading(false);
     }

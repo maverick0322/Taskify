@@ -114,8 +114,8 @@ func TestPostgresTaskRepository_SaveValidTask_ReturnsNil(t *testing.T) {
 	if database.receivedSQL != saveTaskQuery {
 		t.Errorf("expected save task query to be used")
 	}
-	if len(database.receivedArguments) != 10 {
-		t.Errorf("expected ten arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 11 {
+		t.Errorf("expected eleven arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -132,8 +132,8 @@ func TestPostgresTaskRepository_SaveZeroDueDate_StoresNilDueDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedArguments[7] != nil {
-		t.Errorf("expected nil due date argument, got %v", database.receivedArguments[7])
+	if database.receivedArguments[8] != nil {
+		t.Errorf("expected nil due date argument, got %v", database.receivedArguments[8])
 	}
 }
 
@@ -558,6 +558,7 @@ func validStoredTaskValues(dueDate time.Time) []interface{} {
 		"task-123",
 		"user-123",
 		"board-123",
+		nil,
 		"Write tests",
 		"Cover repository rules",
 		string(domain.TaskStatusTodo),
@@ -576,7 +577,7 @@ func validGlobalStoredTaskValues(dueDate time.Time) []interface{} {
 
 func corruptedStoredTaskValues() []interface{} {
 	values := validStoredTaskValues(time.Time{})
-	values[5] = "blocked"
+	values[6] = "blocked"
 	return values
 }
 

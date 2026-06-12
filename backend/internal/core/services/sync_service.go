@@ -133,8 +133,8 @@ func syncTableSpecs() []syncTableSpec {
 	return []syncTableSpec{
 		{name: "users", columns: []string{"id", "email", "password_hash", "first_name", "last_name", "birth_date", "created_at", "updated_at", "deleted_at"}},
 		{name: "boards", columns: []string{"id", "user_id", "name", "created_at", "updated_at", "deleted_at"}},
-		{name: "columns", columns: []string{"id", "board_id", "name", "position", "created_at", "updated_at", "deleted_at"}},
-		{name: "tasks", columns: []string{"id", "user_id", "board_id", "title", "description", "status", "priority", "due_date", "created_at", "updated_at", "deleted_at"}},
+		{name: "columns", columns: []string{"id", "board_id", "name", "color", "position", "created_at", "updated_at", "deleted_at"}},
+		{name: "tasks", columns: []string{"id", "user_id", "board_id", "column_id", "title", "description", "status", "priority", "due_date", "created_at", "updated_at", "deleted_at"}},
 		{name: "credit_cards", columns: []string{"id", "user_id", "name", "bank", "last4", "cutoff_day", "payment_day", "limit_cents", "color", "created_at", "updated_at", "deleted_at"}},
 		{name: "transactions", columns: []string{"id", "user_id", "credit_card_id", "type", "concept", "category", "amount_cents", "date", "status", "msi", "created_at", "updated_at", "deleted_at"}},
 	}

@@ -14,28 +14,29 @@ import (
 
 const (
 	saveColumnQuery = `
-		INSERT INTO columns (id, board_id, name, position, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO columns (id, board_id, name, color, position, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
 	getColumnByIDQuery = `
-		SELECT id, board_id, name, position, created_at, updated_at
+		SELECT id, board_id, name, color, position, created_at, updated_at
 		FROM columns
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	getColumnsByBoardIDQuery = `
-		SELECT id, board_id, name, position, created_at, updated_at
+		SELECT id, board_id, name, color, position, created_at, updated_at
 		FROM columns
-		WHERE board_id = $1
+		WHERE board_id = $1 AND deleted_at IS NULL
 		ORDER BY position ASC
 	`
 
 	updateColumnQuery = `
 		UPDATE columns
 		SET name = $2,
-			position = $3,
-			updated_at = $4
+			color = $3,
+			position = $4,
+			updated_at = $5
 		WHERE id = $1
 	`
 
@@ -47,7 +48,8 @@ const (
 	`
 
 	deleteColumnQuery = `
-		DELETE FROM columns
+		UPDATE columns
+		SET deleted_at = $2, updated_at = $2
 		WHERE id = $1
 	`
 )
@@ -96,6 +98,7 @@ func (repository *PostgresColumnRepository) Save(ctx context.Context, column *do
 		column.ID(),
 		column.BoardID(),
 		column.Name(),
+		column.Color(),
 		column.Position(),
 		column.CreatedAt(),
 		column.UpdatedAt(),
@@ -149,7 +152,7 @@ func (repository *PostgresColumnRepository) Update(ctx context.Context, column *
 		return ports.ErrColumnRepositoryUnavailable
 	}
 
-	if _, err := repository.database.Exec(ctx, updateColumnQuery, column.ID(), column.Name(), column.Position(), column.UpdatedAt()); err != nil {
+	if _, err := repository.database.Exec(ctx, updateColumnQuery, column.ID(), column.Name(), column.Color(), column.Position(), column.UpdatedAt()); err != nil {
 		repository.logger.Error("failed to update column", "boardID", column.BoardID(), "columnID", column.ID(), "error", err)
 		return ports.ErrColumnRepositoryUnavailable
 	}
@@ -186,7 +189,8 @@ func (repository *PostgresColumnRepository) UpdatePositions(ctx context.Context,
 }
 
 func (repository *PostgresColumnRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.Exec(ctx, deleteColumnQuery, id); err != nil {
+	deletedAt := time.Now().UTC()
+	if _, err := repository.database.Exec(ctx, deleteColumnQuery, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete column", "columnID", id, "error", err)
 		return ports.ErrColumnRepositoryUnavailable
 	}
@@ -200,6 +204,7 @@ func (repository *PostgresColumnRepository) scanColumn(row pgx.Row) (*domain.Col
 		&storedColumn.id,
 		&storedColumn.boardID,
 		&storedColumn.name,
+		&storedColumn.color,
 		&storedColumn.position,
 		&storedColumn.createdAt,
 		&storedColumn.updatedAt,
@@ -211,6 +216,7 @@ func (repository *PostgresColumnRepository) scanColumn(row pgx.Row) (*domain.Col
 		storedColumn.id,
 		storedColumn.boardID,
 		storedColumn.name,
+		storedColumn.color,
 		storedColumn.position,
 		storedColumn.createdAt,
 		storedColumn.updatedAt,
@@ -231,6 +237,7 @@ type storedColumn struct {
 	id        string
 	boardID   string
 	name      string
+	color     string
 	position  int
 	createdAt time.Time
 	updatedAt time.Time

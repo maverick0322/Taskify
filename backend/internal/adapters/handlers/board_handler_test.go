@@ -49,7 +49,7 @@ func (useCase *mockBoardUseCase) DeleteBoard(ctx context.Context, userID, boardI
 	return useCase.errToReturn
 }
 
-func (useCase *mockBoardUseCase) CreateColumn(ctx context.Context, userID, boardID, name string, position int) (*domain.Column, error) {
+func (useCase *mockBoardUseCase) CreateColumn(ctx context.Context, userID, boardID, name string, options ...interface{}) (*domain.Column, error) {
 	useCase.receivedUserID = userID
 	return useCase.columnToReturn, useCase.errToReturn
 }
@@ -60,6 +60,11 @@ func (useCase *mockBoardUseCase) GetBoardColumns(ctx context.Context, userID, bo
 }
 
 func (useCase *mockBoardUseCase) UpdateColumnName(ctx context.Context, userID, columnID, name string) error {
+	useCase.receivedUserID = userID
+	return useCase.errToReturn
+}
+
+func (useCase *mockBoardUseCase) UpdateColumn(ctx context.Context, userID, columnID, name, color string) error {
 	useCase.receivedUserID = userID
 	return useCase.errToReturn
 }

@@ -86,14 +86,18 @@ func (service *boardService) DeleteBoard(ctx context.Context, userID, boardID st
 	return nil
 }
 
-func (service *boardService) CreateColumn(ctx context.Context, userID, boardID, name string, position int) (*domain.Column, error) {
+func (service *boardService) CreateColumn(ctx context.Context, userID, boardID, name string, options ...interface{}) (*domain.Column, error) {
 	board, err := service.getAuthorizedBoard(ctx, userID, boardID)
+	if err != nil {
+		return nil, err
+	}
+	color, position, err := parseColumnCreationOptions(options...)
 	if err != nil {
 		return nil, err
 	}
 
 	columnID := service.idGenerator.Generate()
-	column, err := domain.NewColumn(columnID, board.ID(), name, position)
+	column, err := domain.NewColumn(columnID, board.ID(), name, color, position)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +136,19 @@ func (service *boardService) UpdateColumnName(ctx context.Context, userID, colum
 	}
 
 	return service.persistColumnUpdate(ctx, column, "failed to update column name")
+}
+
+func (service *boardService) UpdateColumn(ctx context.Context, userID, columnID, name, color string) error {
+	column, err := service.getAuthorizedColumn(ctx, userID, columnID)
+	if err != nil {
+		return err
+	}
+
+	if err := column.Update(name, color); err != nil {
+		return err
+	}
+
+	return service.persistColumnUpdate(ctx, column, "failed to update column")
 }
 
 func (service *boardService) MoveColumn(ctx context.Context, userID, columnID string, position int) error {
@@ -284,4 +301,27 @@ func shouldShiftColumnRight(oldPosition, newPosition, currentPosition int) bool 
 
 func shouldShiftColumnLeft(oldPosition, newPosition, currentPosition int) bool {
 	return newPosition < oldPosition && newPosition <= currentPosition && currentPosition < oldPosition
+}
+
+func parseColumnCreationOptions(options ...interface{}) (string, int, error) {
+	switch len(options) {
+	case 1:
+		position, ok := options[0].(int)
+		if !ok {
+			return "", 0, domain.ErrInvalidColumnPosition
+		}
+		return "slate", position, nil
+	case 2:
+		color, ok := options[0].(string)
+		if !ok {
+			return "", 0, domain.ErrInvalidColumnColor
+		}
+		position, ok := options[1].(int)
+		if !ok {
+			return "", 0, domain.ErrInvalidColumnPosition
+		}
+		return color, position, nil
+	default:
+		return "", 0, domain.ErrInvalidColumnPosition
+	}
 }

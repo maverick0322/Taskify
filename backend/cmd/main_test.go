@@ -44,6 +44,28 @@ func TestLocalSQLiteDatabasePath_UsesUserConfigDirTaskifyDatabase(t *testing.T) 
 	}
 }
 
+func TestSQLiteDSN_FormatsWindowsAbsolutePathAsFileURI(t *testing.T) {
+	// Arrange
+	databasePath := `C:\Users\meler\AppData\Roaming\Taskify\taskify.db`
+
+	// Act
+	dsn := sqliteDSN(databasePath)
+
+	// Assert
+	if !strings.HasPrefix(dsn, "file:///C:/Users/meler/AppData/Roaming/Taskify/taskify.db?") {
+		t.Fatalf("expected Windows absolute path to use a file URI, got %q", dsn)
+	}
+	for _, expectedPragma := range []string{
+		"_pragma=foreign_keys%281%29",
+		"_pragma=journal_mode%28WAL%29",
+		"_pragma=busy_timeout%285000%29",
+	} {
+		if !strings.Contains(dsn, expectedPragma) {
+			t.Errorf("expected DSN to contain %q, got %q", expectedPragma, dsn)
+		}
+	}
+}
+
 func TestStartHTTPServer_InvalidAddress_SendsServerError(t *testing.T) {
 	// Arrange
 	server := &http.Server{Addr: "invalid-address"}
