@@ -8,6 +8,7 @@ import {
   columnColorConfig,
   type ColumnColor,
 } from "@/components/taskify/kanban-column"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import { formatTaskDueDateLabel } from "@/lib/task-dates"
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   createColumn,
+  deleteColumn,
   getBoardColumns,
   updateColumn,
   type BoardColumn,
@@ -66,13 +68,21 @@ interface MoveTaskVariables {
 }
 
 interface MoveTaskContext {
+  previousLocalTasks?: Task[]
   previousTasks?: Task[]
+  previousGlobalTasks?: Task[]
+}
+
+interface DisplayColumn extends BoardColumn {
+  isFallback?: boolean
+  fallbackStatus?: TaskStatus
 }
 
 export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
   const queryClient = useQueryClient()
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks)
   const [newTaskStatus, setNewTaskStatus] = useState<TaskStatus | undefined>()
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | undefined>()
   const [newColumnOpen, setNewColumnOpen] = useState(false)
@@ -80,6 +90,10 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
   const [newColumnColor, setNewColumnColor] = useState<ColumnColor>("slate")
   const [newColumnError, setNewColumnError] = useState("")
   const [bootstrappingBoardId, setBootstrappingBoardId] = useState<string | null>(null)
+  const [columnToDelete, setColumnToDelete] = useState<{
+    id: string
+    title: string
+  } | null>(null)
   const tasksQueryKey = useMemo(() => ["tasks", selectedBoardId], [selectedBoardId])
   const columnsQueryKey = useMemo(
     () => ["boards", selectedBoardId, "columns"],
@@ -128,10 +142,28 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     selectedBoardId,
   ])
 
-  const visibleColumns = useMemo(
+  const persistedColumns = useMemo(
     () => [...boardColumns].sort((first, second) => first.position - second.position),
     [boardColumns],
   )
+
+  const visibleColumns = useMemo<DisplayColumn[]>(() => {
+    if (persistedColumns.length > 0) {
+      return persistedColumns
+    }
+
+    return DEFAULT_COLUMNS.map((column, index) => ({
+      id: `fallback-${column.status}`,
+      boardId: selectedBoardId ?? "",
+      name: column.name,
+      color: column.color,
+      position: index,
+      createdAt: "",
+      updatedAt: "",
+      isFallback: true,
+      fallbackStatus: column.status,
+    }))
+  }, [persistedColumns, selectedBoardId])
 
   const moveMutation = useMutation<void, Error, MoveTaskVariables, MoveTaskContext>({
     mutationFn: async ({ taskId, columnId, status }) => {
@@ -142,27 +174,45 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     },
     onMutate: async ({ taskId, columnId, status }) => {
       await queryClient.cancelQueries({ queryKey: tasksQueryKey })
+      await queryClient.cancelQueries({ queryKey: ["tasks", "global"] })
+      const previousLocalTasks = localTasks
       const previousTasks = queryClient.getQueryData<Task[]>(tasksQueryKey)
+      const previousGlobalTasks = queryClient.getQueryData<Task[]>(["tasks", "global"])
 
-      queryClient.setQueryData<Task[]>(tasksQueryKey, (currentTasks = []) =>
+      const applyTaskMove = (currentTasks: Task[] = []) =>
         currentTasks.map((task) =>
           task.id === taskId
             ? { ...task, columnId, ...(status ? { status } : {}) }
             : task,
-        ),
-      )
+        )
 
-      return { previousTasks }
+      setLocalTasks((currentTasks) => applyTaskMove(currentTasks))
+      queryClient.setQueryData<Task[]>(tasksQueryKey, applyTaskMove)
+      queryClient.setQueryData<Task[]>(["tasks", "global"], applyTaskMove)
+
+      return { previousLocalTasks, previousTasks, previousGlobalTasks }
     },
     onError: (_error, _variables, context) => {
+      if (context?.previousLocalTasks) {
+        setLocalTasks(context.previousLocalTasks)
+      }
       if (context?.previousTasks) {
         queryClient.setQueryData(tasksQueryKey, context.previousTasks)
+      }
+      if (context?.previousGlobalTasks) {
+        queryClient.setQueryData(["tasks", "global"], context.previousGlobalTasks)
       }
     },
     onSettled: () => {
       invalidateTaskCaches(queryClient, selectedBoardId)
     },
   })
+
+  useEffect(() => {
+    if (!moveMutation.isPending) {
+      setLocalTasks(tasks)
+    }
+  }, [moveMutation.isPending, tasks])
 
   const createColumnMutation = useMutation({
     mutationFn: async (input: { name: string; color: string }) => {
@@ -173,10 +223,23 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
       return createColumn(selectedBoardId, {
         name: input.name,
         color: input.color,
-        position: visibleColumns.length,
+        position: persistedColumns.length,
       })
     },
-    onSuccess: () => {
+    onSuccess: (createdColumn, variables) => {
+      queryClient.setQueryData<BoardColumn[]>(columnsQueryKey, (currentColumns = []) => {
+        const normalizedColumn = {
+          ...createdColumn,
+          color: createdColumn.color || variables.color,
+        }
+
+        const withoutDuplicate = currentColumns.filter(
+          (column) => column.id !== normalizedColumn.id,
+        )
+        return [...withoutDuplicate, normalizedColumn].sort(
+          (first, second) => first.position - second.position,
+        )
+      })
       queryClient.invalidateQueries({ queryKey: columnsQueryKey })
       setNewColumnName("")
       setNewColumnColor("slate")
@@ -211,17 +274,55 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     },
   })
 
+  const deleteColumnMutation = useMutation({
+    mutationFn: (columnId: string) => deleteColumn(columnId),
+    onMutate: async (columnId) => {
+      await queryClient.cancelQueries({ queryKey: columnsQueryKey })
+      const previousColumns = queryClient.getQueryData<BoardColumn[]>(columnsQueryKey)
+      queryClient.setQueryData<BoardColumn[]>(columnsQueryKey, (currentColumns = []) =>
+        currentColumns.filter((column) => column.id !== columnId),
+      )
+      return { previousColumns }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousColumns) {
+        queryClient.setQueryData(columnsQueryKey, context.previousColumns)
+      }
+    },
+    onSuccess: () => {
+      setColumnToDelete(null)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: columnsQueryKey })
+      invalidateTaskCaches(queryClient, selectedBoardId)
+    },
+  })
+
   function handleDragEnd(result: DropResult) {
     const { destination, draggableId, source } = result
 
-    if (!destination || !selectedBoardId || destination.droppableId === source.droppableId) {
+    if (!destination || !selectedBoardId) {
       return
     }
 
-    const status = statusForColumn(destination.droppableId, visibleColumns)
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return
+    }
+
+    const destinationColumn = visibleColumns.find(
+      (column) => column.id === destination.droppableId,
+    )
+    if (!destinationColumn) {
+      return
+    }
+
+    const status = statusForColumn(destinationColumn, visibleColumns)
     moveMutation.mutate({
       taskId: draggableId,
-      columnId: destination.droppableId,
+      columnId: destinationColumn.isFallback ? null : destinationColumn.id,
       ...(status ? { status } : {}),
     })
   }
@@ -234,9 +335,14 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
   }
 
   function handleAddTask(columnId: string) {
+    const column = visibleColumns.find((visibleColumn) => visibleColumn.id === columnId)
+    if (!column) {
+      return
+    }
+
     setTaskToEdit(null)
-    setNewTaskColumnId(columnId)
-    setNewTaskStatus(statusForColumn(columnId, visibleColumns))
+    setNewTaskColumnId(column.isFallback ? undefined : column.id)
+    setNewTaskStatus(statusForColumn(column, visibleColumns))
     setEditDialogOpen(true)
   }
 
@@ -272,7 +378,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
               columnId={column.id}
               title={column.name}
               color={column.color}
-              tasks={tasks
+              tasks={localTasks
                 .filter((task) => taskBelongsToColumn(task, column, visibleColumns))
                 .map(taskResponseToKanbanTask)}
               selectedBoardId={selectedBoardId}
@@ -281,7 +387,11 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
               onUpdateColumn={(columnId, name, color) =>
                 updateColumnMutation.mutate({ columnId, name, color })
               }
+              onRequestDeleteColumn={(columnId, title) =>
+                setColumnToDelete({ id: columnId, title })
+              }
               updatePending={updateColumnMutation.isPending}
+              disabled={Boolean(column.isFallback)}
             />
           ))}
 
@@ -372,22 +482,49 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
         taskToEdit={taskToEdit}
         initialStatus={newTaskStatus}
         initialColumnId={newTaskColumnId}
+        onTaskSaved={(savedTask) => {
+          setLocalTasks((currentTasks) => {
+            const withoutDuplicate = currentTasks.filter((task) => task.id !== savedTask.id)
+            return [savedTask, ...withoutDuplicate]
+          })
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(columnToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setColumnToDelete(null)
+          }
+        }}
+        title="Eliminar columna"
+        description={`Se eliminará la columna "${columnToDelete?.title ?? ""}". Las tareas asociadas dejarán de mostrarse en esta vista hasta que se reasignen.`}
+        confirmLabel="Eliminar columna"
+        isPending={deleteColumnMutation.isPending}
+        onConfirm={() => {
+          if (columnToDelete) {
+            deleteColumnMutation.mutate(columnToDelete.id)
+          }
+        }}
       />
     </main>
   )
 }
 
-function statusForColumn(columnId: string, columns: BoardColumn[]): TaskStatus | undefined {
-  const columnIndex = columns.findIndex((column) => column.id === columnId)
+function statusForColumn(column: DisplayColumn, columns: DisplayColumn[]): TaskStatus | undefined {
+  if (column.fallbackStatus) {
+    return column.fallbackStatus
+  }
+
+  const columnIndex = columns.findIndex((visibleColumn) => visibleColumn.id === column.id)
   return DEFAULT_COLUMNS[columnIndex]?.status
 }
 
-function taskBelongsToColumn(task: Task, column: BoardColumn, columns: BoardColumn[]) {
+function taskBelongsToColumn(task: Task, column: DisplayColumn, columns: DisplayColumn[]) {
   if (task.columnId) {
     return task.columnId === column.id
   }
 
-  return statusForColumn(column.id, columns) === task.status
+  return statusForColumn(column, columns) === task.status
 }
 
 function taskResponseToKanbanTask(task: Task): KanbanTask {

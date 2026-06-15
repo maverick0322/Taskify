@@ -107,11 +107,11 @@ func TestPostgresCreditCardRepository_CreateValidCreditCard_ReturnsNil(t *testin
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedSQL != createCreditCardQuery {
-		t.Errorf("expected create credit card query to be used")
+	if database.receivedSQL != createCreditCardFinancialAccountQuery {
+		t.Errorf("expected create financial account mirror query to be used")
 	}
 	if len(database.receivedArguments) != 11 {
-		t.Errorf("expected eleven arguments, got %d", len(database.receivedArguments))
+		t.Errorf("expected eleven mirror arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -258,11 +258,11 @@ func TestPostgresCreditCardRepository_UpdateValidCreditCard_ReturnsNil(t *testin
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedSQL != updateCreditCardQuery {
-		t.Errorf("expected update credit card query to be used")
+	if database.receivedSQL != updateCreditCardFinancialAccountQuery {
+		t.Errorf("expected update financial account mirror query to be used")
 	}
 	if len(database.receivedArguments) != 9 {
-		t.Errorf("expected nine arguments, got %d", len(database.receivedArguments))
+		t.Errorf("expected nine mirror arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -296,8 +296,8 @@ func TestPostgresCreditCardRepository_DeleteValidCreditCard_ReturnsNil(t *testin
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedSQL != deleteCreditCardQuery {
-		t.Errorf("expected delete credit card query to be used")
+	if database.receivedSQL != deleteCreditCardFinancialAccountQuery {
+		t.Errorf("expected delete financial account mirror query to be used")
 	}
 }
 

@@ -100,16 +100,19 @@ func run() error {
 	columnRepository := repositories.NewSQLiteColumnRepository(sqliteDatabase, applicationLogger)
 	transactionRepository := repositories.NewSQLiteTransactionRepository(sqliteDatabase, applicationLogger)
 	creditCardRepository := repositories.NewSQLiteCreditCardRepository(sqliteDatabase, applicationLogger)
+	financialAccountRepository := repositories.NewSQLiteFinancialAccountRepository(sqliteDatabase, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, columnRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
-	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger)
+	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
 	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger)
+	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
 	boardHandler := handlers.NewBoardHandler(boardUseCase, applicationLogger)
 	transactionHandler := handlers.NewTransactionHandler(transactionUseCase, applicationLogger)
 	creditCardHandler := handlers.NewCreditCardHandler(creditCardUseCase, applicationLogger)
+	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
@@ -122,6 +125,7 @@ func run() error {
 		boardHandler.RegisterRoutes(protectedRouter)
 		transactionHandler.RegisterRoutes(protectedRouter)
 		creditCardHandler.RegisterRoutes(protectedRouter)
+		financialAccountHandler.RegisterRoutes(protectedRouter)
 	})
 
 	server := &http.Server{

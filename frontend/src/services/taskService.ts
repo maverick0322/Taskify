@@ -82,6 +82,19 @@ export async function updateTask(
   taskId: string,
   data: UpdateTaskInput,
 ): Promise<void> {
+  const hasColumnId = Object.prototype.hasOwnProperty.call(data, "columnId");
+  const isColumnOnlyUpdate =
+    hasColumnId &&
+    data.title === undefined &&
+    data.description === undefined &&
+    data.priority === undefined &&
+    data.dueDate === undefined;
+
+  if (isColumnOnlyUpdate) {
+    await moveTaskToColumn(taskId, data.columnId ?? null);
+    return;
+  }
+
   await apiRequest<void>(`/tasks/${taskId}`, {
     method: "PATCH",
     body: JSON.stringify({

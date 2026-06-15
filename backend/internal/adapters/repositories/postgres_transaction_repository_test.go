@@ -111,8 +111,8 @@ func TestPostgresTransactionRepository_CreateValidTransaction_ReturnsNil(t *test
 	if database.receivedSQL != createTransactionQuery {
 		t.Errorf("expected create transaction query to be used")
 	}
-	if len(database.receivedArguments) != 12 {
-		t.Errorf("expected twelve arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 19 {
+		t.Errorf("expected nineteen arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -147,8 +147,8 @@ func TestPostgresTransactionRepository_CreateWithMSI_StoresMSIValue(t *testing.T
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
-	if database.receivedArguments[9] != 6 {
-		t.Errorf("expected MSI argument 6, got %v", database.receivedArguments[9])
+	if database.receivedArguments[11] != 6 {
+		t.Errorf("expected MSI argument 6, got %v", database.receivedArguments[11])
 	}
 }
 
@@ -182,7 +182,7 @@ func TestPostgresTransactionRepository_GetByIDMissingTransaction_ReturnsErrTrans
 
 func TestPostgresTransactionRepository_GetByIDCorruptedTransaction_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
 	values := validStoredTransactionValues(nil)
-	values[3] = "TRANSFER"
+	values[5] = "INVALID"
 	database := &fakePostgresTransactionDatabase{rowToReturn: fakePostgresTransactionRow{values: values}}
 	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
 
@@ -370,7 +370,7 @@ func TestPostgresTransactionRepository_GetByCreditCardIDQueryFailure_ReturnsErrT
 
 func TestPostgresTransactionRepository_GetByCreditCardIDScanFailure_ReturnsErrTransactionRepositoryUnavailable(t *testing.T) {
 	values := validStoredTransactionValues(nil)
-	values[3] = "TRANSFER"
+	values[5] = "INVALID"
 	rows := &fakePostgresTransactionRows{rows: []fakePostgresTransactionRow{{values: values}}}
 	database := &fakePostgresTransactionDatabase{rowsToReturn: rows}
 	repository := &PostgresTransactionRepository{database: database, logger: &fakeRepositoryLogger{}}
@@ -471,6 +471,8 @@ func validStoredTransactionValues(msi *int) []interface{} {
 		"transaction-123",
 		"user-123",
 		nil,
+		nil,
+		nil,
 		string(domain.TransactionTypeExpense),
 		"CFE - Luz",
 		"Servicios",
@@ -478,6 +480,11 @@ func validStoredTransactionValues(msi *int) []interface{} {
 		time.Now(),
 		string(domain.TransactionStatusPaid),
 		storedMSI,
+		nil,
+		nil,
+		string(domain.TransactionRecurrenceOnce),
+		nil,
+		nil,
 		createdAt,
 		updatedAt,
 	}
@@ -496,6 +503,8 @@ func createRepositoryTransaction(t *testing.T, msi *int) *domain.Transaction {
 		time.Now(),
 		domain.TransactionStatusPaid,
 		msi,
+		nil,
+		domain.TransactionRecurrenceOnce,
 		nil,
 	)
 	if err != nil {

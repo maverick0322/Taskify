@@ -17,6 +17,11 @@ const (
 		INSERT INTO credit_cards (id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
+	createCreditCardFinancialAccountQuery = `
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at)
+		VALUES ($1, $2, 'CREDIT_CARD', $3, $4, $5, 0, 0, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, institution = excluded.institution, last4 = excluded.last4, credit_limit_cents = excluded.credit_limit_cents, cutoff_day = excluded.cutoff_day, payment_day = excluded.payment_day, color = excluded.color, updated_at = excluded.updated_at
+	`
 
 	getCreditCardByIDQuery = `
 		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
@@ -43,10 +48,17 @@ const (
 			updated_at = $9
 		WHERE id = $1
 	`
+	updateCreditCardFinancialAccountQuery = `
+		UPDATE financial_accounts
+		SET name = $2, institution = $3, last4 = $4, credit_limit_cents = $5, cutoff_day = $6, payment_day = $7, color = $8, updated_at = $9
+		WHERE id = $1
+	`
 
 	deleteCreditCardQuery = `
-		DELETE FROM credit_cards
-		WHERE id = $1
+		UPDATE credit_cards SET deleted_at = $2, updated_at = $2 WHERE id = $1
+	`
+	deleteCreditCardFinancialAccountQuery = `
+		UPDATE financial_accounts SET deleted_at = $2, updated_at = $2 WHERE id = $1
 	`
 )
 
@@ -90,6 +102,7 @@ func (repository *PostgresCreditCardRepository) Create(ctx context.Context, cred
 		creditCard.UpdatedAt(),
 	)
 	if err == nil {
+		_, _ = repository.database.Exec(ctx, createCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.UserID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.CreatedAt(), creditCard.UpdatedAt())
 		return nil
 	}
 
@@ -153,13 +166,20 @@ func (repository *PostgresCreditCardRepository) Update(ctx context.Context, cred
 		repository.logger.Error("failed to update credit card", "userID", creditCard.UserID(), "creditCardID", creditCard.ID(), "error", err)
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
+	if _, err := repository.database.Exec(ctx, updateCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.UpdatedAt()); err != nil {
+		return ports.ErrCreditCardRepositoryUnavailable
+	}
 
 	return nil
 }
 
 func (repository *PostgresCreditCardRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.Exec(ctx, deleteCreditCardQuery, id); err != nil {
+	deletedAt := time.Now().UTC()
+	if _, err := repository.database.Exec(ctx, deleteCreditCardQuery, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete credit card", "creditCardID", id, "error", err)
+		return ports.ErrCreditCardRepositoryUnavailable
+	}
+	if _, err := repository.database.Exec(ctx, deleteCreditCardFinancialAccountQuery, id, deletedAt); err != nil {
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
 

@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "frontend",
+        "title": "Taskify",
         "width": 800,
         "height": 600
       }

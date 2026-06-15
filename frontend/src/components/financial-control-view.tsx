@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type ElementType } from "react"
+import { useEffect, useMemo, useState, type ElementType } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -8,7 +8,10 @@ import {
   ArrowUpRight,
   Building2,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
+  Eye,
   Pencil,
   Phone,
   Plus,
@@ -61,19 +64,42 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   createCreditCard,
+  createFinancialAccount,
   createTransaction,
   deleteCreditCard,
+  deleteFinancialAccount,
   deleteTransaction,
+  getFinancialAccountSummary,
+  getFinancialAccountTransactions,
   getCreditCards,
+  getFinancialAccounts,
   getFinancialSummary,
   getTransactions,
-  type CreateCreditCardInput,
+  payAccountPayable,
+  updateAccountPayable,
+  updateCreditCard,
+  updateFinancialAccount,
+  updateTransaction,
+  type CreateFinancialAccountInput,
   type CreateTransactionInput,
   type CreditCardSummary,
+  type FinancialAccount,
+  type FinancialAccountSummary,
+  type FinancialAccountType,
   type FinancialTransaction,
+  type FinancialTransactionRecurrence,
 } from "@/services/financial_api"
 
 type TransactionType = "income" | "expense"
+
+type CardAccountFormInput =
+  | (CreateFinancialAccountInput & { type: "DEBIT_CARD" })
+  | (CreateFinancialAccountInput & {
+      type: "CREDIT_CARD"
+      creditLimitCents: number
+      cutoffDay: number
+      paymentDay: number
+    })
 
 interface Transaction {
   id: string
@@ -83,14 +109,18 @@ interface Transaction {
   type: TransactionType
   amount: number
   msi?: string
+  paymentAccountId?: string | null
+  paymentMethod?: string
 }
 
 interface PendingPayment {
   id: string
+  transactionId: string
   service: string
   icon: ElementType
   dueDate: string
-  isUrgent: boolean
+  dueDateRaw: string
+  visualState: "normal" | "paid" | "overdue"
   amount: number
 }
 
@@ -180,6 +210,51 @@ function currentMonthRange() {
   }
 }
 
+function monthRangeFromDate(date: Date) {
+  const startDate = new Date(date.getFullYear(), date.getMonth(), 1)
+  const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+
+  return {
+    startDate: formatDateInput(startDate),
+    endDate: formatDateInput(endDate),
+    label: new Intl.DateTimeFormat("es-MX", {
+      month: "long",
+      year: "numeric",
+    }).format(startDate),
+  }
+}
+
+function billingCycleRange(cutoffDay: number, anchorDate: Date) {
+  const currentCutoffDate = billingCycleDate(
+    anchorDate.getFullYear(),
+    anchorDate.getMonth(),
+    cutoffDay,
+  )
+  const startsCurrentCycle = anchorDate.getTime() >= currentCutoffDate.getTime()
+  const startDate = startsCurrentCycle
+    ? currentCutoffDate
+    : billingCycleDate(anchorDate.getFullYear(), anchorDate.getMonth() - 1, cutoffDay)
+  const endDate = startsCurrentCycle
+    ? billingCycleDate(anchorDate.getFullYear(), anchorDate.getMonth() + 1, cutoffDay)
+    : currentCutoffDate
+
+  return {
+    startDate: formatDateInput(startDate),
+    endDate: formatDateInput(endDate),
+    label: `${formatDisplayDate(formatDateInput(startDate))} - ${formatDisplayDate(
+      formatDateInput(endDate),
+    )}`,
+  }
+}
+
+function billingCycleDate(year: number, monthIndex: number, cutoffDay: number) {
+  const firstOfMonth = new Date(year, monthIndex, 1)
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate()
+  const safeCutoffDay = Math.min(cutoffDay, lastDay)
+
+  return new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth(), safeCutoffDay)
+}
+
 function formatDateInput(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -201,7 +276,88 @@ function formatDisplayDate(rawDate: string) {
   }).format(new Date(year, month - 1, day))
 }
 
-function mapTransaction(transaction: FinancialTransaction): Transaction {
+function parseDateInput(rawDate: string) {
+  const [year, month, day] = rawDate.split("-").map(Number)
+  if (!year || !month || !day) {
+    return null
+  }
+
+  return new Date(year, month - 1, day)
+}
+
+function todayDate() {
+  const currentDate = new Date()
+  currentDate.setHours(0, 0, 0, 0)
+  return currentDate
+}
+
+function nextRecurrenceDate(
+  date: Date,
+  recurrence: FinancialTransactionRecurrence,
+) {
+  const nextDate = new Date(date)
+  switch (recurrence) {
+    case "monthly":
+      nextDate.setMonth(nextDate.getMonth() + 1)
+      return nextDate
+    case "quarterly":
+      nextDate.setMonth(nextDate.getMonth() + 3)
+      return nextDate
+    case "biannual":
+      nextDate.setMonth(nextDate.getMonth() + 6)
+      return nextDate
+    case "annual":
+      nextDate.setFullYear(nextDate.getFullYear() + 1)
+      return nextDate
+    default:
+      return nextDate
+  }
+}
+
+function paymentAccountLabel(account?: FinancialAccount) {
+  if (!account) {
+    return "Sin metodo"
+  }
+  const suffix = account.last4 ? ` ....${account.last4}` : ""
+  const prefix =
+    account.type === "CREDIT_CARD"
+      ? "Credito"
+      : account.type === "DEBIT_CARD"
+      ? "Debito"
+      : "Efectivo"
+  return `${prefix} - ${account.name}${suffix}`
+}
+
+function financialAccountFromCreditCard(
+  card: CreditCardSummary,
+  accounts: FinancialAccount[],
+) {
+  return (
+    accounts.find((account) => account.id === card.id) ?? {
+      id: card.id,
+      type: "CREDIT_CARD" as FinancialAccountType,
+      name: card.name,
+      institution: card.bank,
+      last4: card.last4,
+      openingBalanceCents: 0,
+      currentBalanceCents: card.currentDebtCents,
+      creditLimitCents: card.limitCents,
+      cutoffDay: card.cutoffDay,
+      paymentDay: card.paymentDay,
+      color: card.color,
+      createdAt: card.createdAt,
+      updatedAt: card.updatedAt,
+    }
+  )
+}
+
+function mapTransaction(
+  transaction: FinancialTransaction,
+  accounts: FinancialAccount[],
+): Transaction {
+  const account = accounts.find(
+    (currentAccount) => currentAccount.id === transaction.paymentAccountId,
+  )
   return {
     id: transaction.id,
     date: formatDisplayDate(transaction.date),
@@ -210,16 +366,100 @@ function mapTransaction(transaction: FinancialTransaction): Transaction {
     type: transaction.type === "INCOME" ? "income" : "expense",
     amount: centsToAmount(transaction.amountCents),
     msi: transaction.msi ? `${transaction.msi} MSI` : undefined,
+    paymentAccountId: transaction.paymentAccountId,
+    paymentMethod: paymentAccountLabel(account),
   }
 }
 
-function mapPendingPayment(transaction: FinancialTransaction): PendingPayment {
+function mapPendingPayments(transaction: FinancialTransaction): PendingPayment[] {
+  const dueDate = parseDateInput(transaction.date)
+  const currentDate = todayDate()
+  if (!dueDate) {
+    return [
+      pendingPaymentFromTransaction(transaction, transaction.id, transaction.date, "normal"),
+    ]
+  }
+  const paidCycleDates = paidCycleDateSet(transaction)
+  const activePaidCycle = activePaidCycleDate(transaction, currentDate)
+
+  if (activePaidCycle && activePaidCycle.getTime() < dueDate.getTime()) {
+    return [
+      pendingPaymentFromTransaction(
+        transaction,
+        `${transaction.id}-paid-active`,
+        formatDateInput(activePaidCycle),
+        "paid",
+      ),
+    ]
+  }
+
+  const overduePayments: PendingPayment[] = []
+  let overdueDate = dueDate
+  let overdueIndex = 0
+  while (overdueDate.getTime() < currentDate.getTime()) {
+    const overdueDateRaw = formatDateInput(overdueDate)
+    if (!paidCycleDates.has(overdueDateRaw)) {
+      overduePayments.push(
+        pendingPaymentFromTransaction(
+          transaction,
+          `${transaction.id}-overdue-${overdueIndex}`,
+          overdueDateRaw,
+          "overdue",
+        ),
+      )
+    }
+
+    if (transaction.recurrence === "once") {
+      return overduePayments
+    }
+
+    overdueDate = nextRecurrenceDate(overdueDate, transaction.recurrence)
+    overdueIndex += 1
+  }
+
+  const currentDueDateRaw = formatDateInput(overdueDate)
+  const visualState = paidCycleDates.has(currentDueDateRaw) ? "paid" : "normal"
+
+  return [
+    ...overduePayments,
+    pendingPaymentFromTransaction(
+      transaction,
+      `${transaction.id}-current`,
+      currentDueDateRaw,
+      visualState,
+    ),
+  ]
+}
+
+function paidCycleDateSet(transaction: FinancialTransaction) {
+  return new Set((transaction.paidCycles ?? []).map((paidCycle) => paidCycle.dueDate))
+}
+
+function activePaidCycleDate(
+  transaction: FinancialTransaction,
+  currentDate: Date,
+) {
+  return (transaction.paidCycles ?? [])
+    .map((paidCycle) => parseDateInput(paidCycle.dueDate))
+    .filter((paidCycleDate): paidCycleDate is Date => Boolean(paidCycleDate))
+    .filter((paidCycleDate) => paidCycleDate.getTime() >= currentDate.getTime())
+    .sort((leftDate, rightDate) => leftDate.getTime() - rightDate.getTime())[0]
+}
+
+function pendingPaymentFromTransaction(
+  transaction: FinancialTransaction,
+  id: string,
+  dueDateRaw: string,
+  visualState: PendingPayment["visualState"],
+): PendingPayment {
   return {
-    id: transaction.id,
+    id,
+    transactionId: transaction.id,
     service: transaction.concept,
     icon: iconForCategory(transaction.category),
-    dueDate: formatDisplayDate(transaction.date),
-    isUrgent: isUrgentPayment(transaction.date),
+    dueDate: formatDisplayDate(dueDateRaw),
+    dueDateRaw,
+    visualState,
     amount: centsToAmount(transaction.amountCents),
   }
 }
@@ -242,25 +482,13 @@ function iconForCategory(category: string): ElementType {
   return Wallet
 }
 
-function isUrgentPayment(rawDate: string) {
-  const [year, month, day] = rawDate.split("-").map(Number)
-  if (!year || !month || !day) {
-    return false
-  }
-
-  const dueDate = new Date(year, month - 1, day)
-  const currentDate = new Date()
-  const differenceInMilliseconds = dueDate.getTime() - currentDate.getTime()
-  const differenceInDays = Math.ceil(differenceInMilliseconds / 86400000)
-
-  return differenceInDays <= 7
-}
-
 function financialQueryKeys(startDate: string, endDate: string) {
   return {
     transactions: ["financial", "transactions", startDate, endDate] as const,
+    payables: ["financial", "accounts-payable"] as const,
     summary: ["financial", "summary", startDate, endDate] as const,
     creditCards: ["financial", "credit-cards"] as const,
+    accounts: ["financial", "accounts"] as const,
   }
 }
 
@@ -275,27 +503,71 @@ function cardCutoffLabel(cutoffDay: number) {
   return `Dia ${cutoffDay}`
 }
 
+function serviceValueForCategory(category: string) {
+  const normalizedCategory = category.toLowerCase()
+  return (
+    SERVICES_ICONS.find(
+      (service) =>
+        service.label.toLowerCase() === normalizedCategory ||
+        service.value.toLowerCase() === normalizedCategory,
+    )?.value ?? "other"
+  )
+}
+
 function NewMovementDialog({
   open,
   onClose,
   onSubmit,
   isSaving,
+  transaction,
+  paymentAccounts,
 }: {
   open: boolean
   onClose: () => void
   onSubmit: (data: CreateTransactionInput) => void
   isSaving: boolean
+  transaction?: FinancialTransaction | null
+  paymentAccounts: FinancialAccount[]
 }) {
   const [tipo, setTipo] = useState("")
   const [categoria, setCategoria] = useState("")
-  const [recurrencia, setRecurrencia] = useState("once")
   const [monto, setMonto] = useState("")
   const [concepto, setConcepto] = useState("")
+  const [fecha, setFecha] = useState(formatDateInput(new Date()))
+  const [paymentAccountId, setPaymentAccountId] = useState("")
+  const [msi, setMsi] = useState("1")
   const [errorMessage, setErrorMessage] = useState("")
+  const isEditing = Boolean(transaction?.id)
+  const selectedPaymentAccount = paymentAccounts.find(
+    (account) => account.id === paymentAccountId,
+  )
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setTipo(transaction ? (transaction.type === "INCOME" ? "income" : "expense") : "")
+    setCategoria(transaction?.category ?? "")
+    setMonto(transaction ? String(centsToAmount(transaction.amountCents)) : "")
+    setConcepto(transaction?.concept ?? "")
+    setFecha(transaction?.date ?? formatDateInput(new Date()))
+    setPaymentAccountId(transaction?.paymentAccountId ?? paymentAccounts[0]?.id ?? "")
+    setMsi(transaction?.msi ? String(transaction.msi) : "1")
+    setErrorMessage("")
+  }, [open, paymentAccounts, transaction])
 
   const handleSubmit = () => {
-    if (!concepto.trim() || !tipo || !categoria || amountToCents(monto) <= 0) {
-      setErrorMessage("Completa concepto, tipo, categoria y un monto valido.")
+    if (!concepto.trim() || !tipo || !categoria || !fecha || !paymentAccountId || amountToCents(monto) <= 0) {
+      setErrorMessage("Completa concepto, tipo, categoria, metodo de pago, fecha y un monto valido.")
+      return
+    }
+    const msiValue =
+      tipo === "expense" && selectedPaymentAccount?.type === "CREDIT_CARD"
+        ? Number(msi)
+        : null
+    if (msiValue !== null && (!Number.isInteger(msiValue) || msiValue < 1)) {
+      setErrorMessage("Los MSI deben ser un numero entero mayor a cero.")
       return
     }
 
@@ -304,23 +576,34 @@ function NewMovementDialog({
       concept: concepto.trim(),
       category: categoria,
       amountCents: amountToCents(monto),
-      date: formatDateInput(new Date()),
+      date: fecha,
       status: "PAID",
-      msi: null,
+      msi: msiValue,
+      paymentAccountId,
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Nuevo Movimiento</DialogTitle>
+          <DialogTitle>{isEditing ? "Editar Movimiento" : "Nuevo Movimiento"}</DialogTitle>
           <DialogDescription>
             Registra un ingreso o egreso en tu libro financiero.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-2">
+        <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <Label htmlFor="concepto">Concepto</Label>
+            <Input
+              id="concepto"
+              placeholder="Ej. Sueldo mensual, Netflix..."
+              value={concepto}
+              onChange={(event) => setConcepto(event.target.value)}
+            />
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="monto">Monto</Label>
             <div className="relative">
@@ -339,76 +622,81 @@ function NewMovementDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="concepto">Concepto</Label>
+            <Label htmlFor="fecha-movimiento">Fecha</Label>
             <Input
-              id="concepto"
-              placeholder="Ej. Sueldo mensual, Netflix..."
-              value={concepto}
-              onChange={(event) => setConcepto(event.target.value)}
+              id="fecha-movimiento"
+              type="date"
+              value={fecha}
+              onChange={(event) => setFecha(event.target.value)}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label>Tipo</Label>
-              <Select value={tipo} onValueChange={setTipo}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="income">Ingreso</SelectItem>
-                    <SelectItem value="expense">Egreso</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Categoria</Label>
-              <Select value={categoria} onValueChange={setCategoria}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {CATEGORIES.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Tipo</Label>
+            <Select value={tipo} onValueChange={setTipo}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="income">Ingreso</SelectItem>
+                  <SelectItem value="expense">Egreso</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="flex flex-col gap-3">
-            <Label>Recurrencia</Label>
-            <RadioGroup
-              value={recurrencia}
-              onValueChange={setRecurrencia}
-              className="grid grid-cols-1 gap-2"
-            >
-              {RECURRENCE_OPTIONS.map((option) => (
-                <label
-                  key={option.value}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors",
-                    recurrencia === option.value
-                      ? "border-primary/50 bg-primary/5"
-                      : "border-border hover:bg-muted/50",
-                  )}
-                >
-                  <RadioGroupItem value={option.value} id={option.value} />
-                  <span className="text-sm font-medium text-foreground">
-                    {option.label}
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
+          <div className="flex flex-col gap-1.5">
+            <Label>Categoria</Label>
+            <Select value={categoria} onValueChange={setCategoria}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Metodo de Pago</Label>
+            <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {paymentAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {paymentAccountLabel(account)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedPaymentAccount?.type === "CREDIT_CARD" && tipo === "expense" ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="msi">MSI</Label>
+              <Input
+                id="msi"
+                type="number"
+                min={1}
+                value={msi}
+                onChange={(event) => setMsi(event.target.value)}
+              />
+            </div>
+          ) : null}
+
           {errorMessage ? (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 sm:col-span-2">
               {errorMessage}
             </p>
           ) : null}
@@ -434,23 +722,55 @@ function NewPaymentDialog({
   onClose,
   onSubmit,
   isSaving,
+  accountPayable,
 }: {
   open: boolean
   onClose: () => void
   onSubmit: (data: CreateTransactionInput) => void
   isSaving: boolean
+  accountPayable?: FinancialTransaction | null
 }) {
   const [categoria, setCategoria] = useState("")
-  const [recurrencia, setRecurrencia] = useState("monthly")
+  const [recurrencia, setRecurrencia] =
+    useState<FinancialTransactionRecurrence>("monthly")
   const [servicio, setServicio] = useState("")
   const [monto, setMonto] = useState("")
   const [fechaVence, setFechaVence] = useState("")
+  const [limiteRecurrencia, setLimiteRecurrencia] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const isEditing = Boolean(accountPayable?.id)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setCategoria(accountPayable ? serviceValueForCategory(accountPayable.category) : "")
+    setRecurrencia("monthly")
+    setServicio(accountPayable?.concept ?? "")
+    setMonto(accountPayable ? String(centsToAmount(accountPayable.amountCents)) : "")
+    setFechaVence(accountPayable?.date ?? "")
+    setLimiteRecurrencia(
+      accountPayable?.recurrenceLimit ? String(accountPayable.recurrenceLimit) : "",
+    )
+    setErrorMessage("")
+  }, [accountPayable, open])
 
   const handleSubmit = () => {
     const selectedService = SERVICES_ICONS.find((service) => service.value === categoria)
+    const recurrenceLimit =
+      recurrencia === "once" || limiteRecurrencia.trim() === ""
+        ? null
+        : Number(limiteRecurrencia)
     if (!servicio.trim() || !categoria || !fechaVence || amountToCents(monto) <= 0) {
       setErrorMessage("Completa servicio, categoria, fecha y un monto valido.")
+      return
+    }
+    if (
+      recurrenceLimit !== null &&
+      (!Number.isInteger(recurrenceLimit) || recurrenceLimit <= 0)
+    ) {
+      setErrorMessage("El limite de pagos debe ser un numero entero mayor a cero.")
       return
     }
 
@@ -462,6 +782,8 @@ function NewPaymentDialog({
       date: fechaVence,
       status: "PENDING",
       msi: null,
+      recurrence: recurrencia,
+      recurrenceLimit,
     })
   }
 
@@ -469,7 +791,9 @@ function NewPaymentDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nueva Cuenta por Pagar</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Editar Cuenta por Pagar" : "Nueva Cuenta por Pagar"}
+          </DialogTitle>
           <DialogDescription>
             Registra un servicio o pago recurrente pendiente.
           </DialogDescription>
@@ -536,7 +860,9 @@ function NewPaymentDialog({
             <Label>Recurrencia</Label>
             <RadioGroup
               value={recurrencia}
-              onValueChange={setRecurrencia}
+              onValueChange={(value) =>
+                setRecurrencia(value as FinancialTransactionRecurrence)
+              }
               className="grid grid-cols-1 gap-2"
             >
               {RECURRENCE_OPTIONS.map((option) => (
@@ -557,6 +883,20 @@ function NewPaymentDialog({
               ))}
             </RadioGroup>
           </div>
+          {recurrencia !== "once" ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="limite-recurrencia">Limite de pagos</Label>
+              <Input
+                id="limite-recurrencia"
+                type="number"
+                min={1}
+                step={1}
+                placeholder="Indefinido"
+                value={limiteRecurrencia}
+                onChange={(event) => setLimiteRecurrencia(event.target.value)}
+              />
+            </div>
+          ) : null}
           {errorMessage ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
               {errorMessage}
@@ -584,28 +924,103 @@ function AddCardDialog({
   onClose,
   onSubmit,
   isSaving,
+  card,
+  debitCard,
 }: {
   open: boolean
   onClose: () => void
-  onSubmit: (data: CreateCreditCardInput) => void
+  onSubmit: (data: CardAccountFormInput) => void
   isSaving: boolean
+  card?: CreditCardSummary | null
+  debitCard?: FinancialAccount | null
 }) {
+  const [cardType, setCardType] = useState<Exclude<FinancialAccountType, "CASH">>(
+    "DEBIT_CARD",
+  )
   const [name, setName] = useState("")
   const [bank, setBank] = useState("")
   const [last4, setLast4] = useState("")
   const [cutoffDay, setCutoffDay] = useState("")
   const [paymentDay, setPaymentDay] = useState("")
   const [limit, setLimit] = useState("")
+  const [openingBalance, setOpeningBalance] = useState("")
   const [selectedGradient, setSelectedGradient] = useState(CARD_GRADIENTS[0])
+  const [errorMessage, setErrorMessage] = useState("")
+  const isEditing = Boolean(card?.id || debitCard?.id)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setCardType(card ? "CREDIT_CARD" : "DEBIT_CARD")
+    setName(card?.name ?? debitCard?.name ?? "")
+    setBank(card?.bank ?? debitCard?.institution ?? "")
+    setLast4(card?.last4 ?? debitCard?.last4 ?? "")
+    setCutoffDay(card ? String(card.cutoffDay) : "")
+    setPaymentDay(card ? String(card.paymentDay) : "")
+    setLimit(card ? String(centsToAmount(card.limitCents)) : "")
+    setOpeningBalance(
+      debitCard ? String(centsToAmount(debitCard.openingBalanceCents)) : "",
+    )
+    setSelectedGradient(
+      card
+        ? cardVisualForColor(card.color)
+        : debitCard
+        ? cardVisualForColor(debitCard.color)
+        : CARD_GRADIENTS[0],
+    )
+    setErrorMessage("")
+  }, [card, debitCard, open])
 
   const handleSubmit = () => {
+    const trimmedName = name.trim()
+    if (!trimmedName || !bank || last4.length !== 4) {
+      setErrorMessage("Completa nombre, banco y los ultimos 4 digitos.")
+      return
+    }
+    if (cardType === "DEBIT_CARD") {
+      const openingBalanceCents = amountToCents(openingBalance)
+      if (openingBalanceCents < 0) {
+        setErrorMessage("El saldo inicial no puede ser negativo.")
+        return
+      }
+      onSubmit({
+        type: "DEBIT_CARD",
+        name: trimmedName,
+        institution: bank,
+        last4,
+        openingBalanceCents,
+        creditLimitCents: null,
+        cutoffDay: null,
+        paymentDay: null,
+        color: selectedGradient.gradient,
+      })
+      return
+    }
+
+    const parsedCutoffDay = Number(cutoffDay)
+    const parsedPaymentDay = Number(paymentDay)
+    const creditLimitCents = amountToCents(limit)
+    if (
+      creditLimitCents <= 0 ||
+      parsedCutoffDay < 1 ||
+      parsedCutoffDay > 31 ||
+      parsedPaymentDay < 1 ||
+      parsedPaymentDay > 31
+    ) {
+      setErrorMessage("Completa limite, dia de corte y dia limite de pago validos.")
+      return
+    }
     onSubmit({
-      name,
-      bank,
+      type: "CREDIT_CARD",
+      name: trimmedName,
+      institution: bank,
       last4,
-      cutoffDay: Number(cutoffDay),
-      paymentDay: Number(paymentDay),
-      limitCents: amountToCents(limit),
+      openingBalanceCents: 0,
+      creditLimitCents,
+      cutoffDay: parsedCutoffDay,
+      paymentDay: parsedPaymentDay,
       color: selectedGradient.gradient,
     })
   }
@@ -614,13 +1029,56 @@ function AddCardDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Agregar Tarjeta</DialogTitle>
+          <DialogTitle>{isEditing ? "Editar Tarjeta" : "Agregar Tarjeta"}</DialogTitle>
           <DialogDescription>
-            Vincula una tarjeta de credito a tu control financiero.
+            Registra una tarjeta de debito o credito para tus movimientos.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 py-2">
+          <div className="flex flex-col gap-3">
+            <Label>Tipo de Tarjeta</Label>
+            <RadioGroup
+              value={cardType}
+              onValueChange={(value) => {
+                setCardType(value as Exclude<FinancialAccountType, "CASH">)
+                setErrorMessage("")
+              }}
+              className="grid grid-cols-2 gap-2"
+            >
+              <label
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors",
+                  cardType === "DEBIT_CARD"
+                    ? "border-primary/50 bg-primary/5"
+                    : "border-border hover:bg-muted/50",
+                )}
+              >
+                <RadioGroupItem
+                  value="DEBIT_CARD"
+                  id="card-type-debit"
+                  disabled={isEditing}
+                />
+                <span className="text-sm font-medium text-foreground">Debito</span>
+              </label>
+              <label
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors",
+                  cardType === "CREDIT_CARD"
+                    ? "border-primary/50 bg-primary/5"
+                    : "border-border hover:bg-muted/50",
+                )}
+              >
+                <RadioGroupItem
+                  value="CREDIT_CARD"
+                  id="card-type-credit"
+                  disabled={isEditing}
+                />
+                <span className="text-sm font-medium text-foreground">Credito</span>
+              </label>
+            </RadioGroup>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="card-name">Nombre de la tarjeta</Label>
             <Input
@@ -663,6 +1121,25 @@ function AddCardDialog({
                 }
               />
             </div>
+            {cardType === "DEBIT_CARD" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="opening-balance">Saldo inicial</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                    $
+                  </span>
+                  <Input
+                    id="opening-balance"
+                    type="number"
+                    min={0}
+                    placeholder="0.00"
+                    className="pl-7"
+                    value={openingBalance}
+                    onChange={(event) => setOpeningBalance(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="cutoff-day">Dia de corte</Label>
               <Input
@@ -675,9 +1152,11 @@ function AddCardDialog({
                 onChange={(event) => setCutoffDay(event.target.value)}
               />
             </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {cardType === "CREDIT_CARD" ? (
+            <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="payment-day">Dia limite de pago</Label>
               <Input
@@ -706,7 +1185,8 @@ function AddCardDialog({
                 />
               </div>
             </div>
-          </div>
+            </div>
+          ) : null}
 
           <div className="flex flex-col gap-2">
             <Label>Color del plastico</Label>
@@ -728,6 +1208,11 @@ function AddCardDialog({
               ))}
             </div>
           </div>
+          {errorMessage ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter showCloseButton>
@@ -737,12 +1222,311 @@ function AddCardDialog({
             disabled={isSaving}
             onClick={handleSubmit}
           >
-            {isSaving ? "Guardando..." : "Agregar tarjeta"}
+            {isSaving ? "Guardando..." : isEditing ? "Guardar cambios" : "Agregar tarjeta"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
+}
+
+function AccountDetailModal({
+  account,
+  open,
+  onClose,
+}: {
+  account: FinancialAccount | null
+  open: boolean
+  onClose: () => void
+}) {
+  const [periodAnchor, setPeriodAnchor] = useState(new Date())
+
+  useEffect(() => {
+    if (open) {
+      setPeriodAnchor(new Date())
+    }
+  }, [account?.id, open])
+
+  const period = useMemo(() => {
+    if (!account || account.type !== "CREDIT_CARD") {
+      return monthRangeFromDate(periodAnchor)
+    }
+    return billingCycleRange(account.cutoffDay ?? 1, periodAnchor)
+  }, [account, periodAnchor])
+
+  const summaryQuery = useQuery({
+    queryKey: ["financial", "accounts", account?.id, "summary"],
+    queryFn: () => getFinancialAccountSummary(account?.id ?? ""),
+    enabled: open && Boolean(account?.id),
+  })
+  const transactionsQuery = useQuery({
+    queryKey: [
+      "financial",
+      "accounts",
+      account?.id,
+      "transactions",
+      period.startDate,
+      period.endDate,
+    ],
+    queryFn: () =>
+      getFinancialAccountTransactions(account?.id ?? "", {
+        startDate: period.startDate,
+        endDate: period.endDate,
+      }),
+    enabled: open && Boolean(account?.id),
+  })
+
+  if (!account) {
+    return null
+  }
+
+  const summary = summaryQuery.data
+  const creditLimitCents =
+    summaryValue(summary, "creditLimitCents") ?? account.creditLimitCents ?? 0
+  const currentDebtCents =
+    summaryValue(summary, "currentDebtCents") ??
+    (account.type === "CREDIT_CARD" ? account.currentBalanceCents : 0)
+  const availableCreditCents =
+    summaryValue(summary, "availableCreditCents") ??
+    Math.max(creditLimitCents - currentDebtCents, 0)
+  const currentBalanceCents =
+    summaryValue(summary, "currentBalanceCents") ?? account.currentBalanceCents
+  const creditUsage =
+    creditLimitCents > 0
+      ? Math.min((currentDebtCents / creditLimitCents) * 100, 100)
+      : 0
+  const transactions = transactionsQuery.data ?? []
+  const isCreditAccount = account.type === "CREDIT_CARD"
+
+  function movePeriod(offset: number) {
+    setPeriodAnchor(
+      (currentDate) =>
+        new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth() + offset,
+          currentDate.getDate(),
+        ),
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{account.name}</DialogTitle>
+          <DialogDescription>
+            {isCreditAccount ? "Detalle de tarjeta de credito" : "Detalle de debito"}
+            {account.last4 ? ` - terminacion ${account.last4}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isCreditAccount ? (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border bg-card p-4">
+              <span className="text-xs font-medium uppercase text-muted-foreground">
+                Limite de credito
+              </span>
+              <p className="mt-2 text-xl font-semibold">
+                {fmt(centsToAmount(creditLimitCents))}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card p-4">
+              <span className="text-xs font-medium uppercase text-muted-foreground">
+                Deuda actual
+              </span>
+              <p className="mt-2 text-xl font-semibold text-red-600">
+                {fmt(centsToAmount(currentDebtCents))}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card p-4">
+              <span className="text-xs font-medium uppercase text-muted-foreground">
+                Credito disponible
+              </span>
+              <p className="mt-2 text-xl font-semibold text-emerald-600">
+                {fmt(centsToAmount(availableCreditCents))}
+              </p>
+            </div>
+            <div className="sm:col-span-3 rounded-lg border bg-muted/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-medium">Uso de linea</span>
+                  <span className="text-xs text-muted-foreground">
+                    Corte dia {account.cutoffDay ?? "-"} · Pago dia{" "}
+                    {account.paymentDay ?? "-"}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold">
+                  {creditUsage.toFixed(0)}%
+                </span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${creditUsage}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-card p-5">
+            <span className="text-xs font-medium uppercase text-muted-foreground">
+              Saldo actual
+            </span>
+            <p className="mt-2 text-3xl font-bold">
+              {fmt(centsToAmount(currentBalanceCents))}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {account.institution || "Cuenta de debito"}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">
+                {isCreditAccount ? "Movimientos del ciclo" : "Movimientos del mes"}
+              </h3>
+              <p className="text-xs text-muted-foreground">{period.label}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Periodo anterior"
+                onClick={() => movePeriod(-1)}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Periodo siguiente"
+                onClick={() => movePeriod(1)}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Concepto</TableHead>
+                  <TableHead className="hidden md:table-cell">Categoria</TableHead>
+                  <TableHead className="hidden md:table-cell">Tipo</TableHead>
+                  <TableHead className="text-right">Monto</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactionsQuery.isLoading ? (
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Skeleton className="h-4 w-20" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-full" />
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Skeleton className="h-4 w-20" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="ml-auto h-4 w-20" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : transactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="h-24 text-center text-sm text-muted-foreground"
+                    >
+                      No hay movimientos en este periodo.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  transactions.map((transaction) => (
+                    <TableRow key={transaction.id}>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {formatDisplayDate(transaction.date)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <span>{transaction.concept}</span>
+                        {transaction.installmentNumber &&
+                        transaction.installmentCount ? (
+                          <Badge
+                            variant="secondary"
+                            className="ml-2 text-xs font-normal"
+                          >
+                            {transaction.installmentNumber}/
+                            {transaction.installmentCount}
+                          </Badge>
+                        ) : transaction.msi ? (
+                          <Badge
+                            variant="secondary"
+                            className="ml-2 text-xs font-normal"
+                          >
+                            {transaction.msi} MSI
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant="outline" className="font-normal">
+                          {transaction.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground">
+                        {transaction.type === "INCOME"
+                          ? "Ingreso"
+                          : transaction.type === "DEBT_PAYMENT"
+                          ? "Pago de deuda"
+                          : transaction.type === "TRANSFER"
+                          ? "Transferencia"
+                          : "Egreso"}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right font-semibold tabular-nums",
+                          transaction.type === "INCOME"
+                            ? "text-emerald-600"
+                            : "text-foreground",
+                        )}
+                      >
+                        {transaction.type === "INCOME" ? "+" : "-"}
+                        {fmt(centsToAmount(transaction.amountCents))}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {summaryQuery.isError || transactionsQuery.isError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              No se pudo cargar el detalle de la cuenta.
+            </p>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function summaryValue(
+  summary: FinancialAccountSummary | undefined,
+  key: keyof FinancialAccountSummary,
+) {
+  const value = summary?.[key]
+  return typeof value === "number" ? value : undefined
 }
 
 export function FinancialControlView() {
@@ -751,8 +1535,19 @@ export function FinancialControlView() {
   const [addCardDialogOpen, setAddCardDialogOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] =
     useState<FinancialTransaction | null>(null)
+  const [transactionToEdit, setTransactionToEdit] =
+    useState<FinancialTransaction | null>(null)
+  const [accountPayableToEdit, setAccountPayableToEdit] =
+    useState<FinancialTransaction | null>(null)
+  const [creditCardToEdit, setCreditCardToEdit] =
+    useState<CreditCardSummary | null>(null)
   const [creditCardToDelete, setCreditCardToDelete] =
     useState<CreditCardSummary | null>(null)
+  const [debitCardToEdit, setDebitCardToEdit] =
+    useState<FinancialAccount | null>(null)
+  const [debitCardToDelete, setDebitCardToDelete] =
+    useState<FinancialAccount | null>(null)
+  const [accountDetail, setAccountDetail] = useState<FinancialAccount | null>(null)
   const queryClient = useQueryClient()
   const monthRange = useMemo(() => currentMonthRange(), [])
   const queryKeys = useMemo(
@@ -772,6 +1567,13 @@ export function FinancialControlView() {
       }),
   })
   const {
+    data: apiPayables = [],
+    isLoading: isPayablesLoading,
+  } = useQuery({
+    queryKey: queryKeys.payables,
+    queryFn: () => getTransactions(),
+  })
+  const {
     data: financialSummary,
     isLoading: isSummaryLoading,
   } = useQuery({
@@ -785,15 +1587,85 @@ export function FinancialControlView() {
     queryKey: queryKeys.creditCards,
     queryFn: getCreditCards,
   })
+  const {
+    data: financialAccounts = [],
+    isLoading: isAccountsLoading,
+  } = useQuery({
+    queryKey: queryKeys.accounts,
+    queryFn: getFinancialAccounts,
+  })
   const createTransactionMutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
       ])
       setDialogOpen(false)
       setPaymentDialogOpen(false)
+      setTransactionToEdit(null)
+      setAccountPayableToEdit(null)
+    },
+  })
+  const updateTransactionMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string
+      data: CreateTransactionInput
+    }) => updateTransaction(id, data),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+      ])
+      setDialogOpen(false)
+      setTransactionToEdit(null)
+    },
+  })
+  const updateAccountPayableMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string
+      data: CreateTransactionInput
+    }) => updateAccountPayable(id, data),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+      ])
+      setPaymentDialogOpen(false)
+      setAccountPayableToEdit(null)
+    },
+  })
+  const payAccountPayableMutation = useMutation({
+    mutationFn: ({
+      id,
+      dueDate,
+    }: {
+      id: string
+      dueDate: string
+    }) => payAccountPayable(id, dueDate),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+      ])
     },
   })
   const deleteTransactionMutation = useMutation({
@@ -801,39 +1673,129 @@ export function FinancialControlView() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
       ])
       setTransactionToDelete(null)
     },
   })
-  const createCreditCardMutation = useMutation({
-    mutationFn: createCreditCard,
+  const createCreditCardMutation = useMutation<
+    FinancialAccount | CreditCardSummary,
+    Error,
+    CardAccountFormInput
+  >({
+    mutationFn: (data: CardAccountFormInput) => {
+      if (data.type === "CREDIT_CARD") {
+        return createCreditCard({
+          name: data.name,
+          bank: data.institution,
+          last4: data.last4 ?? "",
+          cutoffDay: data.cutoffDay,
+          paymentDay: data.paymentDay,
+          limitCents: data.creditLimitCents,
+          color: data.color,
+        })
+      }
+      return createFinancialAccount(data)
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
       setAddCardDialogOpen(false)
+      setCreditCardToEdit(null)
+      setDebitCardToEdit(null)
+    },
+  })
+  const updateCreditCardMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string
+      data: CardAccountFormInput
+    }) => {
+      if (data.type !== "CREDIT_CARD") {
+        throw new Error("invalid credit card data")
+      }
+      return updateCreditCard(id, {
+        name: data.name,
+        bank: data.institution,
+        last4: data.last4 ?? "",
+        cutoffDay: data.cutoffDay,
+        paymentDay: data.paymentDay,
+        limitCents: data.creditLimitCents,
+        color: data.color,
+      })
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+      setAddCardDialogOpen(false)
+      setCreditCardToEdit(null)
+    },
+  })
+  const updateFinancialAccountMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string
+      data: CreateFinancialAccountInput
+    }) => updateFinancialAccount(id, data),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      setAddCardDialogOpen(false)
+      setDebitCardToEdit(null)
+      setCreditCardToEdit(null)
     },
   })
   const deleteCreditCardMutation = useMutation({
     mutationFn: deleteCreditCard,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
       setCreditCardToDelete(null)
+    },
+  })
+  const deleteFinancialAccountMutation = useMutation({
+    mutationFn: deleteFinancialAccount,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      setDebitCardToDelete(null)
     },
   })
 
   const transactions = useMemo(
-    () => apiTransactions.map(mapTransaction),
-    [apiTransactions],
-  )
-  const pendingPayments = useMemo(
     () =>
       apiTransactions
         .filter(
           (transaction) =>
+            transaction.status !== "PENDING" &&
+            !(
+              transaction.status === "COMPLETED" &&
+              transaction.recurrenceLimit === 0
+            ),
+        )
+        .map((transaction) => mapTransaction(transaction, financialAccounts)),
+    [apiTransactions, financialAccounts],
+  )
+  const pendingPayments = useMemo(
+    () =>
+      apiPayables
+        .filter(
+          (transaction) =>
             transaction.type === "EXPENSE" && transaction.status === "PENDING",
         )
-        .map(mapPendingPayment),
-    [apiTransactions],
+        .flatMap(mapPendingPayments),
+    [apiPayables],
+  )
+  const debitCards = useMemo(
+    () => financialAccounts.filter((account) => account.type === "DEBIT_CARD"),
+    [financialAccounts],
   )
   const totalIncome = centsToAmount(financialSummary?.totalIncomeCents ?? 0)
   const totalExpense = centsToAmount(financialSummary?.totalExpenseCents ?? 0)
@@ -843,12 +1805,94 @@ export function FinancialControlView() {
   const transactionToDeleteLabel = transactionToDelete?.concept ?? "este movimiento"
 
   function handleDeleteTransaction(transactionId: string) {
+    const transaction =
+      apiTransactions.find(
+        (currentTransaction) => currentTransaction.id === transactionId,
+      ) ??
+      apiPayables.find(
+        (currentTransaction) => currentTransaction.id === transactionId,
+      )
+    if (transaction) {
+      setTransactionToDelete(transaction)
+    }
+  }
+
+  function handleEditTransaction(transactionId: string) {
     const transaction = apiTransactions.find(
       (currentTransaction) => currentTransaction.id === transactionId,
     )
     if (transaction) {
-      setTransactionToDelete(transaction)
+      setTransactionToEdit(transaction)
+      setDialogOpen(true)
     }
+  }
+
+  function handleEditAccountPayable(transactionId: string) {
+    const transaction = apiPayables.find(
+      (currentTransaction) => currentTransaction.id === transactionId,
+    )
+    if (transaction) {
+      setAccountPayableToEdit(transaction)
+      setPaymentDialogOpen(true)
+    }
+  }
+
+  function handleSubmitTransaction(data: CreateTransactionInput) {
+    if (transactionToEdit?.id) {
+      updateTransactionMutation.mutate({ id: transactionToEdit.id, data })
+      return
+    }
+
+    createTransactionMutation.mutate(data)
+  }
+
+  function handleSubmitAccountPayable(data: CreateTransactionInput) {
+    if (accountPayableToEdit?.id) {
+      updateAccountPayableMutation.mutate({
+        id: accountPayableToEdit.id,
+        data: {
+          ...data,
+          type: "EXPENSE",
+          status: "PENDING",
+        },
+      })
+      return
+    }
+
+    createTransactionMutation.mutate(data)
+  }
+
+  function handleSubmitCard(data: CardAccountFormInput) {
+    if (creditCardToEdit?.id) {
+      updateCreditCardMutation.mutate({ id: creditCardToEdit.id, data })
+      return
+    }
+    if (debitCardToEdit?.id) {
+      updateFinancialAccountMutation.mutate({ id: debitCardToEdit.id, data })
+      return
+    }
+
+    createCreditCardMutation.mutate(data)
+  }
+
+  function handlePayAccountPayable(transactionId: string, dueDate: string) {
+    payAccountPayableMutation.mutate({ id: transactionId, dueDate })
+  }
+
+  function handleCloseTransactionDialog() {
+    setDialogOpen(false)
+    setTransactionToEdit(null)
+  }
+
+  function handleClosePaymentDialog() {
+    setPaymentDialogOpen(false)
+    setAccountPayableToEdit(null)
+  }
+
+  function handleCloseCardDialog() {
+    setAddCardDialogOpen(false)
+    setCreditCardToEdit(null)
+    setDebitCardToEdit(null)
   }
 
   function handleConfirmDeleteTransaction() {
@@ -865,6 +1909,14 @@ export function FinancialControlView() {
     }
 
     deleteCreditCardMutation.mutate(creditCardToDelete.id)
+  }
+
+  function handleConfirmDeleteDebitCard() {
+    if (!debitCardToDelete) {
+      return
+    }
+
+    deleteFinancialAccountMutation.mutate(debitCardToDelete.id)
   }
 
   return (
@@ -896,11 +1948,15 @@ export function FinancialControlView() {
                 </div>
                 <Button
                   size="sm"
-                  onClick={() => setDialogOpen(true)}
-                  className="shrink-0"
+                  onClick={() => {
+                    setTransactionToEdit(null)
+                    setDialogOpen(true)
+                  }}
+                  className="shrink-0 h-9 rounded-lg text-sm font-semibold"
                 >
                   <Plus data-icon="inline-start" />
-                  Nuevo Movimiento
+                  <span className="hidden sm:inline">Nuevo Movimiento</span>
+                  <span className="sm:hidden">Nuevo</span>
                 </Button>
               </div>
             </CardHeader>
@@ -940,6 +1996,9 @@ export function FinancialControlView() {
                         <TableHead className="hidden text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell">
                           Categoria
                         </TableHead>
+                        <TableHead className="hidden text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell">
+                          Metodo
+                        </TableHead>
                         <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Tipo
                         </TableHead>
@@ -962,6 +2021,9 @@ export function FinancialControlView() {
                                 <Skeleton className="h-4 w-full" />
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
+                                <Skeleton className="h-4 w-full" />
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell">
                                 <Skeleton className="h-4 w-full" />
                               </TableCell>
                               <TableCell>
@@ -993,6 +2055,11 @@ export function FinancialControlView() {
                                   {transaction.category}
                                 </Badge>
                               </TableCell>
+                              <TableCell className="hidden text-muted-foreground lg:table-cell">
+                                <Badge variant="outline" className="max-w-48 truncate font-normal">
+                                  {transaction.paymentMethod}
+                                </Badge>
+                              </TableCell>
                               <TableCell>
                                 {transaction.type === "income" ? (
                                   <span className="flex items-center gap-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
@@ -1018,16 +2085,28 @@ export function FinancialControlView() {
                                 {fmt(transaction.amount)}
                               </TableCell>
                               <TableCell className="text-right">
+                                <div className="flex justify-end gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="size-8 cursor-pointer text-muted-foreground hover:text-foreground"
+                                    aria-label={`Editar movimiento ${transaction.concept}`}
+                                    disabled={updateTransactionMutation.isPending}
+                                    onClick={() => handleEditTransaction(transaction.id)}
+                                  >
+                                    <Pencil className="size-4" />
+                                  </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="size-8 text-muted-foreground hover:text-red-600"
+                                    className="size-8 cursor-pointer text-muted-foreground hover:text-red-600"
                                   aria-label={`Eliminar movimiento ${transaction.concept}`}
                                   disabled={deleteTransactionMutation.isPending}
                                   onClick={() => handleDeleteTransaction(transaction.id)}
                                 >
                                   <Trash2 className="size-4" />
                                 </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -1040,7 +2119,7 @@ export function FinancialControlView() {
                   className="mt-0 pt-4 data-[state=inactive]:hidden"
                 >
                   <div className="grid grid-cols-1 gap-6 pt-4 md:grid-cols-2">
-                    {isCardsLoading ? (
+                    {isCardsLoading || isAccountsLoading ? (
                       Array.from({ length: 3 }).map((_, index) => (
                         <Skeleton
                           key={index}
@@ -1051,6 +2130,10 @@ export function FinancialControlView() {
                       <>
                         {creditCards.map((card) => {
                           const visual = cardVisualForColor(card.color)
+                          const detailAccount = financialAccountFromCreditCard(
+                            card,
+                            financialAccounts,
+                          )
 
                           return (
                             <div
@@ -1071,8 +2154,24 @@ export function FinancialControlView() {
                                   variant="secondary"
                                   size="icon"
                                   className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
+                                  aria-label={`Ver detalle de tarjeta ${card.name}`}
+                                  title="Ver detalle"
+                                  onClick={() => setAccountDetail(detailAccount)}
+                                >
+                                  <Eye className="size-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
                                   aria-label={`Editar tarjeta ${card.name}`}
                                   title="Editar tarjeta"
+                                  disabled={updateCreditCardMutation.isPending}
+                                  onClick={() => {
+                                    setCreditCardToEdit(card)
+                                    setAddCardDialogOpen(true)
+                                  }}
                                 >
                                   <Pencil className="size-4" />
                                 </Button>
@@ -1134,9 +2233,111 @@ export function FinancialControlView() {
                           )
                         })}
 
+                        {debitCards.map((card) => {
+                          const visual = cardVisualForColor(card.color)
+
+                          return (
+                            <div
+                              key={card.id}
+                              className={cn(
+                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
+                                visual.gradient,
+                                visual.border,
+                              )}
+                            >
+                              <div
+                                className="pointer-events-none absolute inset-0 z-10 bg-black/0 transition-colors duration-150 group-hover:bg-black/35"
+                                aria-hidden="true"
+                              />
+                              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
+                                  aria-label={`Ver detalle de tarjeta ${card.name}`}
+                                  title="Ver detalle"
+                                  onClick={() => setAccountDetail(card)}
+                                >
+                                  <Eye className="size-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
+                                  aria-label={`Editar tarjeta ${card.name}`}
+                                  title="Editar tarjeta"
+                                  disabled={updateFinancialAccountMutation.isPending}
+                                  onClick={() => {
+                                    setDebitCardToEdit(card)
+                                    setCreditCardToEdit(null)
+                                    setAddCardDialogOpen(true)
+                                  }}
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon"
+                                  className="pointer-events-auto size-10 bg-white/90 text-red-600 shadow-lg hover:bg-white hover:text-red-700"
+                                  aria-label={`Eliminar tarjeta ${card.name}`}
+                                  title="Eliminar tarjeta"
+                                  disabled={deleteFinancialAccountMutation.isPending}
+                                  onClick={() => setDebitCardToDelete(card)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
+                              <div className="flex items-start justify-between">
+                                <div className="flex flex-col gap-0.5">
+                                  <CreditCard className="size-8 opacity-90" />
+                                  <span className="mt-2 text-xs font-medium opacity-70">
+                                    {card.institution || "Debito"}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-bold uppercase tracking-widest opacity-60">
+                                  DEBITO
+                                </span>
+                              </div>
+
+                              <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
+                                .... .... .... {card.last4 ?? "0000"}
+                              </div>
+
+                              <div className="flex items-end justify-between">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Nombre
+                                  </span>
+                                  <span className="text-sm font-semibold">
+                                    {card.name}
+                                  </span>
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Saldo inicial {fmt(centsToAmount(card.openingBalanceCents))}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                    Saldo actual
+                                  </span>
+                                  <span className="text-sm font-bold">
+                                    {fmt(centsToAmount(card.currentBalanceCents))}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+
                         <button
                           type="button"
-                          onClick={() => setAddCardDialogOpen(true)}
+                          onClick={() => {
+                            setCreditCardToEdit(null)
+                            setDebitCardToEdit(null)
+                            setAddCardDialogOpen(true)
+                          }}
                           className="flex aspect-[1.586/1] w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-transparent text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground"
                         >
                           <PlusCircle className="size-7 opacity-50" />
@@ -1163,10 +2364,10 @@ export function FinancialControlView() {
                     </CardTitle>
                   </div>
                   <CardDescription>
-                    {isTransactionsLoading ? (
+                    {isPayablesLoading ? (
                       <Skeleton className="h-4 w-32" />
                     ) : (
-                      `${pendingPayments.length} pendientes este mes`
+                      `${pendingPayments.length} cuentas por pagar`
                     )}
                   </CardDescription>
                 </div>
@@ -1175,7 +2376,10 @@ export function FinancialControlView() {
                   size="icon-sm"
                   className="shrink-0 text-muted-foreground hover:text-foreground"
                   aria-label="Agregar cuenta por pagar"
-                  onClick={() => setPaymentDialogOpen(true)}
+                  onClick={() => {
+                    setAccountPayableToEdit(null)
+                    setPaymentDialogOpen(true)
+                  }}
                 >
                   <Plus />
                 </Button>
@@ -1183,7 +2387,7 @@ export function FinancialControlView() {
             </CardHeader>
             <CardContent className="p-6 pt-0">
               <div className="flex flex-col gap-4">
-                {isTransactionsLoading
+                {isPayablesLoading
                   ? Array.from({ length: 3 }).map((_, index) => (
                       <Skeleton
                         key={index}
@@ -1202,14 +2406,25 @@ export function FinancialControlView() {
                               <Icon className="size-4 text-muted-foreground" />
                             </div>
                             <div className="flex min-w-0 flex-col">
-                              <span className="truncate text-sm font-medium text-foreground">
+                              <span
+                                className={cn(
+                                  "truncate text-sm font-medium",
+                                  payment.visualState === "overdue"
+                                    ? "text-red-600 dark:text-red-500"
+                                    : payment.visualState === "paid"
+                                    ? "text-green-600 dark:text-green-500"
+                                    : "text-foreground",
+                                )}
+                              >
                                 {payment.service}
                               </span>
                               <span
                                 className={cn(
                                   "text-xs",
-                                  payment.isUrgent
-                                    ? "font-medium text-red-500 dark:text-red-400"
+                                  payment.visualState === "overdue"
+                                    ? "font-medium text-red-600 dark:text-red-500"
+                                    : payment.visualState === "paid"
+                                    ? "font-medium text-green-600 dark:text-green-500"
                                     : "text-muted-foreground",
                                 )}
                               >
@@ -1218,19 +2433,47 @@ export function FinancialControlView() {
                             </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
-                            <span className="text-sm font-semibold tabular-nums text-foreground">
+                            <span
+                              className={cn(
+                                "text-sm font-semibold tabular-nums",
+                                payment.visualState === "overdue"
+                                  ? "text-red-600 dark:text-red-500"
+                                  : payment.visualState === "paid"
+                                  ? "text-green-600 dark:text-green-500"
+                                  : "text-foreground",
+                              )}
+                            >
                               {fmt(payment.amount)}
                             </span>
-                            <Button size="sm" variant="outline">
-                              Pagar
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="rounded-md"
+                              disabled={
+                                payAccountPayableMutation.isPending ||
+                                payment.visualState === "paid"
+                              }
+                              onClick={() => handlePayAccountPayable(payment.transactionId, payment.dueDateRaw)}
+                            >
+                              {payment.visualState === "paid" ? "Pagado" : "Pagar"}
                             </Button>
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="size-8 text-muted-foreground hover:text-red-600"
+                              className="size-8 cursor-pointer text-muted-foreground hover:text-foreground"
+                              aria-label={`Editar cuenta por pagar ${payment.service}`}
+                              disabled={updateAccountPayableMutation.isPending}
+                              onClick={() => handleEditAccountPayable(payment.transactionId)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 cursor-pointer text-muted-foreground hover:text-red-600"
                               aria-label={`Eliminar cuenta por pagar ${payment.service}`}
                               disabled={deleteTransactionMutation.isPending}
-                              onClick={() => handleDeleteTransaction(payment.id)}
+                              onClick={() => handleDeleteTransaction(payment.transactionId)}
                             >
                               <Trash2 className="size-4" />
                             </Button>
@@ -1317,21 +2560,38 @@ export function FinancialControlView() {
 
       <NewMovementDialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={(data) => createTransactionMutation.mutate(data)}
-        isSaving={createTransactionMutation.isPending}
+        onClose={handleCloseTransactionDialog}
+        onSubmit={handleSubmitTransaction}
+        isSaving={createTransactionMutation.isPending || updateTransactionMutation.isPending}
+        transaction={transactionToEdit}
+        paymentAccounts={financialAccounts}
       />
       <NewPaymentDialog
         open={paymentDialogOpen}
-        onClose={() => setPaymentDialogOpen(false)}
-        onSubmit={(data) => createTransactionMutation.mutate(data)}
-        isSaving={createTransactionMutation.isPending}
+        onClose={handleClosePaymentDialog}
+        onSubmit={handleSubmitAccountPayable}
+        isSaving={
+          createTransactionMutation.isPending ||
+          updateAccountPayableMutation.isPending
+        }
+        accountPayable={accountPayableToEdit}
       />
       <AddCardDialog
         open={addCardDialogOpen}
-        onClose={() => setAddCardDialogOpen(false)}
-        onSubmit={(data) => createCreditCardMutation.mutate(data)}
-        isSaving={createCreditCardMutation.isPending}
+        onClose={handleCloseCardDialog}
+        onSubmit={handleSubmitCard}
+        isSaving={
+          createCreditCardMutation.isPending ||
+          updateCreditCardMutation.isPending ||
+          updateFinancialAccountMutation.isPending
+        }
+        card={creditCardToEdit}
+        debitCard={debitCardToEdit}
+      />
+      <AccountDetailModal
+        open={Boolean(accountDetail)}
+        account={accountDetail}
+        onClose={() => setAccountDetail(null)}
       />
       <ConfirmDialog
         open={Boolean(transactionToDelete)}
@@ -1362,6 +2622,23 @@ export function FinancialControlView() {
         confirmLabel="Eliminar tarjeta"
         isPending={deleteCreditCardMutation.isPending}
         onConfirm={handleConfirmDeleteCreditCard}
+      />
+      <ConfirmDialog
+        open={Boolean(debitCardToDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDebitCardToDelete(null)
+          }
+        }}
+        title="Eliminar tarjeta"
+        description={
+          debitCardToDelete
+            ? `Se eliminara la tarjeta "${debitCardToDelete.name}" terminacion ${debitCardToDelete.last4 ?? "0000"}. Esta accion no se puede deshacer.`
+            : ""
+        }
+        confirmLabel="Eliminar tarjeta"
+        isPending={deleteFinancialAccountMutation.isPending}
+        onConfirm={handleConfirmDeleteDebitCard}
       />
 
       <div className="h-24" />

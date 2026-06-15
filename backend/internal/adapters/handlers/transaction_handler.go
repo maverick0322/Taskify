@@ -3,7 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -32,7 +34,10 @@ func (handler *TransactionHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/transactions", handler.CreateTransaction)
 	router.Get("/transactions", handler.GetTransactions)
 	router.Get("/transactions/summary", handler.GetFinancialSummary)
+	router.Put("/transactions/{id}", handler.UpdateTransaction)
 	router.Patch("/transactions/{id}", handler.UpdateTransaction)
+	router.Put("/accounts-payable/{id}", handler.UpdateAccountPayable)
+	router.Post("/accounts-payable/{id}/pay", handler.PayAccountPayable)
 	router.Delete("/transactions/{id}", handler.DeleteTransaction)
 }
 
@@ -46,6 +51,9 @@ func (handler *TransactionHandler) CreateTransaction(response http.ResponseWrite
 	if err := json.NewDecoder(request.Body).Decode(&createRequest); err != nil {
 		handler.logger.Warn("create transaction request contains invalid json", "userID", userID)
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+	if !handler.validateTransactionRequest(response, createRequest, true) {
 		return
 	}
 
@@ -65,6 +73,9 @@ func (handler *TransactionHandler) CreateTransaction(response http.ResponseWrite
 		domain.TransactionStatus(createRequest.Status),
 		createRequest.MSI,
 		createRequest.CreditCardID,
+		transactionRecurrenceFromRequest(createRequest.Recurrence),
+		createRequest.RecurrenceLimit,
+		createRequest.PaymentAccountID,
 	)
 	if err != nil {
 		handler.handleTransactionError(response, err)
@@ -106,6 +117,9 @@ func (handler *TransactionHandler) UpdateTransaction(response http.ResponseWrite
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
 		return
 	}
+	if !handler.validateTransactionRequest(response, updateRequest, true) {
+		return
+	}
 
 	transactionDate, ok := handler.transactionDateFromRequest(response, updateRequest.Date, "update transaction request contains invalid date", userID)
 	if !ok {
@@ -124,8 +138,87 @@ func (handler *TransactionHandler) UpdateTransaction(response http.ResponseWrite
 		domain.TransactionStatus(updateRequest.Status),
 		updateRequest.MSI,
 		updateRequest.CreditCardID,
+		transactionRecurrenceFromRequest(updateRequest.Recurrence),
+		updateRequest.RecurrenceLimit,
 	)
 	if err != nil {
+		handler.handleTransactionError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *TransactionHandler) UpdateAccountPayable(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var updateRequest transactionRequest
+	if err := json.NewDecoder(request.Body).Decode(&updateRequest); err != nil {
+		handler.logger.Warn("update account payable request contains invalid json", "userID", userID)
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+	if !handler.validateTransactionRequest(response, updateRequest, false) {
+		return
+	}
+
+	transactionDate, ok := handler.transactionDateFromRequest(response, updateRequest.Date, "update account payable request contains invalid date", userID)
+	if !ok {
+		return
+	}
+
+	err := handler.transactionUseCase.UpdateTransaction(
+		request.Context(),
+		userID,
+		chi.URLParam(request, "id"),
+		domain.TransactionTypeExpense,
+		updateRequest.Concept,
+		updateRequest.Category,
+		updateRequest.AmountCents,
+		transactionDate,
+		domain.TransactionStatusPending,
+		updateRequest.MSI,
+		updateRequest.CreditCardID,
+		transactionRecurrenceFromRequest(updateRequest.Recurrence),
+		updateRequest.RecurrenceLimit,
+	)
+	if err != nil {
+		handler.handleTransactionError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *TransactionHandler) PayAccountPayable(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var payRequest payAccountPayableRequest
+	if request.Body != nil {
+		if err := json.NewDecoder(request.Body).Decode(&payRequest); err != nil && !errors.Is(err, io.EOF) {
+			handler.logger.Warn("pay account payable request contains invalid json", "userID", userID)
+			writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+			return
+		}
+	}
+
+	var dueDate *time.Time
+	if payRequest.DueDate != "" {
+		parsedDueDate, err := parseTransactionDate(payRequest.DueDate)
+		if err != nil {
+			writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid date"})
+			return
+		}
+		dueDate = &parsedDueDate
+	}
+
+	if err := handler.transactionUseCase.PayAccountPayable(request.Context(), userID, chi.URLParam(request, "id"), dueDate); err != nil {
 		handler.handleTransactionError(response, err)
 		return
 	}
@@ -176,6 +269,32 @@ func (handler *TransactionHandler) userIDFromRequest(response http.ResponseWrite
 	}
 
 	return userID, true
+}
+
+func (handler *TransactionHandler) validateTransactionRequest(response http.ResponseWriter, transactionRequest transactionRequest, requireTypeAndStatus bool) bool {
+	if transactionRequest.AmountCents <= 0 ||
+		strings.TrimSpace(transactionRequest.Concept) == "" ||
+		strings.TrimSpace(transactionRequest.Category) == "" {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
+
+	if requireTypeAndStatus &&
+		(!domain.TransactionType(transactionRequest.Type).IsValid() ||
+			!domain.TransactionStatus(transactionRequest.Status).IsValid()) {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
+	if !transactionRecurrenceFromRequest(transactionRequest.Recurrence).IsValid() {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
+	if transactionRequest.RecurrenceLimit != nil && *transactionRequest.RecurrenceLimit <= 0 {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
+
+	return true
 }
 
 func (handler *TransactionHandler) transactionDateFromRequest(response http.ResponseWriter, rawDate, message, userID string) (time.Time, bool) {
@@ -258,6 +377,14 @@ func (handler *TransactionHandler) handleTransactionError(response http.Response
 	switch {
 	case errors.Is(err, ports.ErrTransactionNotFound):
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "transaction not found"})
+	case errors.Is(err, ports.ErrAccountPayableCycleAlreadyPaid):
+		writeJSON(response, http.StatusConflict, errorResponse{Error: "account payable cycle already paid"})
+	case errors.Is(err, ports.ErrFinancialAccountNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "financial account not found"})
+	case errors.Is(err, domain.ErrInsufficientFinancialAccountFunds):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "insufficient funds"})
+	case errors.Is(err, domain.ErrFinancialAccountCreditLimitExceeded):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "credit limit exceeded"})
 	case isTransactionDomainValidationError(err):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
 	default:
@@ -276,6 +403,8 @@ func isTransactionDomainValidationError(err error) bool {
 		errors.Is(err, domain.ErrInvalidTransactionDate) ||
 		errors.Is(err, domain.ErrInvalidTransactionStatus) ||
 		errors.Is(err, domain.ErrInvalidTransactionMSI) ||
+		errors.Is(err, domain.ErrInvalidTransactionRecurrence) ||
+		errors.Is(err, domain.ErrInvalidTransactionRecurrenceLimit) ||
 		errors.Is(err, domain.ErrInvalidTransactionCreatedAt) ||
 		errors.Is(err, domain.ErrInvalidTransactionUpdatedAt)
 }
@@ -285,18 +414,31 @@ func parseTransactionDate(rawDate string) (time.Time, error) {
 }
 
 func transactionResponseFromDomain(transaction *domain.Transaction) transactionResponse {
+	lastPaidAt := ""
+	if transaction.LastPaidAt() != nil {
+		lastPaidAt = transaction.LastPaidAt().Format(time.RFC3339)
+	}
+
 	return transactionResponse{
-		ID:           transaction.ID(),
-		Type:         string(transaction.Type()),
-		Concept:      transaction.Concept(),
-		Category:     transaction.Category(),
-		AmountCents:  transaction.AmountCents(),
-		Date:         transaction.Date().Format(transactionDateLayout),
-		Status:       string(transaction.Status()),
-		MSI:          transaction.MSI(),
-		CreditCardID: transaction.CreditCardID(),
-		CreatedAt:    transaction.CreatedAt().Format(time.RFC3339),
-		UpdatedAt:    transaction.UpdatedAt().Format(time.RFC3339),
+		ID:                   transaction.ID(),
+		Type:                 string(transaction.Type()),
+		Concept:              transaction.Concept(),
+		Category:             transaction.Category(),
+		AmountCents:          transaction.AmountCents(),
+		Date:                 transaction.Date().Format(transactionDateLayout),
+		Status:               string(transaction.Status()),
+		MSI:                  transaction.MSI(),
+		CreditCardID:         transaction.CreditCardID(),
+		PaymentAccountID:     transaction.PaymentAccountID(),
+		DestinationAccountID: transaction.DestinationAccountID(),
+		InstallmentNumber:    transaction.InstallmentNumber(),
+		InstallmentCount:     transaction.InstallmentCount(),
+		Recurrence:           string(transaction.Recurrence()),
+		RecurrenceLimit:      transaction.RecurrenceLimit(),
+		LastPaidAt:           nullableTimeResponse(lastPaidAt),
+		PaidCycles:           paidCycleResponsesFromDomain(transaction.PaidCycles()),
+		CreatedAt:            transaction.CreatedAt().Format(time.RFC3339),
+		UpdatedAt:            transaction.UpdatedAt().Format(time.RFC3339),
 	}
 }
 
@@ -318,32 +460,79 @@ func financialSummaryResponseFromDomain(summary ports.FinancialSummary) financia
 }
 
 type transactionRequest struct {
-	Type         string  `json:"type"`
-	Concept      string  `json:"concept"`
-	Category     string  `json:"category"`
-	AmountCents  int64   `json:"amountCents"`
-	Date         string  `json:"date"`
-	Status       string  `json:"status"`
-	MSI          *int    `json:"msi"`
-	CreditCardID *string `json:"creditCardId"`
+	Type             string  `json:"type"`
+	Concept          string  `json:"concept"`
+	Category         string  `json:"category"`
+	AmountCents      int64   `json:"amountCents"`
+	Date             string  `json:"date"`
+	Status           string  `json:"status"`
+	MSI              *int    `json:"msi"`
+	CreditCardID     *string `json:"creditCardId"`
+	PaymentAccountID *string `json:"paymentAccountId"`
+	Recurrence       string  `json:"recurrence"`
+	RecurrenceLimit  *int    `json:"recurrenceLimit"`
+}
+
+type payAccountPayableRequest struct {
+	DueDate string `json:"dueDate"`
 }
 
 type transactionResponse struct {
-	ID           string  `json:"id"`
-	Type         string  `json:"type"`
-	Concept      string  `json:"concept"`
-	Category     string  `json:"category"`
-	AmountCents  int64   `json:"amountCents"`
-	Date         string  `json:"date"`
-	Status       string  `json:"status"`
-	MSI          *int    `json:"msi"`
-	CreditCardID *string `json:"creditCardId"`
-	CreatedAt    string  `json:"createdAt"`
-	UpdatedAt    string  `json:"updatedAt"`
+	ID                   string              `json:"id"`
+	Type                 string              `json:"type"`
+	Concept              string              `json:"concept"`
+	Category             string              `json:"category"`
+	AmountCents          int64               `json:"amountCents"`
+	Date                 string              `json:"date"`
+	Status               string              `json:"status"`
+	MSI                  *int                `json:"msi"`
+	CreditCardID         *string             `json:"creditCardId"`
+	PaymentAccountID     *string             `json:"paymentAccountId"`
+	DestinationAccountID *string             `json:"destinationAccountId"`
+	InstallmentNumber    *int                `json:"installmentNumber"`
+	InstallmentCount     *int                `json:"installmentCount"`
+	Recurrence           string              `json:"recurrence"`
+	RecurrenceLimit      *int                `json:"recurrenceLimit"`
+	LastPaidAt           *string             `json:"lastPaidAt"`
+	PaidCycles           []paidCycleResponse `json:"paidCycles"`
+	CreatedAt            string              `json:"createdAt"`
+	UpdatedAt            string              `json:"updatedAt"`
+}
+
+type paidCycleResponse struct {
+	DueDate string `json:"dueDate"`
+	PaidAt  string `json:"paidAt"`
 }
 
 type financialSummaryResponse struct {
 	TotalIncomeCents  int64 `json:"totalIncomeCents"`
 	TotalExpenseCents int64 `json:"totalExpenseCents"`
 	ProfitMarginCents int64 `json:"profitMarginCents"`
+}
+
+func transactionRecurrenceFromRequest(rawRecurrence string) domain.TransactionRecurrence {
+	if rawRecurrence == "" {
+		return domain.TransactionRecurrenceOnce
+	}
+
+	return domain.TransactionRecurrence(rawRecurrence)
+}
+
+func paidCycleResponsesFromDomain(paidCycles []domain.PaidCycle) []paidCycleResponse {
+	responses := make([]paidCycleResponse, 0, len(paidCycles))
+	for _, paidCycle := range paidCycles {
+		responses = append(responses, paidCycleResponse{
+			DueDate: paidCycle.DueDate.Format(transactionDateLayout),
+			PaidAt:  paidCycle.PaidAt.Format(time.RFC3339),
+		})
+	}
+	return responses
+}
+
+func nullableTimeResponse(value string) *string {
+	if value == "" {
+		return nil
+	}
+
+	return &value
 }

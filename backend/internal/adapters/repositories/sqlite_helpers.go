@@ -38,8 +38,24 @@ func nullableInt(value *int) interface{} {
 	return *value
 }
 
+func nullableInt64(value *int64) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	return *value
+}
+
 func nullableTime(value time.Time) interface{} {
 	if value.IsZero() {
+		return nil
+	}
+
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func nullableTimePtr(value *time.Time) interface{} {
+	if value == nil || value.IsZero() {
 		return nil
 	}
 
@@ -72,10 +88,28 @@ func scanNullableInt(value sql.NullInt64) *int {
 	return &normalized
 }
 
+func scanNullableInt64(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+
+	normalized := value.Int64
+	return &normalized
+}
+
 func scanNullableTime(value sql.NullTime) time.Time {
 	if !value.Valid {
 		return time.Time{}
 	}
 
 	return value.Time
+}
+
+func scanNullableTimePtr(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+
+	normalized := value.Time.UTC()
+	return &normalized
 }

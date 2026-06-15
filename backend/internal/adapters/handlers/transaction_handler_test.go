@@ -22,6 +22,9 @@ type mockTransactionUseCase struct {
 	errToReturn          error
 	createdAmountCents   int64
 	updatedAmountCents   int64
+	updatedType          domain.TransactionType
+	updatedStatus        domain.TransactionStatus
+	paidAccountPayableID string
 	requestedUserID      string
 	requestedID          string
 	receivedFilter       ports.TransactionDateFilter
@@ -29,7 +32,7 @@ type mockTransactionUseCase struct {
 	receivedEndDate      time.Time
 }
 
-func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string) (*domain.Transaction, error) {
+func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int, paymentAccountID *string) (*domain.Transaction, error) {
 	useCase.requestedUserID = userID
 	useCase.createdAmountCents = amountCents
 	return useCase.transactionToReturn, useCase.errToReturn
@@ -47,10 +50,18 @@ func (useCase *mockTransactionUseCase) GetUserTransactions(ctx context.Context, 
 	return useCase.transactionsToReturn, useCase.errToReturn
 }
 
-func (useCase *mockTransactionUseCase) UpdateTransaction(ctx context.Context, userID, transactionID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string) error {
+func (useCase *mockTransactionUseCase) UpdateTransaction(ctx context.Context, userID, transactionID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int) error {
 	useCase.requestedUserID = userID
 	useCase.requestedID = transactionID
 	useCase.updatedAmountCents = amountCents
+	useCase.updatedType = transactionType
+	useCase.updatedStatus = status
+	return useCase.errToReturn
+}
+
+func (useCase *mockTransactionUseCase) PayAccountPayable(ctx context.Context, userID, transactionID string, dueDate *time.Time) error {
+	useCase.requestedUserID = userID
+	useCase.paidAccountPayableID = transactionID
 	return useCase.errToReturn
 }
 
@@ -200,6 +211,75 @@ func TestTransactionHandler_UpdateTransactionValidRequest_ReturnsNoContent(t *te
 	}
 	if useCase.updatedAmountCents != 12500 {
 		t.Errorf("expected updated amount cents 12500, got %d", useCase.updatedAmountCents)
+	}
+}
+
+func TestTransactionHandler_UpdateTransactionPutValidRequest_ReturnsNoContent(t *testing.T) {
+	useCase := &mockTransactionUseCase{}
+	router := createTransactionTestRouter(useCase)
+	request := authenticatedTransactionRequest(http.MethodPut, "/transactions/transaction-123", validCreateTransactionJSON())
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if useCase.requestedID != "transaction-123" {
+		t.Errorf("expected requested transaction ID transaction-123, got %s", useCase.requestedID)
+	}
+}
+
+func TestTransactionHandler_UpdateAccountPayableValidRequest_ForcesPendingExpense(t *testing.T) {
+	useCase := &mockTransactionUseCase{}
+	router := createTransactionTestRouter(useCase)
+	request := authenticatedTransactionRequest(http.MethodPut, "/accounts-payable/transaction-123", `{"type":"INCOME","concept":"Internet","category":"Internet","amountCents":55000,"date":"2026-06-15","status":"PAID","msi":null}`)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if useCase.requestedID != "transaction-123" {
+		t.Errorf("expected requested transaction ID transaction-123, got %s", useCase.requestedID)
+	}
+	if useCase.updatedType != domain.TransactionTypeExpense {
+		t.Errorf("expected account payable type EXPENSE, got %s", useCase.updatedType)
+	}
+	if useCase.updatedStatus != domain.TransactionStatusPending {
+		t.Errorf("expected account payable status PENDING, got %s", useCase.updatedStatus)
+	}
+	if useCase.createdAmountCents != 0 {
+		t.Errorf("expected account payable update not to create a transaction")
+	}
+}
+
+func TestTransactionHandler_PayAccountPayableValidRequest_ReturnsNoContent(t *testing.T) {
+	useCase := &mockTransactionUseCase{}
+	router := createTransactionTestRouter(useCase)
+	request := authenticatedTransactionRequest(http.MethodPost, "/accounts-payable/transaction-123/pay", "")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if useCase.paidAccountPayableID != "transaction-123" {
+		t.Errorf("expected paid account payable ID transaction-123, got %s", useCase.paidAccountPayableID)
+	}
+}
+
+func TestTransactionHandler_UpdateTransactionInvalidAmount_ReturnsBadRequest(t *testing.T) {
+	router := createTransactionTestRouter(&mockTransactionUseCase{})
+	request := authenticatedTransactionRequest(http.MethodPut, "/transactions/transaction-123", `{"type":"EXPENSE","concept":"CFE - Luz","category":"Servicios","amountCents":0,"date":"2026-06-10","status":"PAID","msi":null}`)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }
 
@@ -379,6 +459,9 @@ func createHandlerTransaction(t *testing.T) *domain.Transaction {
 		12500,
 		time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC),
 		domain.TransactionStatusPaid,
+		nil,
+		nil,
+		domain.TransactionRecurrenceOnce,
 		nil,
 		nil,
 		time.Now().Add(-2*time.Hour),

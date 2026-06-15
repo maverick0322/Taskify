@@ -1,7 +1,14 @@
 import { apiRequest } from "@/services/api";
 
-export type FinancialTransactionType = "INCOME" | "EXPENSE";
-export type FinancialTransactionStatus = "PAID" | "PENDING";
+export type FinancialTransactionType = "INCOME" | "EXPENSE" | "DEBT_PAYMENT" | "TRANSFER";
+export type FinancialAccountType = "CASH" | "DEBIT_CARD" | "CREDIT_CARD";
+export type FinancialTransactionStatus = "PAID" | "PENDING" | "COMPLETED";
+export type FinancialTransactionRecurrence =
+  | "once"
+  | "monthly"
+  | "quarterly"
+  | "biannual"
+  | "annual";
 
 export interface FinancialTransaction {
   id: string;
@@ -12,14 +19,38 @@ export interface FinancialTransaction {
   date: string;
   status: FinancialTransactionStatus;
   msi?: number | null;
+  paymentAccountId?: string | null;
+  destinationAccountId?: string | null;
+  installmentNumber?: number | null;
+  installmentCount?: number | null;
+  recurrence: FinancialTransactionRecurrence;
+  recurrenceLimit?: number | null;
+  lastPaidAt?: string | null;
+  paidCycles?: FinancialPaidCycle[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FinancialPaidCycle {
+  dueDate: string;
+  paidAt: string;
 }
 
 export interface FinancialSummary {
   totalIncomeCents: number;
   totalExpenseCents: number;
   profitMarginCents: number;
+}
+
+export interface FinancialAccountSummary {
+  accountId?: string;
+  currentBalanceCents?: number;
+  openingBalanceCents?: number;
+  creditLimitCents?: number | null;
+  currentDebtCents?: number;
+  availableCreditCents?: number;
+  totalIncomeCents?: number;
+  totalExpenseCents?: number;
 }
 
 export interface CreditCardSummary {
@@ -36,6 +67,27 @@ export interface CreditCardSummary {
   updatedAt: string;
 }
 
+export interface FinancialAccount {
+  id: string;
+  type: FinancialAccountType;
+  name: string;
+  institution: string;
+  last4?: string | null;
+  openingBalanceCents: number;
+  currentBalanceCents: number;
+  creditLimitCents?: number | null;
+  cutoffDay?: number | null;
+  paymentDay?: number | null;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateFinancialAccountInput = Omit<
+  FinancialAccount,
+  "id" | "currentBalanceCents" | "createdAt" | "updatedAt"
+>;
+
 export interface TransactionDateRange {
   startDate?: string;
   endDate?: string;
@@ -49,6 +101,9 @@ export interface CreateTransactionInput {
   date: string;
   status: FinancialTransactionStatus;
   msi?: number | null;
+  paymentAccountId?: string | null;
+  recurrence?: FinancialTransactionRecurrence;
+  recurrenceLimit?: number | null;
 }
 
 export type UpdateTransactionInput = CreateTransactionInput;
@@ -92,8 +147,28 @@ export async function updateTransaction(
   data: UpdateTransactionInput,
 ): Promise<void> {
   await apiRequest<void>(`/transactions/${id}`, {
-    method: "PATCH",
+    method: "PUT",
     body: JSON.stringify(data),
+  });
+}
+
+export async function updateAccountPayable(
+  id: string,
+  data: UpdateTransactionInput,
+): Promise<void> {
+  await apiRequest<void>(`/accounts-payable/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function payAccountPayable(
+  id: string,
+  dueDate?: string,
+): Promise<void> {
+  await apiRequest<void>(`/accounts-payable/${id}/pay`, {
+    method: "POST",
+    body: dueDate ? JSON.stringify({ dueDate }) : undefined,
   });
 }
 
@@ -107,11 +182,66 @@ export async function getCreditCards(): Promise<CreditCardSummary[]> {
   return apiRequest<CreditCardSummary[]>("/credit-cards");
 }
 
+export async function getFinancialAccounts(): Promise<FinancialAccount[]> {
+  return apiRequest<FinancialAccount[]>("/financial-accounts");
+}
+
+export async function getFinancialAccountSummary(
+  id: string,
+): Promise<FinancialAccountSummary> {
+  return apiRequest<FinancialAccountSummary>(`/financial-accounts/${id}/summary`);
+}
+
+export async function getFinancialAccountTransactions(
+  id: string,
+  range: TransactionDateRange = {},
+): Promise<FinancialTransaction[]> {
+  const query = financialDateRangeQuery(range);
+  return apiRequest<FinancialTransaction[]>(
+    `/financial-accounts/${id}/transactions${query}`,
+  );
+}
+
+export async function createFinancialAccount(
+  data: CreateFinancialAccountInput,
+): Promise<FinancialAccount> {
+  return apiRequest<FinancialAccount>("/financial-accounts", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateFinancialAccount(
+  id: string,
+  data: CreateFinancialAccountInput,
+): Promise<void> {
+  await apiRequest<void>(`/financial-accounts/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteFinancialAccount(id: string): Promise<void> {
+  await apiRequest<void>(`/financial-accounts/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createCreditCard(
   data: CreateCreditCardInput,
 ): Promise<CreditCardSummary> {
   return apiRequest<CreditCardSummary>("/credit-cards", {
     method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateCreditCard(
+  id: string,
+  data: CreateCreditCardInput,
+): Promise<void> {
+  await apiRequest<void>(`/credit-cards/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(data),
   });
 }

@@ -63,6 +63,7 @@ interface NewTaskDialogProps {
   taskToEdit?: Task | null
   initialStatus?: TaskStatus
   initialColumnId?: string
+  onTaskSaved?: (task: Task) => void
 }
 
 const GLOBAL_BOARD_VALUE = "__global__"
@@ -87,6 +88,7 @@ export function NewTaskDialog({
   taskToEdit,
   initialStatus,
   initialColumnId,
+  onTaskSaved,
 }: NewTaskDialogProps) {
   const queryClient = useQueryClient()
   const [title,       setTitle]       = useState("")
@@ -119,12 +121,33 @@ export function NewTaskDialog({
         return
       }
 
-      await createTask({
+      const createdTask = await createTask({
         ...input,
         ...(input.boardId ? { boardId: input.boardId } : {}),
       })
+
+      return {
+        ...createdTask,
+        boardId: createdTask.boardId ?? input.boardId ?? null,
+        columnId: createdTask.columnId ?? input.columnId ?? null,
+        ...(input.status ? { status: input.status } : {}),
+      }
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (savedTask, variables) => {
+      if (savedTask) {
+        const targetBoardId = savedTask.boardId ?? variables.boardId
+        if (targetBoardId) {
+          queryClient.setQueryData<Task[]>(["tasks", targetBoardId], (currentTasks = []) => {
+            const withoutDuplicate = currentTasks.filter((task) => task.id !== savedTask.id)
+            return [savedTask, ...withoutDuplicate]
+          })
+        }
+        queryClient.setQueryData<Task[]>(["tasks", "global"], (currentTasks = []) => {
+          const withoutDuplicate = currentTasks.filter((task) => task.id !== savedTask.id)
+          return [savedTask, ...withoutDuplicate]
+        })
+        onTaskSaved?.(savedTask)
+      }
       invalidateTaskCaches(queryClient, taskToEdit?.boardId ?? variables.boardId)
       reset()
       onOpenChange(false)
@@ -183,16 +206,21 @@ export function NewTaskDialog({
       return
     }
 
-    mutation.mutate({
+    const payload = {
       title,
       description,
       priority: mappedPriority,
       dueDate: dueDate ? taskDueDateToISOString(dueDate, time) : "",
       ...(initialStatus && !isEditing ? { status: initialStatus } : {}),
-      ...(!isEditing && initialColumnId ? { columnId: initialColumnId } : {}),
       ...(isEditing ? { columnId: taskToEdit?.columnId ?? null } : {}),
       ...(activeBoardId ? { boardId: activeBoardId } : {}),
-    })
+    }
+
+    mutation.mutate(
+      !isEditing && initialColumnId
+        ? { ...payload, columnId: initialColumnId }
+        : payload,
+    )
   }
 
   function handleCancel() {

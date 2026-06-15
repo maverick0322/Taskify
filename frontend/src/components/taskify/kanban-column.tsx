@@ -6,35 +6,45 @@ import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { TaskCard } from "@/components/taskify/task-card"
 import type { KanbanTask } from "@/components/taskify/kanban-board"
 import type { Task } from "@/services/taskService"
-import { Check, MoreHorizontal, Palette, Plus, X } from "lucide-react"
+import { Check, MoreHorizontal, Palette, Plus, Save, Trash2, X } from "lucide-react"
 
 export const COLUMN_COLORS = [
   {
     value: "slate",
     dotColor: "bg-slate-400",
+    barColor: "bg-slate-400",
     accentColor: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   },
   {
     value: "indigo",
     dotColor: "bg-indigo-500",
+    barColor: "bg-indigo-500",
     accentColor: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300",
   },
   {
     value: "emerald",
     dotColor: "bg-emerald-500",
+    barColor: "bg-emerald-500",
     accentColor: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
   },
   {
     value: "amber",
     dotColor: "bg-amber-500",
+    barColor: "bg-amber-500",
     accentColor: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
   },
   {
     value: "rose",
     dotColor: "bg-rose-500",
+    barColor: "bg-rose-500",
     accentColor: "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
   },
 ] as const
@@ -50,7 +60,9 @@ interface KanbanColumnProps {
   onEditTask: (task: Task) => void
   onAddTask: (columnId: string) => void
   onUpdateColumn: (columnId: string, name: string, color: string) => void
+  onRequestDeleteColumn: (columnId: string, title: string) => void
   updatePending: boolean
+  disabled?: boolean
 }
 
 export function columnColorConfig(color: string) {
@@ -69,9 +81,12 @@ export function KanbanColumn({
   onEditTask,
   onAddTask,
   onUpdateColumn,
+  onRequestDeleteColumn,
   updatePending,
+  disabled = false,
 }: KanbanColumnProps) {
   const [isEditing, setIsEditing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState(title)
   const [draftColor, setDraftColor] = useState(color)
   const visual = columnColorConfig(draftColor)
@@ -85,14 +100,16 @@ export function KanbanColumn({
 
   function commitChanges() {
     const trimmedTitle = draftTitle.trim()
-    if (!trimmedTitle || updatePending) {
+    if (!trimmedTitle || updatePending || disabled) {
       return
     }
 
-    if (trimmedTitle !== title || draftColor !== color) {
-      onUpdateColumn(columnId, trimmedTitle, draftColor)
-    }
+    onUpdateColumn(columnId, trimmedTitle, draftColor)
     setIsEditing(false)
+  }
+
+  function handleTitleBlur() {
+    commitChanges()
   }
 
   function cancelEditing() {
@@ -104,12 +121,13 @@ export function KanbanColumn({
   return (
     <section
       className={cn(
-        "flex w-72 shrink-0 flex-col rounded-2xl border border-border/60 bg-column",
+        "flex w-72 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-column",
         "md:w-80",
       )}
       aria-label={`Columna: ${title}`}
     >
-      <div className="flex items-start justify-between gap-2 rounded-t-2xl border-b border-border/50 px-4 py-3.5">
+      <div className={cn("h-1 w-full", visual.barColor)} />
+      <div className="flex items-start justify-between gap-2 border-b border-border/50 px-4 py-3.5">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
           <span
             className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", visual.dotColor)}
@@ -123,7 +141,7 @@ export function KanbanColumn({
                 autoFocus
                 value={draftTitle}
                 onChange={(event) => setDraftTitle(event.target.value)}
-                onBlur={commitChanges}
+                onBlur={handleTitleBlur}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault()
@@ -135,9 +153,9 @@ export function KanbanColumn({
                   }
                 }}
                 className="h-8 text-sm font-semibold"
-                disabled={updatePending}
+                disabled={updatePending || disabled}
               />
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 <Palette className="mr-1 size-3.5 text-muted-foreground" />
                 {COLUMN_COLORS.map((columnColor) => (
                   <button
@@ -156,6 +174,17 @@ export function KanbanColumn({
                     ) : null}
                   </button>
                 ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="ml-auto h-7 gap-1 px-2 text-xs"
+                  disabled={!draftTitle.trim() || updatePending || disabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={commitChanges}
+                >
+                  <Save className="size-3.5" />
+                  Guardar
+                </Button>
               </div>
             </div>
           ) : (
@@ -164,6 +193,7 @@ export function KanbanColumn({
               className="min-w-0 rounded-sm text-left text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => setIsEditing(true)}
               onPointerDown={(event) => event.stopPropagation()}
+              disabled={disabled}
             >
               <span className="block truncate">{title}</span>
             </button>
@@ -191,14 +221,32 @@ export function KanbanColumn({
               <X className="size-4" />
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 text-muted-foreground hover:text-foreground"
-              aria-label={`Más opciones para ${title}`}
-            >
-              <MoreHorizontal className="size-4" />
-            </Button>
+            <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground hover:text-foreground"
+                  aria-label={`Más opciones para ${title}`}
+                  disabled={disabled}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-48 p-1">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onRequestDeleteColumn(columnId, title)
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  Eliminar columna
+                </button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       </div>
@@ -235,6 +283,7 @@ export function KanbanColumn({
           variant="ghost"
           className="h-9 w-full justify-start gap-2 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           onClick={() => onAddTask(columnId)}
+          disabled={disabled}
         >
           <Plus className="size-4" />
           Agregar tarea

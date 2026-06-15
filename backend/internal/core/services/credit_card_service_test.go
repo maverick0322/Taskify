@@ -202,6 +202,8 @@ func createCreditCardServiceTransaction(t *testing.T, transactionType domain.Tra
 		status,
 		msi,
 		&[]string{validCreditCardServiceCreditCardID}[0],
+		domain.TransactionRecurrenceOnce,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("expected transaction to be valid, got: %v", err)

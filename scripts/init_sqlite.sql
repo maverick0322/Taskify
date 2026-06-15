@@ -107,10 +107,48 @@ CREATE TABLE IF NOT EXISTS credit_cards (
 CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id ON credit_cards(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id_bank ON credit_cards(user_id, bank);
 
+CREATE TABLE IF NOT EXISTS financial_accounts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    institution TEXT NOT NULL DEFAULT '',
+    last4 TEXT NULL,
+    opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+    current_balance_cents INTEGER NOT NULL DEFAULT 0,
+    credit_limit_cents INTEGER NULL,
+    cutoff_day INTEGER NULL,
+    payment_day INTEGER NULL,
+    color TEXT NOT NULL DEFAULT 'from-zinc-700 to-zinc-950',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    CONSTRAINT chk_financial_accounts_type CHECK (type IN ('CASH', 'DEBIT_CARD', 'CREDIT_CARD')),
+    CONSTRAINT chk_financial_accounts_name_not_empty CHECK (length(trim(name)) > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id ON financial_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id_type ON financial_accounts(user_id, type);
+
+INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at)
+SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at
+FROM credit_cards
+WHERE deleted_at IS NULL
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    institution = excluded.institution,
+    last4 = excluded.last4,
+    credit_limit_cents = excluded.credit_limit_cents,
+    cutoff_day = excluded.cutoff_day,
+    payment_day = excluded.payment_day,
+    color = excluded.color,
+    updated_at = excluded.updated_at;
+
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     credit_card_id TEXT REFERENCES credit_cards(id) ON DELETE SET NULL,
+    payment_account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
+    destination_account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
     type TEXT NOT NULL,
     concept TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -118,23 +156,81 @@ CREATE TABLE IF NOT EXISTS transactions (
     date DATETIME NOT NULL,
     status TEXT NOT NULL,
     msi INTEGER NULL,
+    installment_number INTEGER NULL,
+    installment_count INTEGER NULL,
+    recurrence TEXT NOT NULL DEFAULT 'once',
+    recurrence_limit INTEGER NULL,
+    last_paid_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
-    CONSTRAINT chk_transactions_type CHECK (type IN ('INCOME', 'EXPENSE')),
+    CONSTRAINT chk_transactions_type CHECK (type IN ('INCOME', 'EXPENSE', 'DEBT_PAYMENT', 'TRANSFER')),
     CONSTRAINT chk_transactions_concept_not_empty CHECK (length(trim(concept)) > 0),
     CONSTRAINT chk_transactions_category_not_empty CHECK (length(trim(category)) > 0),
     CONSTRAINT chk_transactions_amount_positive CHECK (amount_cents > 0),
     CONSTRAINT chk_transactions_date_not_zero CHECK (date > '0001-01-01 00:00:00+00:00'),
-    CONSTRAINT chk_transactions_status CHECK (status IN ('PAID', 'PENDING')),
+    CONSTRAINT chk_transactions_status CHECK (status IN ('PAID', 'PENDING', 'COMPLETED')),
     CONSTRAINT chk_transactions_msi_positive CHECK (msi IS NULL OR msi >= 1),
+    CONSTRAINT chk_transactions_installment_number_positive CHECK (installment_number IS NULL OR installment_number >= 1),
+    CONSTRAINT chk_transactions_installment_count_positive CHECK (installment_count IS NULL OR installment_count >= 1),
+    CONSTRAINT chk_transactions_recurrence CHECK (recurrence IN ('once', 'monthly', 'quarterly', 'biannual', 'annual')),
+    CONSTRAINT chk_transactions_recurrence_limit_non_negative CHECK (recurrence_limit IS NULL OR recurrence_limit >= 0),
     CONSTRAINT chk_transactions_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
     CONSTRAINT chk_transactions_updated_at_not_zero CHECK (updated_at > '0001-01-01 00:00:00+00:00')
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_credit_card_id ON transactions(user_id, credit_card_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_payment_account_id ON transactions(user_id, payment_account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status);
+
+CREATE TABLE IF NOT EXISTS ledger_entries (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES financial_accounts(id) ON DELETE CASCADE,
+    transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL,
+    entry_type TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_id ON ledger_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_id ON ledger_entries(account_id);
+
+CREATE TABLE IF NOT EXISTS credit_card_statements (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credit_account_id TEXT NOT NULL REFERENCES financial_accounts(id) ON DELETE CASCADE,
+    cycle_start DATETIME NOT NULL,
+    cycle_end DATETIME NOT NULL,
+    payment_due_date DATETIME NOT NULL,
+    statement_amount_cents INTEGER NOT NULL DEFAULT 0,
+    paid_amount_cents INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    CONSTRAINT uq_credit_card_statements_cycle UNIQUE (credit_account_id, cycle_start, cycle_end)
+);
+CREATE INDEX IF NOT EXISTS idx_credit_card_statements_user_id ON credit_card_statements(user_id);
+
+CREATE TABLE IF NOT EXISTS account_payable_payments (
+    id TEXT PRIMARY KEY,
+    account_payable_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due_date DATETIME NOT NULL,
+    paid_at DATETIME NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    concept TEXT NOT NULL,
+    category TEXT NOT NULL,
+    created_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_account_payable_payments_amount_positive CHECK (amount_cents > 0),
+    CONSTRAINT uq_account_payable_payments_cycle UNIQUE (account_payable_id, due_date)
+);
+CREATE INDEX IF NOT EXISTS idx_account_payable_payments_user_id ON account_payable_payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_account_payable_payments_account_payable_id ON account_payable_payments(account_payable_id);
 
 CREATE TABLE IF NOT EXISTS sync_state (
     key TEXT PRIMARY KEY,

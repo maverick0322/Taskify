@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -74,11 +75,115 @@ func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
 		return err
 	}
 
+	if err := ensureSQLiteTransactionsCompletedStatus(ctx, database); err != nil {
+		return err
+	}
+	if err := backfillSQLiteCreditCardFinancialAccounts(ctx, database); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func backfillSQLiteCreditCardFinancialAccounts(ctx context.Context, database *sql.DB) error {
+	_, err := database.ExecContext(ctx, `
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at)
+		SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at
+		FROM credit_cards
+		WHERE deleted_at IS NULL
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			institution = excluded.institution,
+			last4 = excluded.last4,
+			credit_limit_cents = excluded.credit_limit_cents,
+			cutoff_day = excluded.cutoff_day,
+			payment_day = excluded.payment_day,
+			color = excluded.color,
+			updated_at = excluded.updated_at
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to backfill credit card financial accounts: %w", err)
+	}
+	return nil
+}
+
+func ensureSQLiteTransactionsCompletedStatus(ctx context.Context, database *sql.DB) error {
+	var createSQL string
+	err := database.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").Scan(&createSQL)
+	if err != nil {
+		return fmt.Errorf("failed to inspect sqlite transactions schema: %w", err)
+	}
+	if strings.Contains(createSQL, "'COMPLETED'") && strings.Contains(createSQL, "'DEBT_PAYMENT'") {
+		return nil
+	}
+
+	statements := []string{
+		"ALTER TABLE transactions RENAME TO transactions_legacy",
+		`CREATE TABLE transactions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			credit_card_id TEXT REFERENCES credit_cards(id) ON DELETE SET NULL,
+			payment_account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
+			destination_account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
+			type TEXT NOT NULL,
+			concept TEXT NOT NULL,
+			category TEXT NOT NULL,
+			amount_cents INTEGER NOT NULL,
+			date DATETIME NOT NULL,
+			status TEXT NOT NULL,
+			msi INTEGER NULL,
+			installment_number INTEGER NULL,
+			installment_count INTEGER NULL,
+			recurrence TEXT NOT NULL DEFAULT 'once',
+			recurrence_limit INTEGER NULL,
+			last_paid_at DATETIME NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			deleted_at DATETIME NULL,
+			CONSTRAINT chk_transactions_type CHECK (type IN ('INCOME', 'EXPENSE', 'DEBT_PAYMENT', 'TRANSFER')),
+			CONSTRAINT chk_transactions_concept_not_empty CHECK (length(trim(concept)) > 0),
+			CONSTRAINT chk_transactions_category_not_empty CHECK (length(trim(category)) > 0),
+			CONSTRAINT chk_transactions_amount_positive CHECK (amount_cents > 0),
+			CONSTRAINT chk_transactions_date_not_zero CHECK (date > '0001-01-01 00:00:00+00:00'),
+			CONSTRAINT chk_transactions_status CHECK (status IN ('PAID', 'PENDING', 'COMPLETED')),
+			CONSTRAINT chk_transactions_msi_positive CHECK (msi IS NULL OR msi >= 1),
+			CONSTRAINT chk_transactions_installment_number_positive CHECK (installment_number IS NULL OR installment_number >= 1),
+			CONSTRAINT chk_transactions_installment_count_positive CHECK (installment_count IS NULL OR installment_count >= 1),
+			CONSTRAINT chk_transactions_recurrence CHECK (recurrence IN ('once', 'monthly', 'quarterly', 'biannual', 'annual')),
+			CONSTRAINT chk_transactions_recurrence_limit_non_negative CHECK (recurrence_limit IS NULL OR recurrence_limit >= 0),
+			CONSTRAINT chk_transactions_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
+			CONSTRAINT chk_transactions_updated_at_not_zero CHECK (updated_at > '0001-01-01 00:00:00+00:00')
+		)`,
+		`INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at)
+		 SELECT id, user_id, credit_card_id, NULL, NULL, type, concept, category, amount_cents, date, status, msi, NULL, NULL, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at
+		 FROM transactions_legacy`,
+		"DROP TABLE transactions_legacy",
+		"CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_transactions_user_id_credit_card_id ON transactions(user_id, credit_card_id)",
+		"CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status)",
+	}
+
+	tx, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start sqlite transactions schema migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("failed to migrate sqlite transactions schema: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit sqlite transactions schema migration: %w", err)
+	}
+
 	return nil
 }
 
 func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
-	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions"} {
+	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions", "financial_accounts", "ledger_entries", "credit_card_statements"} {
 		if err := ensureSQLiteColumn(ctx, database, table, "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
 			return err
 		}
@@ -97,6 +202,27 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 	}
 	if _, err := database.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_tasks_user_id_column_id ON tasks(user_id, column_id)"); err != nil {
 		return fmt.Errorf("failed to create sqlite task column index: %w", err)
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "recurrence", "TEXT NOT NULL DEFAULT 'once'"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "recurrence_limit", "INTEGER NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "last_paid_at", "DATETIME NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "payment_account_id", "TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "destination_account_id", "TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "installment_number", "INTEGER NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "installment_count", "INTEGER NULL"); err != nil {
+		return err
 	}
 
 	return nil

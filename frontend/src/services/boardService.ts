@@ -68,3 +68,9 @@ export async function updateColumn(
     body: JSON.stringify(input),
   });
 }
+
+export async function deleteColumn(columnId: string): Promise<void> {
+  await apiRequest<void>(`/columns/${columnId}`, {
+    method: "DELETE",
+  });
+}

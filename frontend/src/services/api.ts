@@ -299,6 +299,11 @@ const translatedBackendMessages: Record<string, string> = {
   "invalid transaction data":
     "Revisa los datos de la transaccion e intentalo de nuevo.",
   "transaction not found": "No encontramos esa transaccion.",
+  "financial account not found": "No encontramos ese metodo de pago.",
+  "invalid financial account data":
+    "Revisa los datos de la cuenta financiera e intentalo de nuevo.",
+  "insufficient funds": "El saldo disponible no alcanza para este egreso.",
+  "credit limit exceeded": "La compra supera el limite disponible de la tarjeta.",
   "invalid credit card data":
     "Revisa los datos de la tarjeta e intentalo de nuevo.",
   "credit card not found": "No encontramos esa tarjeta.",

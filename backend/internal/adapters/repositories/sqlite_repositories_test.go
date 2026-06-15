@@ -125,7 +125,7 @@ func TestSQLiteRepositories_PersistAndQueryLocalFirstData(t *testing.T) {
 	msi := 3
 	transactionDate := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	creditCardID := creditCard.ID()
-	transaction, err := domain.NewTransaction("transaction-1", user.ID(), domain.TransactionTypeExpense, "Laptop", "Equipo", 120000, transactionDate, domain.TransactionStatusPending, &msi, &creditCardID)
+	transaction, err := domain.NewTransaction("transaction-1", user.ID(), domain.TransactionTypeExpense, "Laptop", "Equipo", 120000, transactionDate, domain.TransactionStatusPending, &msi, &creditCardID, domain.TransactionRecurrenceOnce, nil)
 	if err != nil {
 		t.Fatalf("failed to create transaction: %v", err)
 	}
