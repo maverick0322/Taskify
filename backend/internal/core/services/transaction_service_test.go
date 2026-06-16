@@ -134,6 +134,33 @@ func (logger *mockTransactionLogger) Error(msg string, keysAndValues ...interfac
 	logger.errorMessages = append(logger.errorMessages, msg)
 }
 
+type mockFinancialAccountRepository struct {
+	accountToReturn *domain.FinancialAccount
+}
+
+func (repository *mockFinancialAccountRepository) Create(ctx context.Context, account *domain.FinancialAccount) error {
+	return nil
+}
+
+func (repository *mockFinancialAccountRepository) GetByID(ctx context.Context, id string) (*domain.FinancialAccount, error) {
+	if repository.accountToReturn == nil {
+		return nil, ports.ErrFinancialAccountNotFound
+	}
+	return repository.accountToReturn, nil
+}
+
+func (repository *mockFinancialAccountRepository) GetByUserID(ctx context.Context, userID string) ([]*domain.FinancialAccount, error) {
+	return nil, nil
+}
+
+func (repository *mockFinancialAccountRepository) Update(ctx context.Context, account *domain.FinancialAccount) error {
+	return nil
+}
+
+func (repository *mockFinancialAccountRepository) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
 func TestCreateTransaction_ValidData_ReturnsTransactionAndCreates(t *testing.T) {
 	repository := &mockTransactionRepository{}
 	service := NewTransactionService(repository, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{})
@@ -149,6 +176,49 @@ func TestCreateTransaction_ValidData_ReturnsTransactionAndCreates(t *testing.T) 
 	}
 	if repository.createdTransaction == nil {
 		t.Fatal("expected transaction to be created")
+	}
+}
+
+func TestCreateTransaction_CreditPaymentAccountAssignsCreditCardID(t *testing.T) {
+	repository := &mockTransactionRepository{}
+	creditAccount := createTransactionServiceFinancialAccount(t, domain.FinancialAccountTypeCreditCard, "joy-card-123")
+	service := NewTransactionService(repository, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{}, &mockFinancialAccountRepository{accountToReturn: creditAccount})
+	paymentAccountID := "joy-card-123"
+
+	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeExpense, "Collar", "Otros", 12000, time.Now(), domain.TransactionStatusPaid, nil, nil, domain.TransactionRecurrenceOnce, nil, &paymentAccountID)
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if len(repository.ledgerTransactions) != 1 {
+		t.Fatalf("expected one ledger transaction, got %d", len(repository.ledgerTransactions))
+	}
+	if repository.ledgerTransactions[0].CreditCardID() == nil || *repository.ledgerTransactions[0].CreditCardID() != paymentAccountID {
+		t.Fatalf("expected credit card ID %s, got %v", paymentAccountID, repository.ledgerTransactions[0].CreditCardID())
+	}
+}
+
+func TestCreateTransaction_CreditMSIInstallmentsKeepCreditCardID(t *testing.T) {
+	repository := &mockTransactionRepository{}
+	creditAccount := createTransactionServiceFinancialAccount(t, domain.FinancialAccountTypeCreditCard, "joy-card-123")
+	service := NewTransactionService(repository, &mockTransactionIDGenerator{id: validTransactionServiceTransactionID}, &mockTransactionLogger{}, &mockFinancialAccountRepository{accountToReturn: creditAccount})
+	paymentAccountID := "joy-card-123"
+
+	_, err := service.CreateTransaction(context.Background(), validTransactionServiceUserID, domain.TransactionTypeExpense, "Collar", "Otros", 300000, time.Now(), domain.TransactionStatusPaid, transactionServiceMSIPtr(6), nil, domain.TransactionRecurrenceOnce, nil, &paymentAccountID)
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if len(repository.ledgerTransactions) != 6 {
+		t.Fatalf("expected six MSI transactions, got %d", len(repository.ledgerTransactions))
+	}
+	for _, transaction := range repository.ledgerTransactions {
+		if transaction.CreditCardID() == nil || *transaction.CreditCardID() != paymentAccountID {
+			t.Fatalf("expected installment credit card ID %s, got %v", paymentAccountID, transaction.CreditCardID())
+		}
+		if transaction.PaymentAccountID() == nil || *transaction.PaymentAccountID() != paymentAccountID {
+			t.Fatalf("expected installment payment account ID %s, got %v", paymentAccountID, transaction.PaymentAccountID())
+		}
 	}
 }
 
@@ -472,6 +542,33 @@ func createTransactionServiceTransactionWithRecurrence(t *testing.T, userID stri
 	}
 
 	return transaction
+}
+
+func createTransactionServiceFinancialAccount(t *testing.T, accountType domain.FinancialAccountType, id string) *domain.FinancialAccount {
+	t.Helper()
+
+	creditLimit := int64(5000000)
+	cutoffDay := 15
+	paymentDay := 5
+	account, err := domain.NewFinancialAccount(
+		id,
+		validTransactionServiceUserID,
+		accountType,
+		"Joy",
+		"BBVA",
+		nil,
+		0,
+		0,
+		&creditLimit,
+		&cutoffDay,
+		&paymentDay,
+		"from-blue-700 to-blue-900",
+	)
+	if err != nil {
+		t.Fatalf("expected financial account to be valid, got: %v", err)
+	}
+
+	return account
 }
 
 func transactionServiceMSIPtr(msi int) *int {

@@ -199,7 +199,7 @@ function MonthNav({
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-2.5 text-xs font-semibold"
+          className="h-8 px-2.5 rounded-lg text-xs font-semibold"
           onClick={onToday}
           disabled={isCurrentMonth}
         >
@@ -208,7 +208,7 @@ function MonthNav({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-8 rounded-lg"
           onClick={onPrev}
           aria-label="Mes anterior"
         >
@@ -217,7 +217,7 @@ function MonthNav({
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-8 rounded-lg"
           onClick={onNext}
           aria-label="Mes siguiente"
         >

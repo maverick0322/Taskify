@@ -177,7 +177,7 @@ export function KanbanColumn({
                 <Button
                   type="button"
                   size="sm"
-                  className="ml-auto h-7 gap-1 px-2 text-xs"
+                  className="ml-auto h-7  rounded-lg gap-1 px-2 text-xs"
                   disabled={!draftTitle.trim() || updatePending || disabled}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={commitChanges}

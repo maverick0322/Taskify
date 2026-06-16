@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { CurrencyInput } from "@/components/ui/currency-input"
 import {
   Card,
   CardContent,
@@ -76,6 +77,7 @@ import {
   getFinancialSummary,
   getTransactions,
   payAccountPayable,
+  payCreditCardDebt,
   updateAccountPayable,
   updateCreditCard,
   updateFinancialAccount,
@@ -88,6 +90,7 @@ import {
   type FinancialAccountType,
   type FinancialTransaction,
   type FinancialTransactionRecurrence,
+  type PayCreditCardDebtInput,
 } from "@/services/financial_api"
 
 type TransactionType = "income" | "expense"
@@ -115,7 +118,9 @@ interface Transaction {
 
 interface PendingPayment {
   id: string
+  type: "manual" | "credit_card"
   transactionId: string
+  creditCardId?: string
   service: string
   icon: ElementType
   dueDate: string
@@ -454,6 +459,7 @@ function pendingPaymentFromTransaction(
 ): PendingPayment {
   return {
     id,
+    type: "manual",
     transactionId: transaction.id,
     service: transaction.concept,
     icon: iconForCategory(transaction.category),
@@ -462,6 +468,44 @@ function pendingPaymentFromTransaction(
     visualState,
     amount: centsToAmount(transaction.amountCents),
   }
+}
+
+function mapCreditCardPayable(card: CreditCardSummary): PendingPayment | null {
+  if (card.currentDebtCents <= 0) {
+    return null
+  }
+  const dueDate = creditCardPaymentDueDate(card)
+  const dueDateRaw = formatDateInput(dueDate)
+  const currentDate = todayDate()
+
+  return {
+    id: `credit-card-${card.id}`,
+    type: "credit_card",
+    transactionId: "",
+    creditCardId: card.id,
+    service: card.name,
+    icon: CreditCard,
+    dueDate: formatDisplayDate(dueDateRaw),
+    dueDateRaw,
+    visualState: dueDate.getTime() < currentDate.getTime() ? "overdue" : "normal",
+    amount: centsToAmount(card.currentDebtCents),
+  }
+}
+
+function creditCardPaymentDueDate(card: CreditCardSummary) {
+  const currentDate = todayDate()
+  const cutoffDate = billingCycleDate(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    card.cutoffDay,
+  )
+  const dueMonthOffset = currentDate.getTime() > cutoffDate.getTime() ? 2 : 1
+
+  return billingCycleDate(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + dueMonthOffset,
+    card.paymentDay,
+  )
 }
 
 function iconForCategory(category: string): ElementType {
@@ -606,19 +650,11 @@ function NewMovementDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="monto">Monto</Label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                $
-              </span>
-              <Input
-                id="monto"
-                type="number"
-                placeholder="0.00"
-                className="pl-7"
-                value={monto}
-                onChange={(event) => setMonto(event.target.value)}
-              />
-            </div>
+            <CurrencyInput
+              id="monto"
+              value={monto}
+              onValueChange={setMonto}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -813,19 +849,11 @@ function NewPaymentDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="monto-pago">Monto</Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  id="monto-pago"
-                  type="number"
-                  placeholder="0.00"
-                  className="pl-7"
-                  value={monto}
-                  onChange={(event) => setMonto(event.target.value)}
-                />
-              </div>
+              <CurrencyInput
+                id="monto-pago"
+                value={monto}
+                onValueChange={setMonto}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="fecha-vence">Fecha de vencimiento</Label>
@@ -1124,20 +1152,11 @@ function AddCardDialog({
             {cardType === "DEBIT_CARD" ? (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="opening-balance">Saldo inicial</Label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                    $
-                  </span>
-                  <Input
-                    id="opening-balance"
-                    type="number"
-                    min={0}
-                    placeholder="0.00"
-                    className="pl-7"
-                    value={openingBalance}
-                    onChange={(event) => setOpeningBalance(event.target.value)}
-                  />
-                </div>
+                <CurrencyInput
+                  id="opening-balance"
+                  value={openingBalance}
+                  onValueChange={setOpeningBalance}
+                />
               </div>
             ) : (
             <div className="flex flex-col gap-1.5">
@@ -1171,19 +1190,11 @@ function AddCardDialog({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="limit">Limite de credito</Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  id="limit"
-                  type="number"
-                  placeholder="0.00"
-                  className="pl-7"
-                  value={limit}
-                  onChange={(event) => setLimit(event.target.value)}
-                />
-              </div>
+              <CurrencyInput
+                id="limit"
+                value={limit}
+                onValueChange={setLimit}
+              />
             </div>
             </div>
           ) : null}
@@ -1529,6 +1540,121 @@ function summaryValue(
   return typeof value === "number" ? value : undefined
 }
 
+function PayCreditCardDialog({
+  open,
+  onClose,
+  card,
+  sourceAccounts,
+  onSubmit,
+  isSaving,
+}: {
+  open: boolean
+  onClose: () => void
+  card: CreditCardSummary | null
+  sourceAccounts: FinancialAccount[]
+  onSubmit: (cardId: string, data: PayCreditCardDebtInput) => void
+  isSaving: boolean
+}) {
+  const [sourceAccountId, setSourceAccountId] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    setSourceAccountId(sourceAccounts[0]?.id ?? "")
+    setErrorMessage("")
+  }, [open, sourceAccounts])
+
+  if (!card) {
+    return null
+  }
+
+  const activeCard = card
+  const selectedSource = sourceAccounts.find(
+    (account) => account.id === sourceAccountId,
+  )
+
+  function handleSubmit() {
+    if (!sourceAccountId) {
+      setErrorMessage("Selecciona la cuenta de origen del pago.")
+      return
+    }
+    if (
+      selectedSource &&
+      selectedSource.type !== "CASH" &&
+      selectedSource.currentBalanceCents < activeCard.currentDebtCents
+    ) {
+      setErrorMessage("La cuenta seleccionada no tiene saldo suficiente.")
+      return
+    }
+    onSubmit(activeCard.id, {
+      sourceAccountId,
+      amountCents: activeCard.currentDebtCents,
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Pagar tarjeta</DialogTitle>
+          <DialogDescription>
+            Liquida la deuda de {card.name} sin duplicar tus egresos.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 py-2">
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <span className="text-xs font-medium uppercase text-muted-foreground">
+              Monto a pagar
+            </span>
+            <p className="mt-1 text-2xl font-bold">
+              {fmt(centsToAmount(card.currentDebtCents))}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Cuenta de origen</Label>
+            <Select value={sourceAccountId} onValueChange={setSourceAccountId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {sourceAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {paymentAccountLabel(account)} ·{" "}
+                      {fmt(centsToAmount(account.currentBalanceCents))}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {errorMessage ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
+        </div>
+
+        <DialogFooter showCloseButton>
+          <Button
+            type="submit"
+            className="w-full sm:w-auto"
+            disabled={isSaving}
+            onClick={handleSubmit}
+          >
+            {isSaving ? "Pagando..." : "Pagar tarjeta"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function FinancialControlView() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
@@ -1548,6 +1674,8 @@ export function FinancialControlView() {
   const [debitCardToDelete, setDebitCardToDelete] =
     useState<FinancialAccount | null>(null)
   const [accountDetail, setAccountDetail] = useState<FinancialAccount | null>(null)
+  const [creditCardToPay, setCreditCardToPay] =
+    useState<CreditCardSummary | null>(null)
   const queryClient = useQueryClient()
   const monthRange = useMemo(() => currentMonthRange(), [])
   const queryKeys = useMemo(
@@ -1668,6 +1796,25 @@ export function FinancialControlView() {
       ])
     },
   })
+  const payCreditCardDebtMutation = useMutation({
+    mutationFn: ({
+      cardId,
+      data,
+    }: {
+      cardId: string
+      data: PayCreditCardDebtInput
+    }) => payCreditCardDebt(cardId, data),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+      ])
+      setCreditCardToPay(null)
+    },
+  })
   const deleteTransactionMutation = useMutation({
     mutationFn: deleteTransaction,
     onSuccess: async () => {
@@ -1783,7 +1930,7 @@ export function FinancialControlView() {
         .map((transaction) => mapTransaction(transaction, financialAccounts)),
     [apiTransactions, financialAccounts],
   )
-  const pendingPayments = useMemo(
+  const manualPendingPayments = useMemo(
     () =>
       apiPayables
         .filter(
@@ -1793,8 +1940,26 @@ export function FinancialControlView() {
         .flatMap(mapPendingPayments),
     [apiPayables],
   )
+  const creditCardPendingPayments = useMemo(
+    () =>
+      creditCards
+        .map(mapCreditCardPayable)
+        .filter((payment): payment is PendingPayment => Boolean(payment)),
+    [creditCards],
+  )
+  const pendingPayments = useMemo(
+    () => [...manualPendingPayments, ...creditCardPendingPayments],
+    [creditCardPendingPayments, manualPendingPayments],
+  )
   const debitCards = useMemo(
     () => financialAccounts.filter((account) => account.type === "DEBIT_CARD"),
+    [financialAccounts],
+  )
+  const paymentSourceAccounts = useMemo(
+    () =>
+      financialAccounts.filter(
+        (account) => account.type === "CASH" || account.type === "DEBIT_CARD",
+      ),
     [financialAccounts],
   )
   const totalIncome = centsToAmount(financialSummary?.totalIncomeCents ?? 0)
@@ -1877,6 +2042,20 @@ export function FinancialControlView() {
 
   function handlePayAccountPayable(transactionId: string, dueDate: string) {
     payAccountPayableMutation.mutate({ id: transactionId, dueDate })
+  }
+
+  function handleOpenCreditCardPayment(creditCardId?: string) {
+    const card = creditCards.find((currentCard) => currentCard.id === creditCardId)
+    if (card) {
+      setCreditCardToPay(card)
+    }
+  }
+
+  function handleSubmitCreditCardPayment(
+    cardId: string,
+    data: PayCreditCardDebtInput,
+  ) {
+    payCreditCardDebtMutation.mutate({ cardId, data })
   }
 
   function handleCloseTransactionDialog() {
@@ -2374,7 +2553,7 @@ export function FinancialControlView() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  className="shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
                   aria-label="Agregar cuenta por pagar"
                   onClick={() => {
                     setAccountPayableToEdit(null)
@@ -2450,33 +2629,52 @@ export function FinancialControlView() {
                               variant="outline"
                               className="rounded-md"
                               disabled={
-                                payAccountPayableMutation.isPending ||
+                                (payment.type === "manual"
+                                  ? payAccountPayableMutation.isPending
+                                  : payCreditCardDebtMutation.isPending) ||
                                 payment.visualState === "paid"
                               }
-                              onClick={() => handlePayAccountPayable(payment.transactionId, payment.dueDateRaw)}
+                              onClick={() => {
+                                if (payment.type === "credit_card") {
+                                  handleOpenCreditCardPayment(payment.creditCardId)
+                                  return
+                                }
+                                handlePayAccountPayable(
+                                  payment.transactionId,
+                                  payment.dueDateRaw,
+                                )
+                              }}
                             >
                               {payment.visualState === "paid" ? "Pagado" : "Pagar"}
                             </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8 cursor-pointer text-muted-foreground hover:text-foreground"
-                              aria-label={`Editar cuenta por pagar ${payment.service}`}
-                              disabled={updateAccountPayableMutation.isPending}
-                              onClick={() => handleEditAccountPayable(payment.transactionId)}
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8 cursor-pointer text-muted-foreground hover:text-red-600"
-                              aria-label={`Eliminar cuenta por pagar ${payment.service}`}
-                              disabled={deleteTransactionMutation.isPending}
-                              onClick={() => handleDeleteTransaction(payment.transactionId)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
+                            {payment.type === "manual" ? (
+                              <>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-8 cursor-pointer text-muted-foreground hover:text-foreground"
+                                  aria-label={`Editar cuenta por pagar ${payment.service}`}
+                                  disabled={updateAccountPayableMutation.isPending}
+                                  onClick={() =>
+                                    handleEditAccountPayable(payment.transactionId)
+                                  }
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-8 cursor-pointer text-muted-foreground hover:text-red-600"
+                                  aria-label={`Eliminar cuenta por pagar ${payment.service}`}
+                                  disabled={deleteTransactionMutation.isPending}
+                                  onClick={() =>
+                                    handleDeleteTransaction(payment.transactionId)
+                                  }
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </>
+                            ) : null}
                           </div>
                         </div>
                       )
@@ -2592,6 +2790,14 @@ export function FinancialControlView() {
         open={Boolean(accountDetail)}
         account={accountDetail}
         onClose={() => setAccountDetail(null)}
+      />
+      <PayCreditCardDialog
+        open={Boolean(creditCardToPay)}
+        card={creditCardToPay}
+        sourceAccounts={paymentSourceAccounts}
+        onClose={() => setCreditCardToPay(null)}
+        onSubmit={handleSubmitCreditCardPayment}
+        isSaving={payCreditCardDebtMutation.isPending}
       />
       <ConfirmDialog
         open={Boolean(transactionToDelete)}

@@ -92,6 +92,9 @@ func (service *transactionService) prepareAccountedTransactions(ctx context.Cont
 	if account.UserID() != userID {
 		return nil, nil, nil, ports.ErrFinancialAccountNotFound
 	}
+	if account.Type() == domain.FinancialAccountTypeCreditCard {
+		transaction.SetCreditCardID(accountID)
+	}
 
 	delta := transactionDeltaForAccount(transaction.Type(), account.Type(), transaction.AmountCents())
 	if err := account.ApplyDelta(delta); err != nil {

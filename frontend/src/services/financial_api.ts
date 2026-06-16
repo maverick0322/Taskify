@@ -118,6 +118,11 @@ export interface CreateCreditCardInput {
   color: string;
 }
 
+export interface PayCreditCardDebtInput {
+  sourceAccountId: string;
+  amountCents: number;
+}
+
 export async function getTransactions(
   range: TransactionDateRange = {},
 ): Promise<FinancialTransaction[]> {
@@ -242,6 +247,16 @@ export async function updateCreditCard(
 ): Promise<void> {
   await apiRequest<void>(`/credit-cards/${id}`, {
     method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function payCreditCardDebt(
+  id: string,
+  data: PayCreditCardDebtInput,
+): Promise<void> {
+  await apiRequest<void>(`/credit-cards/${id}/pay`, {
+    method: "POST",
     body: JSON.stringify(data),
   });
 }

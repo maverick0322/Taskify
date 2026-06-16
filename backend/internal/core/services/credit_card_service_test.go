@@ -82,7 +82,7 @@ func TestCreateCreditCard_InvalidLast4_ReturnsDomainError(t *testing.T) {
 	}
 }
 
-func TestGetCardsWithSummary_CurrentCycleCalculatesDebtAndMSIWithoutLosingCents(t *testing.T) {
+func TestGetCardsWithSummary_CurrentCycleSumsStoredInstallmentAmounts(t *testing.T) {
 	now := time.Date(2026, time.June, 20, 12, 0, 0, 0, time.UTC)
 	previousNow := creditCardCurrentTime
 	creditCardCurrentTime = func() time.Time { return now }
@@ -92,7 +92,7 @@ func TestGetCardsWithSummary_CurrentCycleCalculatesDebtAndMSIWithoutLosingCents(
 	transactionRepository := &mockTransactionRepository{
 		transactionsToReturn: []*domain.Transaction{
 			createCreditCardServiceTransaction(t, domain.TransactionTypeExpense, domain.TransactionStatusPaid, 12000, nil),
-			createCreditCardServiceTransaction(t, domain.TransactionTypeExpense, domain.TransactionStatusPaid, 10000, creditCardServiceMSIPtr(3)),
+			createCreditCardServiceTransaction(t, domain.TransactionTypeExpense, domain.TransactionStatusPaid, 50000, creditCardServiceMSIPtr(6)),
 			createCreditCardServiceTransaction(t, domain.TransactionTypeIncome, domain.TransactionStatusPaid, 999999, nil),
 			createCreditCardServiceTransaction(t, domain.TransactionTypeExpense, domain.TransactionStatusPending, 999999, nil),
 		},
@@ -112,14 +112,42 @@ func TestGetCardsWithSummary_CurrentCycleCalculatesDebtAndMSIWithoutLosingCents(
 	if len(summaries) != 1 {
 		t.Fatalf("expected one summary, got %d", len(summaries))
 	}
-	if summaries[0].CurrentDebtCents != 15334 {
-		t.Errorf("expected current debt cents 15334, got %d", summaries[0].CurrentDebtCents)
+	if summaries[0].CurrentDebtCents != 62000 {
+		t.Errorf("expected current debt cents 62000, got %d", summaries[0].CurrentDebtCents)
 	}
 	if transactionRepository.receivedFilter.From == nil || !transactionRepository.receivedFilter.From.Equal(time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("expected cycle start 2026-06-15, got %v", transactionRepository.receivedFilter.From)
 	}
 	if transactionRepository.receivedFilter.To == nil || !transactionRepository.receivedFilter.To.Equal(time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("expected cycle end 2026-07-15, got %v", transactionRepository.receivedFilter.To)
+	}
+}
+
+func TestGetCardsWithSummary_OnCutoffDayUsesClosingCycle(t *testing.T) {
+	now := time.Date(2026, time.June, 15, 23, 0, 0, 0, time.UTC)
+	previousNow := creditCardCurrentTime
+	creditCardCurrentTime = func() time.Time { return now }
+	defer func() { creditCardCurrentTime = previousNow }()
+
+	card := createCreditCardServiceCard(t, validCreditCardServiceUserID, 15)
+	transactionRepository := &mockTransactionRepository{}
+	service := NewCreditCardService(
+		&mockCreditCardRepository{creditCardsToReturn: []*domain.CreditCard{card}},
+		transactionRepository,
+		&mockTransactionIDGenerator{},
+		&mockTransactionLogger{},
+	)
+
+	_, err := service.GetCardsWithSummary(context.Background(), validCreditCardServiceUserID)
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if transactionRepository.receivedFilter.From == nil || !transactionRepository.receivedFilter.From.Equal(time.Date(2026, time.May, 15, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("expected cycle start 2026-05-15, got %v", transactionRepository.receivedFilter.From)
+	}
+	if transactionRepository.receivedFilter.To == nil || !transactionRepository.receivedFilter.To.Equal(time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("expected cycle end 2026-06-15, got %v", transactionRepository.receivedFilter.To)
 	}
 }
 

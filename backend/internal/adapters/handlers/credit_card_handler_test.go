@@ -21,8 +21,10 @@ type mockCreditCardUseCase struct {
 	errToReturn        error
 	requestedUserID    string
 	requestedID        string
+	requestedSourceID  string
 	createdLimitCents  int64
 	updatedLimitCents  int64
+	paidAmountCents    int64
 }
 
 func (useCase *mockCreditCardUseCase) CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*domain.CreditCard, error) {
@@ -40,6 +42,14 @@ func (useCase *mockCreditCardUseCase) UpdateCreditCard(ctx context.Context, user
 	useCase.requestedUserID = userID
 	useCase.requestedID = creditCardID
 	useCase.updatedLimitCents = limitCents
+	return useCase.errToReturn
+}
+
+func (useCase *mockCreditCardUseCase) PayCreditCardDebt(ctx context.Context, userID, creditCardID, sourceAccountID string, amountCents int64) error {
+	useCase.requestedUserID = userID
+	useCase.requestedID = creditCardID
+	useCase.requestedSourceID = sourceAccountID
+	useCase.paidAmountCents = amountCents
 	return useCase.errToReturn
 }
 
@@ -108,6 +118,28 @@ func TestCreditCardHandler_UpdateCreditCardValidRequest_ReturnsNoContent(t *test
 	}
 	if useCase.updatedLimitCents != 5000000 {
 		t.Errorf("expected updated limit cents 5000000, got %d", useCase.updatedLimitCents)
+	}
+}
+
+func TestCreditCardHandler_PayCreditCardDebtValidRequest_ReturnsNoContent(t *testing.T) {
+	useCase := &mockCreditCardUseCase{}
+	router := createCreditCardTestRouter(useCase)
+	request := authenticatedCreditCardRequest(http.MethodPost, "/credit-cards/credit-card-123/pay", `{"sourceAccountId":"cash-123","amountCents":15334}`)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if useCase.requestedID != "credit-card-123" {
+		t.Errorf("expected requested credit card ID credit-card-123, got %s", useCase.requestedID)
+	}
+	if useCase.requestedSourceID != "cash-123" {
+		t.Errorf("expected source account ID cash-123, got %s", useCase.requestedSourceID)
+	}
+	if useCase.paidAmountCents != 15334 {
+		t.Errorf("expected paid amount cents 15334, got %d", useCase.paidAmountCents)
 	}
 }
 

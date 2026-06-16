@@ -441,7 +441,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    className="flex-1"
+                    className="flex-1 rounded-lg"
                     disabled={createColumnMutation.isPending}
                     onClick={handleCreateColumn}
                   >
@@ -450,6 +450,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="rounded-lg"
                     disabled={createColumnMutation.isPending}
                     onClick={() => {
                       setNewColumnOpen(false)
@@ -473,6 +474,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
               </Button>
             )}
           </div>
+          <div aria-hidden="true" className="w-5 shrink-0 md:w-6" />
         </div>
       </DragDropContext>
       <NewTaskDialog

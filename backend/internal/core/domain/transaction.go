@@ -243,6 +243,11 @@ func (transaction *Transaction) SetAccountingDetails(paymentAccountID, destinati
 	transaction.touch()
 }
 
+func (transaction *Transaction) SetCreditCardID(creditCardID *string) {
+	transaction.creditCardID = normalizeOptionalTransactionCreditCardID(creditCardID)
+	transaction.touch()
+}
+
 func (transaction *Transaction) Complete() {
 	completedLimit := 0
 	transaction.status = TransactionStatusCompleted

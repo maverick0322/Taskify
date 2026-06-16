@@ -27,6 +27,7 @@ func NewCreditCardHandler(creditCardUseCase ports.CreditCardUseCase, logger port
 func (handler *CreditCardHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/credit-cards", handler.CreateCreditCard)
 	router.Get("/credit-cards", handler.GetCreditCards)
+	router.Post("/credit-cards/{id}/pay", handler.PayCreditCardDebt)
 	router.Patch("/credit-cards/{id}", handler.UpdateCreditCard)
 	router.Delete("/credit-cards/{id}", handler.DeleteCreditCard)
 }
@@ -111,6 +112,38 @@ func (handler *CreditCardHandler) UpdateCreditCard(response http.ResponseWriter,
 	response.WriteHeader(http.StatusNoContent)
 }
 
+func (handler *CreditCardHandler) PayCreditCardDebt(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	var payRequest payCreditCardDebtRequest
+	if err := json.NewDecoder(request.Body).Decode(&payRequest); err != nil {
+		handler.logger.Warn("pay credit card request contains invalid json", "userID", userID)
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+	if payRequest.AmountCents <= 0 || payRequest.SourceAccountID == "" {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid credit card payment data"})
+		return
+	}
+
+	err := handler.creditCardUseCase.PayCreditCardDebt(
+		request.Context(),
+		userID,
+		chi.URLParam(request, "id"),
+		payRequest.SourceAccountID,
+		payRequest.AmountCents,
+	)
+	if err != nil {
+		handler.handleCreditCardError(response, err)
+		return
+	}
+
+	response.WriteHeader(http.StatusNoContent)
+}
+
 func (handler *CreditCardHandler) DeleteCreditCard(response http.ResponseWriter, request *http.Request) {
 	userID, ok := handler.userIDFromRequest(response, request)
 	if !ok {
@@ -140,6 +173,10 @@ func (handler *CreditCardHandler) handleCreditCardError(response http.ResponseWr
 	switch {
 	case errors.Is(err, ports.ErrCreditCardNotFound):
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "credit card not found"})
+	case errors.Is(err, ports.ErrFinancialAccountNotFound):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "financial account not found"})
+	case errors.Is(err, domain.ErrInsufficientFinancialAccountFunds):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "insufficient funds"})
 	case isCreditCardDomainValidationError(err):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid credit card data"})
 	default:
@@ -198,6 +235,11 @@ type creditCardRequest struct {
 	PaymentDay int    `json:"paymentDay"`
 	LimitCents int64  `json:"limitCents"`
 	Color      string `json:"color"`
+}
+
+type payCreditCardDebtRequest struct {
+	SourceAccountID string `json:"sourceAccountId"`
+	AmountCents     int64  `json:"amountCents"`
 }
 
 type creditCardResponse struct {

@@ -24,6 +24,7 @@ type CreditCardUseCase interface {
 	CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*domain.CreditCard, error)
 	GetCardsWithSummary(ctx context.Context, userID string) ([]CreditCardWithSummary, error)
 	UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) error
+	PayCreditCardDebt(ctx context.Context, userID, creditCardID, sourceAccountID string, amountCents int64) error
 	DeleteCreditCard(ctx context.Context, userID, creditCardID string) error
 }
 
