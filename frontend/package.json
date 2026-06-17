@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:go": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force src-tauri/bin | Out-Null; Push-Location ../backend; go build -o ../frontend/src-tauri/bin/backend-x86_64-pc-windows-msvc.exe ./cmd; Pop-Location\"",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "npm run build:go && npm run tauri build"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
