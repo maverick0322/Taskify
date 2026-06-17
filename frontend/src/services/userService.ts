@@ -13,6 +13,15 @@ export async function getCurrentUserProfile(): Promise<UserProfileResponse> {
   return apiRequest<UserProfileResponse>("/users/me")
 }
 
+export async function updateCurrentUserProfile(
+  name: string,
+): Promise<UserProfileResponse> {
+  return apiRequest<UserProfileResponse>("/users/me", {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  })
+}
+
 export async function updateUserAvatar(
   userId: string,
   avatarLocalPath: string,

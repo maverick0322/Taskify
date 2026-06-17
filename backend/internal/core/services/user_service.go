@@ -225,15 +225,47 @@ func (s *userService) UpdateAvatarLocalPath(ctx context.Context, userID, avatarL
 	return s.GetProfile(ctx, userID)
 }
 
-func (s *userService) UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error {
-	// Implementation pending for the next iteration, but interface is satisfied.
-	return errors.New("not implemented")
+func (s *userService) UpdateProfileName(ctx context.Context, userID, name string) (*domain.User, error) {
+	currentUser, err := s.userRepo.GetByID(ctx, userID)
+	if errors.Is(err, ports.ErrUserNotFound) {
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		s.logger.Error("failed to retrieve user before profile update", "userID", userID, "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	firstName, lastName := splitDisplayName(name, currentUser.Profile().LastName())
+	if _, err := domain.NewUserProfile(firstName, lastName, currentUser.Profile().BirthDate()); err != nil {
+		return nil, err
+	}
+
+	if err := s.userRepo.UpdateProfileName(ctx, userID, firstName, lastName); err != nil {
+		if errors.Is(err, ports.ErrUserNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		s.logger.Error("failed to update user profile name", "userID", userID, "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	return s.GetProfile(ctx, userID)
 }
 
 func (s *userService) buildRefreshSession(userID string, tokenPair ports.TokenPair) (*domain.RefreshToken, error) {
 	sessionID := s.idGen.Generate()
 	refreshTokenHash := hashRefreshToken(tokenPair.RefreshToken)
 	return domain.NewRefreshToken(sessionID, userID, refreshTokenHash, tokenPair.RefreshTokenExpiresAt, false)
+}
+
+func splitDisplayName(name, fallbackLastName string) (string, string) {
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return "", strings.TrimSpace(fallbackLastName)
+	}
+	if len(parts) == 1 {
+		return parts[0], strings.TrimSpace(fallbackLastName)
+	}
+	return parts[0], strings.Join(parts[1:], " ")
 }
 
 func hashRefreshToken(refreshToken string) string {

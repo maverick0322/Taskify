@@ -39,6 +39,12 @@ const (
 		WHERE id = $2 AND deleted_at IS NULL
 	`
 
+	updateUserProfileNameQuery = `
+		UPDATE users
+		SET first_name = $1, last_name = $2, updated_at = NOW()
+		WHERE id = $3 AND deleted_at IS NULL
+	`
+
 	updateUserAvatarURLQuery = `
 		UPDATE users
 		SET avatar_url = $1, updated_at = NOW()
@@ -113,6 +119,18 @@ func (repository *PostgresUserRepository) GetByEmail(ctx context.Context, email 
 	}
 
 	return repository.mapReadError(err, "failed to retrieve user by email")
+}
+
+func (repository *PostgresUserRepository) UpdateProfileName(ctx context.Context, userID, firstName, lastName string) error {
+	tag, err := repository.database.Exec(ctx, updateUserProfileNameQuery, firstName, lastName, userID)
+	if err != nil {
+		repository.logger.Error("failed to update user profile name", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
 }
 
 func (repository *PostgresUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {

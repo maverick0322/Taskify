@@ -43,6 +43,7 @@ func (handler *UserHandler) RegisterRoutes(router chi.Router) {
 
 func (handler *UserHandler) RegisterProtectedRoutes(router chi.Router) {
 	router.Get("/users/me", handler.GetMe)
+	router.Patch("/users/me", handler.UpdateMe)
 	router.Patch("/users/{id}/avatar", handler.UpdateAvatar)
 }
 
@@ -130,6 +131,33 @@ func (handler *UserHandler) GetMe(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusOK, userProfileResponseFromDomain(user))
 }
 
+func (handler *UserHandler) UpdateMe(response http.ResponseWriter, request *http.Request) {
+	userID, ok := middleware.UserIDFromContext(request.Context())
+	if !ok {
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	var profileRequest updateProfileRequest
+	if err := json.NewDecoder(request.Body).Decode(&profileRequest); err != nil {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	if strings.TrimSpace(profileRequest.Name) == "" {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "name is required"})
+		return
+	}
+
+	user, err := handler.userUseCase.UpdateProfileName(request.Context(), userID, profileRequest.Name)
+	if err != nil {
+		handler.handleProfileError(response, err)
+		return
+	}
+
+	writeJSON(response, http.StatusOK, userProfileResponseFromDomain(user))
+}
+
 func (handler *UserHandler) UpdateAvatar(response http.ResponseWriter, request *http.Request) {
 	authenticatedUserID, ok := middleware.UserIDFromContext(request.Context())
 	if !ok {
@@ -206,6 +234,8 @@ func (handler *UserHandler) handleProfileError(response http.ResponseWriter, err
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "user not found"})
 	case errors.Is(err, services.ErrInvalidAvatarPath):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "avatar path is required"})
+	case isDomainValidationError(err):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid user data"})
 	default:
 		handler.logger.Error("profile request failed due to internal processing error", "error", err)
 		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
@@ -252,6 +282,10 @@ type refreshSessionRequest struct {
 
 type updateAvatarRequest struct {
 	AvatarLocalPath string `json:"avatarLocalPath"`
+}
+
+type updateProfileRequest struct {
+	Name string `json:"name"`
 }
 
 type userProfileResponse struct {

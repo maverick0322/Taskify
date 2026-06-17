@@ -41,8 +41,8 @@ func (useCase *mockUserUseCase) UpdateAvatarLocalPath(ctx context.Context, userI
 	return useCase.userToReturn, useCase.errToReturn
 }
 
-func (useCase *mockUserUseCase) UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error {
-	return useCase.errToReturn
+func (useCase *mockUserUseCase) UpdateProfileName(ctx context.Context, userID, name string) (*domain.User, error) {
+	return useCase.userToReturn, useCase.errToReturn
 }
 
 type mockHandlerLogger struct {

@@ -36,6 +36,10 @@ func (repository *mockUserRepository) GetByEmail(ctx context.Context, email stri
 	return repository.userToReturn, repository.getByEmailError
 }
 
+func (repository *mockUserRepository) UpdateProfileName(ctx context.Context, userID, firstName, lastName string) error {
+	return repository.saveError
+}
+
 func (repository *mockUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {
 	return repository.saveError
 }

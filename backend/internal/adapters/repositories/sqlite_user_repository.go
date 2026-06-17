@@ -34,6 +34,12 @@ const (
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
+	sqliteUpdateUserProfileNameQuery = `
+		UPDATE users
+		SET first_name = ?, last_name = ?, updated_at = ?
+		WHERE id = ? AND deleted_at IS NULL
+	`
+
 	sqliteUpdateUserAvatarURLQuery = `
 		UPDATE users
 		SET avatar_url = ?, updated_at = ?
@@ -98,6 +104,29 @@ func (repository *SQLiteUserRepository) GetByEmail(ctx context.Context, email st
 	}
 
 	return repository.mapReadError(err, "failed to retrieve user by email")
+}
+
+func (repository *SQLiteUserRepository) UpdateProfileName(ctx context.Context, userID, firstName, lastName string) error {
+	result, err := repository.database.ExecContext(
+		ctx,
+		sqliteUpdateUserProfileNameQuery,
+		firstName,
+		lastName,
+		timeValue(time.Now()),
+		userID,
+	)
+	if err != nil {
+		repository.logger.Error("failed to update user profile name", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return ports.ErrRepositoryUnavailable
+	}
+	if rowsAffected == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
 }
 
 func (repository *SQLiteUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {
