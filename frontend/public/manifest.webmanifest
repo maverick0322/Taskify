@@ -1,0 +1,19 @@
+{
+  "name": "Taskify",
+  "short_name": "Taskify",
+  "description": "Gestiona tareas, agenda y control financiero desde una sola app.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f1f3f7",
+  "theme_color": "#f1f3f7",
+  "icons": [
+    {
+      "src": "/taskify-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

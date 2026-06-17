@@ -84,8 +84,8 @@ func TestPostgresUserRepository_SaveValidUser_ReturnsNil(t *testing.T) {
 	if database.receivedSQL != saveUserQuery {
 		t.Errorf("expected save query to be used")
 	}
-	if len(database.receivedArgument) != 6 {
-		t.Errorf("expected six arguments, got %d", len(database.receivedArgument))
+	if len(database.receivedArgument) != 8 {
+		t.Errorf("expected eight arguments, got %d", len(database.receivedArgument))
 	}
 }
 

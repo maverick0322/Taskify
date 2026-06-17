@@ -8,6 +8,8 @@ export interface AuthUser {
   lastName: string;
   fullName: string;
   initials: string;
+  avatarLocalPath?: string;
+  avatarUrl?: string;
 }
 
 interface AuthTokenClaims {
@@ -22,6 +24,7 @@ interface AuthState {
   accessToken: string | null;
   user: AuthUser | null;
   login: (token: string) => void;
+  updateUserProfile: (profile: Partial<AuthUser>) => void;
   logout: () => void;
 }
 
@@ -58,6 +61,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       get().logout();
     }
+  },
+  updateUserProfile: (profile) => {
+    const currentUser = get().user;
+    if (!currentUser) {
+      return;
+    }
+
+    const firstName = profile.firstName ?? currentUser.firstName;
+    const lastName = profile.lastName ?? currentUser.lastName;
+    const email = profile.email ?? currentUser.email;
+    const profileFullName = [firstName, lastName].filter(Boolean).join(" ");
+    const fullName =
+      profile.fullName ?? (profileFullName || email || "Taskify User");
+
+    set({
+      user: {
+        ...currentUser,
+        ...profile,
+        firstName,
+        lastName,
+        email,
+        fullName,
+        initials: profile.initials ?? initialsFromName(firstName, lastName, email),
+      },
+    });
   },
   logout: () => {
     localStorage.removeItem("accessToken");

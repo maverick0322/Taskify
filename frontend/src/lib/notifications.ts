@@ -4,6 +4,8 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification"
 
+import type { AppNotification } from "@/services/notification_api"
+
 export async function notifyCriticalAlerts(count: number) {
   if (count <= 0) {
     return
@@ -20,6 +22,22 @@ export async function notifyCriticalAlerts(count: number) {
       body: `Tienes ${count} alerta${count === 1 ? "" : "s"} crítica${
         count === 1 ? "" : "s"
       } hoy`,
+    })
+  } catch {
+    // Native notifications are only available inside Tauri and may be denied by the OS.
+  }
+}
+
+export async function notifyAppNotification(notification: AppNotification) {
+  try {
+    const permissionGranted = await ensureNotificationPermission()
+    if (!permissionGranted) {
+      return
+    }
+
+    sendNotification({
+      title: notification.title,
+      body: notification.message,
     })
   } catch {
     // Native notifications are only available inside Tauri and may be denied by the OS.

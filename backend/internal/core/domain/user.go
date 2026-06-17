@@ -54,10 +54,12 @@ func NewUserProfile(firstName, lastName string, birthDate time.Time) (UserProfil
 // Open/Closed Principle (OCP); state transitions must happen through controlled behaviors,
 // not direct assignment.
 type User struct {
-	id           string
-	email        string
-	passwordHash string
-	profile      UserProfile
+	id              string
+	email           string
+	passwordHash    string
+	profile         UserProfile
+	avatarLocalPath string
+	avatarURL       string
 }
 
 // NewUser initializes a User entity ensuring its validity upon creation.
@@ -99,6 +101,19 @@ func (user *User) Profile() UserProfile {
 // without allowing direct modification of the entity's state.
 func (user *User) PasswordHash() string {
 	return user.passwordHash
+}
+
+func (user *User) AvatarLocalPath() string {
+	return user.avatarLocalPath
+}
+
+func (user *User) AvatarURL() string {
+	return user.avatarURL
+}
+
+func (user *User) UpdateAvatar(avatarLocalPath, avatarURL string) {
+	user.avatarLocalPath = strings.TrimSpace(avatarLocalPath)
+	user.avatarURL = strings.TrimSpace(avatarURL)
 }
 
 // Getters for UserProfile to allow persistence adapters to read the state

@@ -131,7 +131,7 @@ type syncTableSpec struct {
 
 func syncTableSpecs() []syncTableSpec {
 	return []syncTableSpec{
-		{name: "users", columns: []string{"id", "email", "password_hash", "first_name", "last_name", "birth_date", "created_at", "updated_at", "deleted_at"}},
+		{name: "users", columns: []string{"id", "email", "password_hash", "first_name", "last_name", "birth_date", "avatar_local_path", "avatar_url", "created_at", "updated_at", "deleted_at"}},
 		{name: "boards", columns: []string{"id", "user_id", "name", "created_at", "updated_at", "deleted_at"}},
 		{name: "columns", columns: []string{"id", "board_id", "name", "color", "position", "created_at", "updated_at", "deleted_at"}},
 		{name: "tasks", columns: []string{"id", "user_id", "board_id", "column_id", "title", "description", "status", "priority", "due_date", "created_at", "updated_at", "deleted_at"}},
@@ -140,6 +140,7 @@ func syncTableSpecs() []syncTableSpec {
 		{name: "transactions", columns: []string{"id", "user_id", "credit_card_id", "payment_account_id", "destination_account_id", "type", "concept", "category", "amount_cents", "date", "status", "msi", "installment_number", "installment_count", "recurrence", "recurrence_limit", "last_paid_at", "created_at", "updated_at", "deleted_at"}},
 		{name: "ledger_entries", columns: []string{"id", "user_id", "account_id", "transaction_id", "amount_cents", "entry_type", "created_at", "updated_at", "deleted_at"}},
 		{name: "credit_card_statements", columns: []string{"id", "user_id", "credit_account_id", "cycle_start", "cycle_end", "payment_due_date", "statement_amount_cents", "paid_amount_cents", "status", "created_at", "updated_at", "deleted_at"}},
+		{name: "notifications", columns: []string{"id", "user_id", "title", "message", "is_read", "created_at", "updated_at", "deleted_at"}},
 	}
 }
 

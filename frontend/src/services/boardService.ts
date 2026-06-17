@@ -45,6 +45,16 @@ export async function deleteBoard(boardId: string): Promise<void> {
   });
 }
 
+export async function updateBoardName(
+  boardId: string,
+  name: string,
+): Promise<void> {
+  await apiRequest<void>(`/boards/${boardId}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function getBoardColumns(boardId: string): Promise<BoardColumn[]> {
   return apiRequest<BoardColumn[]>(`/boards/${boardId}/columns`);
 }

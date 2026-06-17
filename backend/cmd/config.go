@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	jwtSecretEnvKey       = "JWT_SECRET"
-	accessTokenTTLEnvKey  = "ACCESS_TOKEN_TTL"
-	refreshTokenTTLEnvKey = "REFRESH_TOKEN_TTL"
-	portEnvKey            = "PORT"
-	bcryptCostEnvKey      = "BCRYPT_COST"
-	remoteDBURLEnvKey     = "REMOTE_DB_URL"
+	jwtSecretEnvKey          = "JWT_SECRET"
+	accessTokenTTLEnvKey     = "ACCESS_TOKEN_TTL"
+	refreshTokenTTLEnvKey    = "REFRESH_TOKEN_TTL"
+	portEnvKey               = "PORT"
+	bcryptCostEnvKey         = "BCRYPT_COST"
+	remoteDBURLEnvKey        = "REMOTE_DB_URL"
+	supabaseURLEnvKey        = "SUPABASE_URL"
+	supabaseServiceKeyEnvKey = "SUPABASE_SERVICE_ROLE_KEY"
 )
 
 var (
@@ -25,12 +27,14 @@ var (
 )
 
 type appConfig struct {
-	jwtSecret         string
-	accessTokenTTL    time.Duration
-	refreshTokenTTL   time.Duration
-	port              string
-	bcryptCost        int
-	remoteDatabaseURL string
+	jwtSecret          string
+	accessTokenTTL     time.Duration
+	refreshTokenTTL    time.Duration
+	port               string
+	bcryptCost         int
+	remoteDatabaseURL  string
+	supabaseURL        string
+	supabaseServiceKey string
 }
 
 type getenvFunc func(string) string
@@ -77,12 +81,14 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 	}
 
 	return appConfig{
-		jwtSecret:         jwtSecret,
-		accessTokenTTL:    accessTokenTTL,
-		refreshTokenTTL:   refreshTokenTTL,
-		port:              port,
-		bcryptCost:        bcryptCost,
-		remoteDatabaseURL: strings.TrimSpace(getenv(remoteDBURLEnvKey)),
+		jwtSecret:          jwtSecret,
+		accessTokenTTL:     accessTokenTTL,
+		refreshTokenTTL:    refreshTokenTTL,
+		port:               port,
+		bcryptCost:         bcryptCost,
+		remoteDatabaseURL:  strings.TrimSpace(getenv(remoteDBURLEnvKey)),
+		supabaseURL:        strings.TrimRight(strings.TrimSpace(getenv(supabaseURLEnvKey)), "/"),
+		supabaseServiceKey: strings.TrimSpace(getenv(supabaseServiceKeyEnvKey)),
 	}, nil
 }
 

@@ -174,6 +174,8 @@ CREATE TABLE users (
 	first_name TEXT,
 	last_name TEXT,
 	birth_date DATETIME,
+	avatar_local_path TEXT NULL,
+	avatar_url TEXT NULL,
 	created_at DATETIME,
 	updated_at DATETIME,
 	deleted_at DATETIME NULL
@@ -186,5 +188,6 @@ CREATE TABLE financial_accounts (id TEXT PRIMARY KEY, user_id TEXT, type TEXT, n
 CREATE TABLE transactions (id TEXT PRIMARY KEY, user_id TEXT, credit_card_id TEXT, payment_account_id TEXT NULL, destination_account_id TEXT NULL, type TEXT, concept TEXT, category TEXT, amount_cents INTEGER, date DATETIME, status TEXT, msi INTEGER NULL, installment_number INTEGER NULL, installment_count INTEGER NULL, recurrence TEXT, recurrence_limit INTEGER NULL, last_paid_at DATETIME NULL, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE ledger_entries (id TEXT PRIMARY KEY, user_id TEXT, account_id TEXT, transaction_id TEXT, amount_cents INTEGER, entry_type TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE credit_card_statements (id TEXT PRIMARY KEY, user_id TEXT, credit_account_id TEXT, cycle_start DATETIME, cycle_end DATETIME, payment_due_date DATETIME, statement_amount_cents INTEGER, paid_amount_cents INTEGER, status TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
+CREATE TABLE notifications (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, message TEXT, is_read BOOLEAN, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE sync_state (key TEXT PRIMARY KEY, last_successful_sync_at DATETIME NOT NULL, updated_at DATETIME NOT NULL);
 `

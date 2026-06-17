@@ -73,6 +73,11 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
+    --canvas: oklch(0.13 0 0);
+    --column: oklch(0.18 0 0);
+    --priority-high: oklch(0.22 0.06 25);
+    --priority-medium: oklch(0.23 0.05 85);
+    --priority-low: oklch(0.22 0.04 240);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -88,9 +93,34 @@
   }
   body {
     @apply bg-background text-foreground;
+    min-height: 100dvh;
+    overscroll-behavior: none;
   }
   html {
     @apply font-sans;
+    min-height: 100%;
+    background: var(--canvas);
+  }
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+@layer utilities {
+  .pwa-safe-shell {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .pwa-safe-x {
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .pwa-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

@@ -12,20 +12,32 @@ import (
 
 const (
 	sqliteSaveUserQuery = `
-		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	sqliteGetUserByIDQuery = `
-		SELECT id, email, password_hash, first_name, last_name, birth_date
+		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetUserByEmailQuery = `
-		SELECT id, email, password_hash, first_name, last_name, birth_date
+		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
 		WHERE email = ? AND deleted_at IS NULL
+	`
+
+	sqliteUpdateUserAvatarLocalPathQuery = `
+		UPDATE users
+		SET avatar_local_path = ?, updated_at = ?
+		WHERE id = ? AND deleted_at IS NULL
+	`
+
+	sqliteUpdateUserAvatarURLQuery = `
+		UPDATE users
+		SET avatar_url = ?, updated_at = ?
+		WHERE id = ? AND deleted_at IS NULL
 	`
 )
 
@@ -54,6 +66,8 @@ func (repository *SQLiteUserRepository) Save(ctx context.Context, user *domain.U
 		profile.FirstName(),
 		profile.LastName(),
 		timeValue(profile.BirthDate()),
+		nullableString(nonEmptyStringPtr(user.AvatarLocalPath())),
+		nullableString(nonEmptyStringPtr(user.AvatarURL())),
 		timeValue(time.Now()),
 	)
 	if err == nil {
@@ -86,6 +100,42 @@ func (repository *SQLiteUserRepository) GetByEmail(ctx context.Context, email st
 	return repository.mapReadError(err, "failed to retrieve user by email")
 }
 
+func (repository *SQLiteUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {
+	now := time.Now()
+	result, err := repository.database.ExecContext(ctx, sqliteUpdateUserAvatarLocalPathQuery, avatarLocalPath, timeValue(now), userID)
+	if err != nil {
+		repository.logger.Error("failed to update user avatar local path", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return ports.ErrRepositoryUnavailable
+	}
+	if rowsAffected == 0 {
+		return ports.ErrUserNotFound
+	}
+	if err := repository.enqueueAvatarStorageJob(ctx, userID, avatarLocalPath, now); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repository *SQLiteUserRepository) UpdateAvatarURL(ctx context.Context, userID, avatarURL string) error {
+	result, err := repository.database.ExecContext(ctx, sqliteUpdateUserAvatarURLQuery, avatarURL, timeValue(time.Now()), userID)
+	if err != nil {
+		repository.logger.Error("failed to update user avatar url", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return ports.ErrRepositoryUnavailable
+	}
+	if rowsAffected == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
+}
+
 func (repository *SQLiteUserRepository) scanUser(row interface {
 	Scan(dest ...interface{}) error
 }) (*domain.User, error) {
@@ -97,11 +147,37 @@ func (repository *SQLiteUserRepository) scanUser(row interface {
 		&storedUser.firstName,
 		&storedUser.lastName,
 		&storedUser.birthDate,
+		&storedUser.avatarLocalPath,
+		&storedUser.avatarURL,
 	); err != nil {
 		return nil, err
 	}
 
 	return buildDomainUser(storedUser)
+}
+
+func (repository *SQLiteUserRepository) enqueueAvatarStorageJob(ctx context.Context, userID, avatarLocalPath string, now time.Time) error {
+	_, err := repository.database.ExecContext(ctx, `
+		INSERT INTO storage_sync_jobs (id, user_id, entity_type, entity_id, local_path, bucket, object_key, status, attempts, created_at, updated_at)
+		VALUES (?, ?, 'user_avatar', ?, ?, 'avatars', ?, 'pending', 0, ?, ?)
+		ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+			local_path = excluded.local_path,
+			object_key = excluded.object_key,
+			status = 'pending',
+			updated_at = excluded.updated_at
+	`, userID+"-avatar", userID, userID, avatarLocalPath, "users/"+userID+"/avatar", timeValue(now), timeValue(now))
+	if err != nil {
+		repository.logger.Error("failed to enqueue avatar storage sync job", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	return nil
+}
+
+func nonEmptyStringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (repository *SQLiteUserRepository) mapReadError(err error, message string, keysAndValues ...interface{}) (*domain.User, error) {

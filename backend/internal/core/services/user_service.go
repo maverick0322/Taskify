@@ -16,6 +16,7 @@ import (
 var (
 	ErrUserAlreadyExists     = errors.New("service: user with this email already exists")
 	ErrInvalidCredentials    = errors.New("service: invalid email or password")
+	ErrInvalidAvatarPath     = errors.New("service: avatar path cannot be empty")
 	ErrInternalProcessing    = errors.New("service: an internal error occurred while processing the request")
 	ErrInvalidRefreshToken   = errors.New("service: invalid refresh token")
 	ErrSessionRevoked        = errors.New("service: refresh session has been revoked")
@@ -188,6 +189,40 @@ func (s *userService) RefreshSession(ctx context.Context, refreshToken string) (
 	}
 
 	return tokenPair.AccessToken, tokenPair.RefreshToken, nil
+}
+
+func (s *userService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if errors.Is(err, ports.ErrUserNotFound) {
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		s.logger.Error("failed to retrieve user profile", "userID", userID, "error", err)
+		return nil, ErrInternalProcessing
+	}
+	return user, nil
+}
+
+func (s *userService) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) (*domain.User, error) {
+	avatarLocalPath = strings.TrimSpace(avatarLocalPath)
+	if avatarLocalPath == "" {
+		return nil, ErrInvalidAvatarPath
+	}
+
+	if _, err := s.userRepo.GetByID(ctx, userID); err != nil {
+		if errors.Is(err, ports.ErrUserNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		s.logger.Error("failed to retrieve user before avatar update", "userID", userID, "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	if err := s.userRepo.UpdateAvatarLocalPath(ctx, userID, avatarLocalPath); err != nil {
+		s.logger.Error("failed to update user avatar local path", "userID", userID, "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	return s.GetProfile(ctx, userID)
 }
 
 func (s *userService) UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error {

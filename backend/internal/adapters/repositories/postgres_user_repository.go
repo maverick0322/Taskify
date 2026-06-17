@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -16,20 +17,32 @@ const (
 	postgresUniqueViolationCode = "23505"
 
 	saveUserQuery = `
-		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	getUserByIDQuery = `
-		SELECT id, email, password_hash, first_name, last_name, birth_date
+		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
 		WHERE id = $1
 	`
 
 	getUserByEmailQuery = `
-		SELECT id, email, password_hash, first_name, last_name, birth_date
+		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
 		WHERE email = $1
+	`
+
+	updateUserAvatarLocalPathQuery = `
+		UPDATE users
+		SET avatar_local_path = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+	`
+
+	updateUserAvatarURLQuery = `
+		UPDATE users
+		SET avatar_url = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
 	`
 )
 
@@ -68,6 +81,8 @@ func (repository *PostgresUserRepository) Save(ctx context.Context, user *domain
 		profile.FirstName(),
 		profile.LastName(),
 		profile.BirthDate(),
+		nullablePlainString(user.AvatarLocalPath()),
+		nullablePlainString(user.AvatarURL()),
 	)
 	if err == nil {
 		return nil
@@ -100,6 +115,30 @@ func (repository *PostgresUserRepository) GetByEmail(ctx context.Context, email 
 	return repository.mapReadError(err, "failed to retrieve user by email")
 }
 
+func (repository *PostgresUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {
+	tag, err := repository.database.Exec(ctx, updateUserAvatarLocalPathQuery, avatarLocalPath, userID)
+	if err != nil {
+		repository.logger.Error("failed to update user avatar local path", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
+}
+
+func (repository *PostgresUserRepository) UpdateAvatarURL(ctx context.Context, userID, avatarURL string) error {
+	tag, err := repository.database.Exec(ctx, updateUserAvatarURLQuery, avatarURL, userID)
+	if err != nil {
+		repository.logger.Error("failed to update user avatar url", "userID", userID, "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrUserNotFound
+	}
+	return nil
+}
+
 func (repository *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, error) {
 	var storedUser storedUser
 	if err := row.Scan(
@@ -109,6 +148,8 @@ func (repository *PostgresUserRepository) scanUser(row pgx.Row) (*domain.User, e
 		&storedUser.firstName,
 		&storedUser.lastName,
 		&storedUser.birthDate,
+		&storedUser.avatarLocalPath,
+		&storedUser.avatarURL,
 	); err != nil {
 		return nil, err
 	}
@@ -127,12 +168,14 @@ func (repository *PostgresUserRepository) mapReadError(err error, message string
 }
 
 type storedUser struct {
-	id           string
-	email        string
-	passwordHash string
-	firstName    string
-	lastName     string
-	birthDate    time.Time
+	id              string
+	email           string
+	passwordHash    string
+	firstName       string
+	lastName        string
+	birthDate       time.Time
+	avatarLocalPath sql.NullString
+	avatarURL       sql.NullString
 }
 
 func buildDomainUser(storedUser storedUser) (*domain.User, error) {
@@ -145,8 +188,16 @@ func buildDomainUser(storedUser storedUser) (*domain.User, error) {
 	if err != nil {
 		return nil, err
 	}
+	user.UpdateAvatar(storedUser.avatarLocalPath.String, storedUser.avatarURL.String)
 
 	return user, nil
+}
+
+func nullablePlainString(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func isUniqueViolation(err error) bool {

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
 	"github.com/maverick0322/taskify/backend/internal/core/domain"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
 	"github.com/maverick0322/taskify/backend/internal/core/services"
@@ -37,6 +39,11 @@ func (handler *UserHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/users/register", handler.Register)
 	router.Post("/users/login", handler.Login)
 	router.Post("/users/refresh", handler.RefreshSession)
+}
+
+func (handler *UserHandler) RegisterProtectedRoutes(router chi.Router) {
+	router.Get("/users/me", handler.GetMe)
+	router.Patch("/users/{id}/avatar", handler.UpdateAvatar)
 }
 
 func (handler *UserHandler) Register(response http.ResponseWriter, request *http.Request) {
@@ -107,6 +114,54 @@ func (handler *UserHandler) RefreshSession(response http.ResponseWriter, request
 	writeJSON(response, http.StatusOK, tokenPairResponse{AccessToken: accessToken, RefreshToken: refreshToken})
 }
 
+func (handler *UserHandler) GetMe(response http.ResponseWriter, request *http.Request) {
+	userID, ok := middleware.UserIDFromContext(request.Context())
+	if !ok {
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	user, err := handler.userUseCase.GetProfile(request.Context(), userID)
+	if err != nil {
+		handler.handleProfileError(response, err)
+		return
+	}
+
+	writeJSON(response, http.StatusOK, userProfileResponseFromDomain(user))
+}
+
+func (handler *UserHandler) UpdateAvatar(response http.ResponseWriter, request *http.Request) {
+	authenticatedUserID, ok := middleware.UserIDFromContext(request.Context())
+	if !ok {
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+	requestedUserID := chi.URLParam(request, "id")
+	if requestedUserID != authenticatedUserID {
+		writeJSON(response, http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+
+	var avatarRequest updateAvatarRequest
+	if err := json.NewDecoder(request.Body).Decode(&avatarRequest); err != nil {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+	avatarLocalPath := strings.TrimSpace(avatarRequest.AvatarLocalPath)
+	if avatarLocalPath == "" {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "avatar path is required"})
+		return
+	}
+
+	user, err := handler.userUseCase.UpdateAvatarLocalPath(request.Context(), authenticatedUserID, avatarLocalPath)
+	if err != nil {
+		handler.handleProfileError(response, err)
+		return
+	}
+
+	writeJSON(response, http.StatusOK, userProfileResponseFromDomain(user))
+}
+
 func (handler *UserHandler) handleRegisterError(response http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, services.ErrUserAlreadyExists):
@@ -145,6 +200,18 @@ func (handler *UserHandler) handleRefreshError(response http.ResponseWriter, err
 	writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
 }
 
+func (handler *UserHandler) handleProfileError(response http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, services.ErrInvalidCredentials):
+		writeJSON(response, http.StatusNotFound, errorResponse{Error: "user not found"})
+	case errors.Is(err, services.ErrInvalidAvatarPath):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "avatar path is required"})
+	default:
+		handler.logger.Error("profile request failed due to internal processing error", "error", err)
+		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
+	}
+}
+
 func isDomainValidationError(err error) bool {
 	return errors.Is(err, domain.ErrInvalidName) ||
 		errors.Is(err, domain.ErrInvalidEmail) ||
@@ -181,6 +248,31 @@ type loginUserRequest struct {
 
 type refreshSessionRequest struct {
 	RefreshToken string `json:"refreshToken"`
+}
+
+type updateAvatarRequest struct {
+	AvatarLocalPath string `json:"avatarLocalPath"`
+}
+
+type userProfileResponse struct {
+	ID              string `json:"id"`
+	Email           string `json:"email"`
+	FirstName       string `json:"firstName"`
+	LastName        string `json:"lastName"`
+	AvatarLocalPath string `json:"avatarLocalPath,omitempty"`
+	AvatarURL       string `json:"avatarUrl,omitempty"`
+}
+
+func userProfileResponseFromDomain(user *domain.User) userProfileResponse {
+	profile := user.Profile()
+	return userProfileResponse{
+		ID:              user.ID(),
+		Email:           user.Email(),
+		FirstName:       profile.FirstName(),
+		LastName:        profile.LastName(),
+		AvatarLocalPath: user.AvatarLocalPath(),
+		AvatarURL:       user.AvatarURL(),
+	}
 }
 
 type tokenPairResponse struct {

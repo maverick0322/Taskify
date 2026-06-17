@@ -36,6 +36,14 @@ func (repository *mockUserRepository) GetByEmail(ctx context.Context, email stri
 	return repository.userToReturn, repository.getByEmailError
 }
 
+func (repository *mockUserRepository) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error {
+	return repository.saveError
+}
+
+func (repository *mockUserRepository) UpdateAvatarURL(ctx context.Context, userID, avatarURL string) error {
+	return repository.saveError
+}
+
 type mockSessionRepository struct {
 	sessionToReturn *domain.RefreshToken
 	getError        error

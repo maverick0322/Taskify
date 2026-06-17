@@ -33,6 +33,14 @@ func (useCase *mockUserUseCase) RefreshSession(ctx context.Context, refreshToken
 	return useCase.accessTokenToReturn, useCase.refreshTokenToReturn, useCase.errToReturn
 }
 
+func (useCase *mockUserUseCase) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
+	return useCase.userToReturn, useCase.errToReturn
+}
+
+func (useCase *mockUserUseCase) UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) (*domain.User, error) {
+	return useCase.userToReturn, useCase.errToReturn
+}
+
 func (useCase *mockUserUseCase) UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error {
 	return useCase.errToReturn
 }

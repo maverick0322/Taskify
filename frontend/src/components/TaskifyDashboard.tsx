@@ -67,6 +67,19 @@ function getTodayLabel() {
   });
 }
 
+function formatTaskCount(count: number) {
+  return `${count} ${count === 1 ? "tarea" : "tareas"}`;
+}
+
+function getCurrentMonthYearLabel() {
+  const formattedDate = new Intl.DateTimeFormat("es-MX", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+
+  return formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+}
+
 function isTaskDueToday(task: Task) {
   const dueDate = parseTaskDueDate(task.dueDate);
   if (!dueDate) {
@@ -212,7 +225,7 @@ export function TaskifyDashboard() {
   } = useQuery({
     queryKey: ["tasks", "global"],
     queryFn: () => getTasks(),
-    enabled: currentView === "dashboard",
+    enabled: currentView === "dashboard" || currentView === "tasks" || currentView === "agenda",
   });
   const {
     data: financialSummary,
@@ -259,6 +272,32 @@ export function TaskifyDashboard() {
     "No se pudieron cargar los tableros",
   );
   const selectedBoard = boards.find((board) => board.id === selectedBoardId);
+  const currentMonthYearLabel = getCurrentMonthYearLabel();
+  const headerSubtitle = (() => {
+    if (currentView === "dashboard") {
+      return "Resumen general de tu espacio de trabajo";
+    }
+
+    if (currentView === "tasks") {
+      if (selectedBoardId) {
+        return isLoading ? "Cargando tareas..." : formatTaskCount(boardTasks.length);
+      }
+
+      return globalTasksLoading
+        ? "Cargando tareas..."
+        : formatTaskCount(globalTasks.length);
+    }
+
+    if (currentView === "agenda") {
+      const taskCount = globalTasksLoading
+        ? "Cargando tareas..."
+        : formatTaskCount(globalTasks.length);
+
+      return `${taskCount} · ${currentMonthYearLabel}`;
+    }
+
+    return "Seguimiento financiero de tus proyectos";
+  })();
   const todayTaskCount = globalTasks.filter(
     (task) => isTaskDueToday(task) && task.status !== "done",
   ).length;
@@ -420,7 +459,7 @@ export function TaskifyDashboard() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-canvas">
+    <div className="pwa-safe-shell flex min-h-0 flex-1 overflow-hidden bg-canvas">
       <div className="hidden md:flex md:shrink-0">
         <Sidebar
           className="h-full"
@@ -443,6 +482,7 @@ export function TaskifyDashboard() {
           onViewChange={handleViewChange}
           selectedBoardId={selectedBoardId}
           selectedBoardName={selectedBoard?.name}
+          subtitle={headerSubtitle}
           onBoardSelect={(board) => setSelectedBoardId(board.id)}
         />
 

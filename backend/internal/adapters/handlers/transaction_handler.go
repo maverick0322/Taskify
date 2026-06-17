@@ -19,14 +19,20 @@ const (
 )
 
 type TransactionHandler struct {
-	transactionUseCase ports.TransactionUseCase
-	logger             ports.Logger
+	transactionUseCase  ports.TransactionUseCase
+	notificationUseCase ports.NotificationUseCase
+	logger              ports.Logger
 }
 
-func NewTransactionHandler(transactionUseCase ports.TransactionUseCase, logger ports.Logger) *TransactionHandler {
+func NewTransactionHandler(transactionUseCase ports.TransactionUseCase, logger ports.Logger, notificationUseCase ...ports.NotificationUseCase) *TransactionHandler {
+	var notifier ports.NotificationUseCase
+	if len(notificationUseCase) > 0 {
+		notifier = notificationUseCase[0]
+	}
 	return &TransactionHandler{
-		transactionUseCase: transactionUseCase,
-		logger:             logger,
+		transactionUseCase:  transactionUseCase,
+		notificationUseCase: notifier,
+		logger:              logger,
 	}
 }
 
@@ -82,6 +88,7 @@ func (handler *TransactionHandler) CreateTransaction(response http.ResponseWrite
 		return
 	}
 
+	handler.checkDueNotifications(request)
 	writeJSON(response, http.StatusCreated, transactionResponseFromDomain(transaction))
 }
 
@@ -146,6 +153,7 @@ func (handler *TransactionHandler) UpdateTransaction(response http.ResponseWrite
 		return
 	}
 
+	handler.checkDueNotifications(request)
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -190,6 +198,7 @@ func (handler *TransactionHandler) UpdateAccountPayable(response http.ResponseWr
 		return
 	}
 
+	handler.checkDueNotifications(request)
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -223,6 +232,7 @@ func (handler *TransactionHandler) PayAccountPayable(response http.ResponseWrite
 		return
 	}
 
+	handler.checkDueNotifications(request)
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -238,6 +248,15 @@ func (handler *TransactionHandler) DeleteTransaction(response http.ResponseWrite
 	}
 
 	response.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *TransactionHandler) checkDueNotifications(request *http.Request) {
+	if handler.notificationUseCase == nil {
+		return
+	}
+	if err := handler.notificationUseCase.CheckDueNotifications(request.Context(), time.Now()); err != nil {
+		handler.logger.Warn("failed to refresh due notifications", "error", err)
+	}
 }
 
 func (handler *TransactionHandler) GetFinancialSummary(response http.ResponseWriter, request *http.Request) {

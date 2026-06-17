@@ -7,6 +7,8 @@ import {
   Loader2,
   Lock,
   Mail,
+  Moon,
+  Sun,
   User,
 } from "lucide-react";
 
@@ -21,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { login, register } from "@/services/authService";
@@ -28,6 +31,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 export function AuthScreen() {
   const setAuthenticatedSession = useAuthStore((state) => state.login);
+  const { resolvedTheme, setTheme } = useTheme();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -82,7 +86,18 @@ export function AuthScreen() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <main className="relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto bg-background px-4 py-10">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute right-4 top-4 size-10 text-muted-foreground sm:right-6 sm:top-6"
+        aria-label="Cambiar tema"
+        onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      >
+        <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+        <Moon className="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+      </Button>
+
       <div
         className="pointer-events-none fixed inset-0 -z-10 opacity-40"
         style={{

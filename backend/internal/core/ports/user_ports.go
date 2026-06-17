@@ -15,6 +15,8 @@ type UserRepository interface {
 	Save(ctx context.Context, user *domain.User) error
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+	UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) error
+	UpdateAvatarURL(ctx context.Context, userID, avatarURL string) error
 }
 
 // UserUseCase defines the inbound port (Primary Port) for User-related business operations.
@@ -24,6 +26,8 @@ type UserUseCase interface {
 	Register(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error)
 	Authenticate(ctx context.Context, email, plainPassword string) (string, string, error)
 	RefreshSession(ctx context.Context, refreshToken string) (string, string, error)
+	GetProfile(ctx context.Context, userID string) (*domain.User, error)
+	UpdateAvatarLocalPath(ctx context.Context, userID, avatarLocalPath string) (*domain.User, error)
 	UpdateProfile(ctx context.Context, userID, firstName, lastName string, birthDate time.Time) error
 }
 

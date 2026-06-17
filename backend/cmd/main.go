@@ -101,18 +101,21 @@ func run() error {
 	transactionRepository := repositories.NewSQLiteTransactionRepository(sqliteDatabase, applicationLogger)
 	creditCardRepository := repositories.NewSQLiteCreditCardRepository(sqliteDatabase, applicationLogger)
 	financialAccountRepository := repositories.NewSQLiteFinancialAccountRepository(sqliteDatabase, applicationLogger)
+	notificationRepository := repositories.NewSQLiteNotificationRepository(sqliteDatabase, applicationLogger)
 	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, columnRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
 	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
 	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
 	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
+	notificationUseCase := services.NewNotificationService(notificationRepository, applicationLogger)
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
 	boardHandler := handlers.NewBoardHandler(boardUseCase, applicationLogger)
-	transactionHandler := handlers.NewTransactionHandler(transactionUseCase, applicationLogger)
+	transactionHandler := handlers.NewTransactionHandler(transactionUseCase, applicationLogger, notificationUseCase)
 	creditCardHandler := handlers.NewCreditCardHandler(creditCardUseCase, applicationLogger)
 	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
+	notificationHandler := handlers.NewNotificationHandler(notificationUseCase, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
@@ -121,11 +124,13 @@ func run() error {
 	userHandler.RegisterRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
+		userHandler.RegisterProtectedRoutes(protectedRouter)
 		taskHandler.RegisterRoutes(protectedRouter)
 		boardHandler.RegisterRoutes(protectedRouter)
 		transactionHandler.RegisterRoutes(protectedRouter)
 		creditCardHandler.RegisterRoutes(protectedRouter)
 		financialAccountHandler.RegisterRoutes(protectedRouter)
+		notificationHandler.RegisterRoutes(protectedRouter)
 	})
 
 	server := &http.Server{
@@ -141,6 +146,8 @@ func run() error {
 		syncService := services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
 		go startSyncWorker(shutdownContext, syncService, applicationLogger)
 	}
+	go startAvatarStorageWorker(shutdownContext, sqliteDatabase, config.supabaseURL, config.supabaseServiceKey, applicationLogger)
+	go startNotificationWorker(shutdownContext, notificationUseCase, applicationLogger)
 
 	serverErrors := make(chan error, 1)
 	go startHTTPServer(server, serverErrors)

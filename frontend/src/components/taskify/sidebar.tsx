@@ -9,7 +9,7 @@ import type { CurrentView } from "@/components/taskify/navigation"
 import type { Board } from "@/services/boardService"
 import { deleteBoard } from "@/services/boardService"
 import { useAuthStore } from "@/store/useAuthStore"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ProfileAvatar } from "@/components/profile-avatar"
 import { Button } from "@/components/ui/button"
 import { NewBoardDialog } from "@/components/taskify/new-board-dialog"
 import { Separator } from "@/components/ui/separator"
@@ -268,10 +268,7 @@ export function Sidebar({
 
           {/* User Profile */}
           <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-sidebar-accent/60 transition-colors">
-            <Avatar className="size-8">
-              <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || "taskify"}`} alt={user?.fullName ?? "Taskify User"} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">{user?.initials ?? "TU"}</AvatarFallback>
-            </Avatar>
+            <ProfileAvatar className="size-8" />
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium text-sidebar-foreground">{user?.fullName ?? "Taskify User"}</p>
               <p className="truncate text-xs text-sidebar-foreground/50">{user?.email ?? "Sin correo"}</p>

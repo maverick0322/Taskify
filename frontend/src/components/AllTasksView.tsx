@@ -10,6 +10,7 @@ import {
   Globe,
   LayoutGrid,
   MoreVertical,
+  Search,
   Trash2,
 } from "lucide-react"
 
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { formatTaskDueDateLabel } from "@/lib/task-dates"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
@@ -295,6 +297,7 @@ function BoardGroupedList({
 
 export function AllTasksView() {
   const queryClient = useQueryClient()
+  const [searchTerm, setSearchTerm] = useState("")
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null)
@@ -326,8 +329,27 @@ export function AllTasksView() {
       })),
     [boardNamesByID, tasks],
   )
-  const globalTasks = displayTasks.filter((task) => !task.task.boardId)
-  const boardTasks = displayTasks.filter((task) => task.task.boardId)
+  const filteredTasks = useMemo(() => {
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+
+    if (!normalizedSearchTerm) {
+      return displayTasks
+    }
+
+    return displayTasks.filter(({ task, boardName }) => {
+      const searchableText = [
+        task.title,
+        task.description ?? "",
+        boardName ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+
+      return searchableText.includes(normalizedSearchTerm)
+    })
+  }, [displayTasks, searchTerm])
+  const globalTasks = filteredTasks.filter((task) => !task.task.boardId)
+  const boardTasks = filteredTasks.filter((task) => task.task.boardId)
   const tasksErrorMessage = getFriendlyErrorMessage(
     tasksError,
     "No se pudieron cargar las tareas",
@@ -427,42 +449,54 @@ export function AllTasksView() {
         </header>
 
         <Tabs.Root defaultValue="all">
-          <Tabs.List className="flex h-auto w-full justify-start gap-0 rounded-none border-b border-border/40 bg-transparent p-0">
-            <Tabs.Trigger
-              value="all"
-              className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Todas
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                {displayTasks.length}
-              </span>
-            </Tabs.Trigger>
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <Tabs.List className="flex h-auto w-full justify-start gap-0 overflow-x-auto rounded-none border-b border-border/40 bg-transparent p-0 md:w-auto">
+              <Tabs.Trigger
+                value="all"
+                className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                Todas
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {filteredTasks.length}
+                </span>
+              </Tabs.Trigger>
 
-            <Tabs.Trigger
-              value="global"
-              className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Globales
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                {globalTasks.length}
-              </span>
-            </Tabs.Trigger>
+              <Tabs.Trigger
+                value="global"
+                className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                Globales
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {globalTasks.length}
+                </span>
+              </Tabs.Trigger>
 
-            <Tabs.Trigger
-              value="byboard"
-              className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              Por Tablero
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                {boardTasks.length}
-              </span>
-            </Tabs.Trigger>
-          </Tabs.List>
+              <Tabs.Trigger
+                value="byboard"
+                className="rounded-none bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                Por Tablero
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {boardTasks.length}
+                </span>
+              </Tabs.Trigger>
+            </Tabs.List>
+
+            <div className="relative w-full md:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar por título o descripción"
+                className="h-10 rounded-lg border-border/70 bg-card pl-9 text-sm"
+              />
+            </div>
+          </div>
 
           <Tabs.Content value="all" className="mt-0">
-            {displayTasks.length > 0 ? (
+            {filteredTasks.length > 0 ? (
               <TaskList
-                tasks={displayTasks}
+                tasks={filteredTasks}
                 onEdit={handleEditTask}
                 onDelete={handleDeleteTask}
                 onStatusChange={handleStatusChange}

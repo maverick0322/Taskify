@@ -74,6 +74,9 @@ func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
 	if err := ensureSQLiteSyncMetadata(ctx, database); err != nil {
 		return err
 	}
+	if err := ensureSQLiteAvatarStorage(ctx, database); err != nil {
+		return err
+	}
 
 	if err := ensureSQLiteTransactionsCompletedStatus(ctx, database); err != nil {
 		return err
@@ -200,6 +203,12 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 	if err := ensureSQLiteColumn(ctx, database, "tasks", "column_id", "TEXT REFERENCES columns(id) ON DELETE SET NULL"); err != nil {
 		return err
 	}
+	if err := ensureSQLiteColumn(ctx, database, "users", "avatar_local_path", "TEXT NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "users", "avatar_url", "TEXT NULL"); err != nil {
+		return err
+	}
 	if _, err := database.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_tasks_user_id_column_id ON tasks(user_id, column_id)"); err != nil {
 		return fmt.Errorf("failed to create sqlite task column index: %w", err)
 	}
@@ -225,6 +234,31 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 		return err
 	}
 
+	return nil
+}
+
+func ensureSQLiteAvatarStorage(ctx context.Context, database *sql.DB) error {
+	_, err := database.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS storage_sync_jobs (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			entity_type TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			local_path TEXT NOT NULL,
+			bucket TEXT NOT NULL,
+			object_key TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uq_storage_sync_jobs_entity UNIQUE (entity_type, entity_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_storage_sync_jobs_status ON storage_sync_jobs(status, updated_at);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to initialize sqlite avatar storage metadata: %w", err)
+	}
 	return nil
 }
 

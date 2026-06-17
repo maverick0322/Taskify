@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { getFriendlyErrorMessage } from "@/services/api"
 import {
   createCreditCard,
   createFinancialAccount,
@@ -565,6 +566,7 @@ function NewMovementDialog({
   isSaving,
   transaction,
   paymentAccounts,
+  submitError,
 }: {
   open: boolean
   onClose: () => void
@@ -572,6 +574,7 @@ function NewMovementDialog({
   isSaving: boolean
   transaction?: FinancialTransaction | null
   paymentAccounts: FinancialAccount[]
+  submitError?: string
 }) {
   const [tipo, setTipo] = useState("")
   const [categoria, setCategoria] = useState("")
@@ -629,7 +632,7 @@ function NewMovementDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Editar Movimiento" : "Nuevo Movimiento"}</DialogTitle>
           <DialogDescription>
@@ -731,9 +734,9 @@ function NewMovementDialog({
             </div>
           ) : null}
 
-          {errorMessage ? (
+          {errorMessage || submitError ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 sm:col-span-2">
-              {errorMessage}
+              {errorMessage || submitError}
             </p>
           ) : null}
         </div>
@@ -825,7 +828,7 @@ function NewPaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? "Editar Cuenta por Pagar" : "Nueva Cuenta por Pagar"}
@@ -846,7 +849,7 @@ function NewPaymentDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="monto-pago">Monto</Label>
               <CurrencyInput
@@ -1055,7 +1058,7 @@ function AddCardDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Editar Tarjeta" : "Agregar Tarjeta"}</DialogTitle>
           <DialogDescription>
@@ -1135,7 +1138,7 @@ function AddCardDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="last-four">Ultimos 4 digitos</Label>
               <Input
@@ -1175,7 +1178,7 @@ function AddCardDialog({
           </div>
 
           {cardType === "CREDIT_CARD" ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="payment-day">Dia limite de pago</Label>
               <Input
@@ -1322,7 +1325,7 @@ function AccountDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{account.name}</DialogTitle>
           <DialogDescription>
@@ -1596,7 +1599,7 @@ function PayCreditCardDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Pagar tarjeta</DialogTitle>
           <DialogDescription>
@@ -1676,6 +1679,7 @@ export function FinancialControlView() {
   const [accountDetail, setAccountDetail] = useState<FinancialAccount | null>(null)
   const [creditCardToPay, setCreditCardToPay] =
     useState<CreditCardSummary | null>(null)
+  const [transactionDialogError, setTransactionDialogError] = useState("")
   const queryClient = useQueryClient()
   const monthRange = useMemo(() => currentMonthRange(), [])
   const queryKeys = useMemo(
@@ -1724,6 +1728,11 @@ export function FinancialControlView() {
   })
   const createTransactionMutation = useMutation({
     mutationFn: createTransaction,
+    onError: (error, variables) => {
+      if (variables.status === "PAID") {
+        setTransactionDialogError(getFriendlyErrorMessage(error))
+      }
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
@@ -1731,11 +1740,13 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
       setDialogOpen(false)
       setPaymentDialogOpen(false)
       setTransactionToEdit(null)
       setAccountPayableToEdit(null)
+      setTransactionDialogError("")
     },
   })
   const updateTransactionMutation = useMutation({
@@ -1746,6 +1757,9 @@ export function FinancialControlView() {
       id: string
       data: CreateTransactionInput
     }) => updateTransaction(id, data),
+    onError: (error) => {
+      setTransactionDialogError(getFriendlyErrorMessage(error))
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
@@ -1753,9 +1767,11 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
       setDialogOpen(false)
       setTransactionToEdit(null)
+      setTransactionDialogError("")
     },
   })
   const updateAccountPayableMutation = useMutation({
@@ -1773,6 +1789,7 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
       setPaymentDialogOpen(false)
       setAccountPayableToEdit(null)
@@ -1793,6 +1810,7 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
     },
   })
@@ -1811,6 +1829,7 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
       setCreditCardToPay(null)
     },
@@ -1824,6 +1843,7 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "summary"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "credit-cards"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
       setTransactionToDelete(null)
     },
@@ -1850,6 +1870,7 @@ export function FinancialControlView() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
       await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] })
       setAddCardDialogOpen(false)
       setCreditCardToEdit(null)
       setDebitCardToEdit(null)
@@ -1879,6 +1900,7 @@ export function FinancialControlView() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
       await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] })
       setAddCardDialogOpen(false)
       setCreditCardToEdit(null)
     },
@@ -1894,6 +1916,7 @@ export function FinancialControlView() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
       await queryClient.invalidateQueries({ queryKey: queryKeys.creditCards })
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] })
       setAddCardDialogOpen(false)
       setDebitCardToEdit(null)
       setCreditCardToEdit(null)
@@ -1951,6 +1974,10 @@ export function FinancialControlView() {
     () => [...manualPendingPayments, ...creditCardPendingPayments],
     [creditCardPendingPayments, manualPendingPayments],
   )
+  const cashAccount = useMemo(
+    () => financialAccounts.find((account) => account.type === "CASH") ?? null,
+    [financialAccounts],
+  )
   const debitCards = useMemo(
     () => financialAccounts.filter((account) => account.type === "DEBIT_CARD"),
     [financialAccounts],
@@ -1987,6 +2014,7 @@ export function FinancialControlView() {
       (currentTransaction) => currentTransaction.id === transactionId,
     )
     if (transaction) {
+      setTransactionDialogError("")
       setTransactionToEdit(transaction)
       setDialogOpen(true)
     }
@@ -2003,6 +2031,7 @@ export function FinancialControlView() {
   }
 
   function handleSubmitTransaction(data: CreateTransactionInput) {
+    setTransactionDialogError("")
     if (transactionToEdit?.id) {
       updateTransactionMutation.mutate({ id: transactionToEdit.id, data })
       return
@@ -2061,6 +2090,7 @@ export function FinancialControlView() {
   function handleCloseTransactionDialog() {
     setDialogOpen(false)
     setTransactionToEdit(null)
+    setTransactionDialogError("")
   }
 
   function handleClosePaymentDialog() {
@@ -2099,7 +2129,7 @@ export function FinancialControlView() {
   }
 
   return (
-    <main className="flex h-full min-h-screen flex-col gap-8 overflow-y-auto bg-slate-50 p-8 dark:bg-background">
+    <main className="pwa-safe-bottom flex h-full min-h-0 flex-col gap-6 overflow-y-auto bg-slate-50 p-4 dark:bg-background sm:p-6 md:gap-8 md:p-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-balance text-3xl font-bold tracking-tight text-foreground">
           Control financiero
@@ -2113,7 +2143,7 @@ export function FinancialControlView() {
         <div className="xl:col-span-2">
           <Card className="overflow-hidden border border-border/40 shadow-sm ring-0">
             <CardHeader className="p-6 pb-4">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <Wallet className="size-5 text-muted-foreground" />
@@ -2128,6 +2158,7 @@ export function FinancialControlView() {
                 <Button
                   size="sm"
                   onClick={() => {
+                    setTransactionDialogError("")
                     setTransactionToEdit(null)
                     setDialogOpen(true)
                   }}
@@ -2147,15 +2178,15 @@ export function FinancialControlView() {
                 >
                   <TabsTrigger
                     value="history"
-                    className="h-auto flex-none rounded-none border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                    className="h-auto flex-none rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=active]:border-x-0 data-[state=active]:border-t-0 data-[state=active]:border-b-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
                   >
                     Historial
                   </TabsTrigger>
                   <TabsTrigger
                     value="cards"
-                    className="h-auto flex-none rounded-none border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                    className="h-auto flex-none rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-4 py-2 text-sm font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=active]:border-x-0 data-[state=active]:border-t-0 data-[state=active]:border-b-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
                   >
-                    Tarjetas
+                    Billetera
                   </TabsTrigger>
                 </TabsList>
 
@@ -2297,7 +2328,7 @@ export function FinancialControlView() {
                   value="cards"
                   className="mt-0 pt-4 data-[state=inactive]:hidden"
                 >
-                  <div className="grid grid-cols-1 gap-6 pt-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 pt-4 sm:gap-6 md:grid-cols-2">
                     {isCardsLoading || isAccountsLoading ? (
                       Array.from({ length: 3 }).map((_, index) => (
                         <Skeleton
@@ -2307,6 +2338,70 @@ export function FinancialControlView() {
                       ))
                     ) : (
                       <>
+                        {cashAccount ? (
+                          <div
+                            className="group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border border-emerald-500 bg-gradient-to-br from-emerald-600 to-slate-900 p-6 text-white shadow-lg"
+                          >
+                            <div
+                              className="pointer-events-none absolute inset-0 z-10 bg-black/0 transition-colors duration-150 group-hover:bg-black/35"
+                              aria-hidden="true"
+                            />
+                            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="icon"
+                                className="pointer-events-auto size-10 bg-white/90 text-slate-900 shadow-lg hover:bg-white"
+                                aria-label={`Ver detalle de efectivo ${cashAccount.name}`}
+                                title="Ver detalle"
+                                onClick={() => setAccountDetail(cashAccount)}
+                              >
+                                <Eye className="size-4" />
+                              </Button>
+                            </div>
+
+                            <div className="flex items-start justify-between">
+                              <div className="flex flex-col gap-0.5">
+                                <Wallet className="size-8 opacity-90" />
+                                <span className="mt-2 text-xs font-medium opacity-70">
+                                  Dinero disponible
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold uppercase tracking-widest opacity-60">
+                                EFECTIVO
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                Cuenta
+                              </span>
+                              <span className="text-lg font-semibold">
+                                {cashAccount.name}
+                              </span>
+                            </div>
+
+                            <div className="flex items-end justify-between">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                  Tipo
+                                </span>
+                                <span className="text-sm font-semibold">
+                                  Cartera fisica
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="text-[10px] uppercase tracking-wider opacity-50">
+                                  Saldo actual
+                                </span>
+                                <span className="text-sm font-bold">
+                                  {fmt(centsToAmount(cashAccount.currentBalanceCents))}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
                         {creditCards.map((card) => {
                           const visual = cardVisualForColor(card.color)
                           const detailAccount = financialAccountFromCreditCard(
@@ -2578,7 +2673,7 @@ export function FinancialControlView() {
                       return (
                         <div
                           key={payment.id}
-                          className="flex items-center justify-between gap-3"
+                          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
@@ -2611,7 +2706,7 @@ export function FinancialControlView() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
+                          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                             <span
                               className={cn(
                                 "text-sm font-semibold tabular-nums",
@@ -2763,6 +2858,7 @@ export function FinancialControlView() {
         isSaving={createTransactionMutation.isPending || updateTransactionMutation.isPending}
         transaction={transactionToEdit}
         paymentAccounts={financialAccounts}
+        submitError={transactionDialogError}
       />
       <NewPaymentDialog
         open={paymentDialogOpen}

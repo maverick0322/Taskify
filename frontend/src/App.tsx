@@ -3,6 +3,8 @@ import { useEffect } from "react";
 
 import { TaskifyDashboard } from "@/components/TaskifyDashboard";
 import { AuthScreen } from "@/components/auth/AuthScreen";
+import { ThemeProvider } from "@/components/theme-provider";
+import { WindowTitlebar } from "@/components/taskify/window-titlebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -21,9 +23,16 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        {accessToken ? <TaskifyDashboard /> : <AuthScreen />}
-      </TooltipProvider>
+      <ThemeProvider defaultTheme="system" storageKey="taskify-theme">
+        <TooltipProvider>
+          <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background">
+            <WindowTitlebar />
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {accessToken ? <TaskifyDashboard /> : <AuthScreen />}
+            </div>
+          </div>
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
