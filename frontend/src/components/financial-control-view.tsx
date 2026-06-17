@@ -64,6 +64,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getFriendlyErrorMessage } from "@/services/api"
+import { useUIStore } from "@/store/useUIStore"
 import {
   createCreditCard,
   createFinancialAccount,
@@ -1659,7 +1660,8 @@ function PayCreditCardDialog({
 }
 
 export function FinancialControlView() {
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const dialogOpen = useUIStore((state) => state.isNewMovementModalOpen)
+  const setDialogOpen = useUIStore((state) => state.setNewMovementModalOpen)
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [addCardDialogOpen, setAddCardDialogOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] =

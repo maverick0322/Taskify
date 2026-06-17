@@ -17,6 +17,7 @@ import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { ProfileAvatar } from "@/components/profile-avatar"
 import type { CurrentView } from "@/components/taskify/navigation"
+import { useUIStore } from "@/store/useUIStore"
 import { updateBoardName, type Board } from "@/services/boardService"
 import {
   getNotifications,
@@ -65,10 +66,13 @@ export function Header({
   const queryClient = useQueryClient()
   const { resolvedTheme, setTheme } = useTheme()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [newTaskOpen, setNewTaskOpen] = useState(false)
   const [isEditingBoardName, setIsEditingBoardName] = useState(false)
   const [boardNameDraft, setBoardNameDraft] = useState(selectedBoardName ?? "")
   const [boardNameError, setBoardNameError] = useState("")
+  const newTaskOpen = useUIStore((state) => state.isNewTaskModalOpen)
+  const setNewTaskOpen = useUIStore((state) => state.setNewTaskModalOpen)
+  const notificationsOpen = useUIStore((state) => state.isNotificationsOpen)
+  const setNotificationsOpen = useUIStore((state) => state.setNotificationsOpen)
   const notifiedThisSession = useRef<Set<string>>(new Set())
   const boardNameInputRef = useRef<HTMLInputElement>(null)
   const skipNextBoardNameBlur = useRef(false)
@@ -321,7 +325,7 @@ export function Header({
           </Button>
 
           {/* Notifications */}
-          <Popover>
+          <Popover open={notificationsOpen} onOpenChange={setNotificationsOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="ghost"

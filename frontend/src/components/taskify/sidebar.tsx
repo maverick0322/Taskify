@@ -1,7 +1,10 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { save } from "@tauri-apps/plugin-dialog"
+import { copyFile } from "@tauri-apps/plugin-fs"
+import { configDir, join } from "@tauri-apps/api/path"
 import { cn } from "@/lib/utils"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
@@ -11,9 +14,24 @@ import { deleteBoard } from "@/services/boardService"
 import { useAuthStore } from "@/store/useAuthStore"
 import { ProfileAvatar } from "@/components/profile-avatar"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { NewBoardDialog } from "@/components/taskify/new-board-dialog"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/components/ui/toast-provider"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { getFriendlyErrorMessage } from "@/services/api"
+import { checkpointSQLite, forceSync } from "@/services/systemService"
+import { updateCurrentUserProfile } from "@/services/userService"
+import { useUIStore } from "@/store/useUIStore"
 import {
   LayoutDashboard,
   Plus,
@@ -26,6 +44,7 @@ import {
   ChevronRight,
   LogOut,
   Trash2,
+  Loader2,
 } from "lucide-react"
 
 const boardColors = ["bg-indigo-500", "bg-violet-500", "bg-amber-500", "bg-emerald-500"]
@@ -60,9 +79,14 @@ export function Sidebar({
 }: SidebarProps) {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
+  const updateUserProfile = useAuthStore((state) => state.updateUserProfile)
   const logout = useAuthStore((state) => state.logout)
+  const toast = useToast()
   const [newBoardOpen, setNewBoardOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [displayNameDraft, setDisplayNameDraft] = useState(user?.fullName ?? "")
   const [boardToDelete, setBoardToDelete] = useState<Board | null>(null)
+  const openHelpModal = useUIStore((state) => state.setHelpModalOpen)
   const deleteBoardMutation = useMutation({
     mutationFn: deleteBoard,
     onSuccess: (_data, boardId) => {
@@ -71,6 +95,41 @@ export function Sidebar({
       setBoardToDelete(null)
     },
   })
+  const updateProfileMutation = useMutation({
+    mutationFn: updateCurrentUserProfile,
+    onSuccess: async (profile) => {
+      updateUserProfile({
+        email: profile.email,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        fullName: [profile.firstName, profile.lastName].filter(Boolean).join(" "),
+        avatarLocalPath: profile.avatarLocalPath,
+        avatarUrl: profile.avatarUrl,
+      })
+      queryClient.setQueryData(["users", "me"], profile)
+      await queryClient.invalidateQueries({ queryKey: ["users", "me"] })
+      toast.success("Nombre actualizado")
+    },
+    onError: (error) => {
+      toast.error(getFriendlyErrorMessage(error))
+    },
+  })
+  const forceSyncMutation = useMutation({
+    mutationFn: forceSync,
+    onSuccess: async () => {
+      toast.success("Sincronización completada")
+      await queryClient.invalidateQueries()
+    },
+    onError: (error) => {
+      toast.error(getFriendlyErrorMessage(error))
+    },
+  })
+
+  useEffect(() => {
+    if (settingsOpen) {
+      setDisplayNameDraft(user?.fullName ?? "")
+    }
+  }, [settingsOpen, user?.fullName])
 
   function handleDeleteBoard(board: Board) {
     setBoardToDelete(board)
@@ -84,9 +143,104 @@ export function Sidebar({
     deleteBoardMutation.mutate(boardToDelete.id)
   }
 
+  function handleSaveProfile() {
+    updateProfileMutation.mutate(displayNameDraft)
+  }
+
+  async function handleExportBackup() {
+    try {
+      await checkpointSQLite()
+      const destination = await save({
+        defaultPath: "taskify_backup.db",
+        filters: [{ name: "SQLite DB", extensions: ["db"] }],
+      })
+
+      if (!destination) {
+        return
+      }
+
+      const source = await join(await configDir(), "Taskify", "taskify.db")
+      await copyFile(source, destination)
+      toast.success("Respaldo guardado correctamente")
+    } catch (error) {
+      console.error("backup export failed", error)
+      toast.error(getFriendlyErrorMessage(error, "No pudimos guardar el respaldo."))
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={0}>
       <NewBoardDialog open={newBoardOpen} onOpenChange={setNewBoardOpen} />
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Configuración</DialogTitle>
+            <DialogDescription>
+              Ajusta tu cuenta y prepara acciones de respaldo para tus datos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs defaultValue="account" className="mt-2">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="account">Cuenta</TabsTrigger>
+              <TabsTrigger value="data">Datos</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="account" className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="settings-display-name">Nombre</Label>
+                <Input
+                  id="settings-display-name"
+                  value={displayNameDraft}
+                  onChange={(event) => setDisplayNameDraft(event.target.value)}
+                  placeholder="Tu nombre"
+                />
+              </div>
+              <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                Este nombre se mostrará en tu perfil y se sincronizará con la nube.
+              </p>
+              <Button
+                type="button"
+                className="w-full sm:w-auto"
+                disabled={updateProfileMutation.isPending || displayNameDraft.trim() === ""}
+                onClick={handleSaveProfile}
+              >
+                {updateProfileMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                Guardar cambios
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="data" className="mt-4 space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                disabled={forceSyncMutation.isPending}
+                onClick={() => forceSyncMutation.mutate()}
+              >
+                {forceSyncMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                Sincronizar a la nube
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={handleExportBackup}
+              >
+                Exportar copia de seguridad
+              </Button>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Puedes forzar la sincronización o guardar una copia local de la base de datos.
+              </p>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={Boolean(boardToDelete)}
         onOpenChange={(open) => {
@@ -244,6 +398,7 @@ export function Sidebar({
                   size="icon"
                   variant="ghost"
                   className="size-8 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  onClick={() => setSettingsOpen(true)}
                 >
                   <Settings className="size-4" />
                   <span className="sr-only">Configuración</span>
@@ -257,6 +412,7 @@ export function Sidebar({
                   size="icon"
                   variant="ghost"
                   className="size-8 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  onClick={() => openHelpModal(true)}
                 >
                   <HelpCircle className="size-4" />
                   <span className="sr-only">Ayuda</span>

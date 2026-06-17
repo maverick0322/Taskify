@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
@@ -26,6 +27,7 @@ type SyncService struct {
 	remoteDialect SyncDialect
 	logger        ports.Logger
 	now           func() time.Time
+	mutex         sync.Mutex
 }
 
 func NewSyncService(local, remote *sql.DB, remoteDialect SyncDialect, logger ports.Logger) *SyncService {
@@ -42,6 +44,8 @@ func (service *SyncService) SyncOnce(ctx context.Context) error {
 	if service == nil || service.local == nil || service.remote == nil {
 		return errors.New("sync: databases are required")
 	}
+	service.mutex.Lock()
+	defer service.mutex.Unlock()
 
 	lastSyncAt, err := service.lastSuccessfulSyncAt(ctx)
 	if err != nil {

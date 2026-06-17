@@ -5,6 +5,7 @@ import { TaskifyDashboard } from "@/components/TaskifyDashboard";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WindowTitlebar } from "@/components/taskify/window-titlebar";
+import { ToastProvider } from "@/components/ui/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -24,14 +25,16 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system" storageKey="taskify-theme">
-        <TooltipProvider>
-          <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background">
-            <WindowTitlebar />
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {accessToken ? <TaskifyDashboard /> : <AuthScreen />}
+        <ToastProvider>
+          <TooltipProvider>
+            <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background">
+              <WindowTitlebar />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {accessToken ? <TaskifyDashboard /> : <AuthScreen />}
+              </div>
             </div>
-          </div>
-        </TooltipProvider>
+          </TooltipProvider>
+        </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

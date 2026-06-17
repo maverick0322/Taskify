@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/taskify/header";
+import { HelpDialog } from "@/components/taskify/help-dialog";
 import { KanbanBoard } from "@/components/taskify/kanban-board";
 import { MobileTaskList } from "@/components/taskify/mobile-task-list";
 import type { CurrentView } from "@/components/taskify/navigation";
@@ -25,6 +26,7 @@ import { Sidebar } from "@/components/taskify/sidebar";
 import { FinancialControlView } from "@/components/financial-control-view";
 import { notifyCriticalAlerts } from "@/lib/notifications";
 import { parseTaskDueDate } from "@/lib/task-dates";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { getBoards } from "@/services/boardService";
 import {
@@ -458,8 +460,19 @@ export function TaskifyDashboard() {
     setCurrentView(view);
   }
 
+  const handleShortcutViewChange = useCallback((view: CurrentView) => {
+    if (view === "tasks" || view === "agenda" || view === "financial") {
+      setSelectedBoardId(null);
+    }
+
+    setCurrentView(view);
+  }, []);
+
+  useKeyboardShortcuts({ setCurrentView: handleShortcutViewChange });
+
   return (
     <div className="pwa-safe-shell flex min-h-0 flex-1 overflow-hidden bg-canvas">
+      <HelpDialog />
       <div className="hidden md:flex md:shrink-0">
         <Sidebar
           className="h-full"
