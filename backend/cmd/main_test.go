@@ -88,34 +88,36 @@ func TestStartHTTPServer_InvalidAddress_SendsServerError(t *testing.T) {
 func TestWithCORS_OptionsRequest_ReturnsOKAndHeaders(t *testing.T) {
 	// Arrange
 	nextWasCalled := false
-	handler := withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := withCORS(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextWasCalled = true
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	request := httptest.NewRequest(http.MethodOptions, "/boards", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
 	response := httptest.NewRecorder()
 
 	// Act
 	handler.ServeHTTP(response, request)
 
 	// Assert
-	if response.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, response.Code)
 	}
 	if nextWasCalled {
 		t.Fatal("expected preflight request to stop before the next handler")
 	}
-	assertCORSHeaders(t, response)
+	assertCORSHeaders(t, response, "http://localhost:5173")
 }
 
 func TestWithCORS_RegularRequest_AddsHeadersAndCallsNext(t *testing.T) {
 	// Arrange
 	nextWasCalled := false
-	handler := withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := withCORS(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextWasCalled = true
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/boards", nil)
+	request.Header.Set("Origin", "https://taskify-preview.vercel.app")
 	response := httptest.NewRecorder()
 
 	// Act
@@ -128,14 +130,35 @@ func TestWithCORS_RegularRequest_AddsHeadersAndCallsNext(t *testing.T) {
 	if !nextWasCalled {
 		t.Fatal("expected regular request to reach the next handler")
 	}
-	assertCORSHeaders(t, response)
+	assertCORSHeaders(t, response, "https://taskify-preview.vercel.app")
 }
 
-func assertCORSHeaders(t *testing.T, response *httptest.ResponseRecorder) {
+func TestWithCORS_DisallowedPreflight_ReturnsForbidden(t *testing.T) {
+	// Arrange
+	handler := withCORS(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	request := httptest.NewRequest(http.MethodOptions, "/boards", nil)
+	request.Header.Set("Origin", "https://example.com")
+	response := httptest.NewRecorder()
+
+	// Act
+	handler.ServeHTTP(response, request)
+
+	// Assert
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, response.Code)
+	}
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no allow origin header, got %q", got)
+	}
+}
+
+func assertCORSHeaders(t *testing.T, response *httptest.ResponseRecorder, expectedOrigin string) {
 	t.Helper()
 
 	expectedHeaders := map[string]string{
-		"Access-Control-Allow-Origin":  corsAllowedOrigin,
+		"Access-Control-Allow-Origin":  expectedOrigin,
 		"Access-Control-Allow-Methods": corsAllowedMethods,
 		"Access-Control-Allow-Headers": corsAllowedHeaders,
 	}

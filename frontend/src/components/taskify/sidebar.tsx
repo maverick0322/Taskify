@@ -2,10 +2,8 @@
 
 import React, { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { save } from "@tauri-apps/plugin-dialog"
-import { copyFile } from "@tauri-apps/plugin-fs"
-import { configDir, join } from "@tauri-apps/api/path"
 import { cn } from "@/lib/utils"
+import { isTauriRuntime } from "@/lib/runtime"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
 import type { CurrentView } from "@/components/taskify/navigation"
@@ -82,6 +80,7 @@ export function Sidebar({
   const updateUserProfile = useAuthStore((state) => state.updateUserProfile)
   const logout = useAuthStore((state) => state.logout)
   const toast = useToast()
+  const isDesktopRuntime = isTauriRuntime()
   const [newBoardOpen, setNewBoardOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [displayNameDraft, setDisplayNameDraft] = useState(user?.fullName ?? "")
@@ -149,6 +148,16 @@ export function Sidebar({
 
   async function handleExportBackup() {
     try {
+      if (!isDesktopRuntime) {
+        toast.error("La copia de seguridad local solo está disponible en la app de escritorio.")
+        return
+      }
+
+      const [{ save }, { copyFile }, { configDir, join }] = await Promise.all([
+        import("@tauri-apps/plugin-dialog"),
+        import("@tauri-apps/plugin-fs"),
+        import("@tauri-apps/api/path"),
+      ])
       await checkpointSQLite()
       const destination = await save({
         defaultPath: "taskify_backup.db",
@@ -229,6 +238,7 @@ export function Sidebar({
                 type="button"
                 variant="outline"
                 className="w-full justify-start border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!isDesktopRuntime}
                 onClick={handleExportBackup}
               >
                 Exportar copia de seguridad

@@ -1,13 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core"
-import { appDataDir, join } from "@tauri-apps/api/path"
-import { open } from "@tauri-apps/plugin-dialog"
-import { BaseDirectory, copyFile, exists, mkdir } from "@tauri-apps/plugin-fs"
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__?: unknown
-  }
-}
+import { isTauriRuntime } from "@/lib/runtime"
 
 export function localAvatarSrc(path?: string | null) {
   if (path === "") {
@@ -18,7 +10,7 @@ export function localAvatarSrc(path?: string | null) {
     return undefined
   }
 
-  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) {
+  if (!isTauriRuntime()) {
     return undefined
   }
 
@@ -36,6 +28,17 @@ export function localAvatarSrc(path?: string | null) {
 }
 
 export async function selectAndStoreAvatar(userId: string) {
+  if (!isTauriRuntime()) {
+    throw new Error("La selección de avatar local solo está disponible en la app de escritorio.")
+  }
+
+  const [{ open }, { appDataDir, join }, { BaseDirectory, copyFile, exists, mkdir }] =
+    await Promise.all([
+      import("@tauri-apps/plugin-dialog"),
+      import("@tauri-apps/api/path"),
+      import("@tauri-apps/plugin-fs"),
+    ])
+
   const selectedPath = await open({
     multiple: false,
     directory: false,
@@ -64,6 +67,7 @@ export async function selectAndStoreAvatar(userId: string) {
 
   return avatarDestination
 }
+
 
 export function isAbsolutePath(path: string) {
   return /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\")

@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/store/useAuthStore";
+import { isTauriRuntime } from "@/lib/runtime";
 
-export const API_BASE_URL = "http://localhost:8080";
+export const API_BASE_URL = resolveApiBaseUrl();
 
 type ApiErrorResponse = {
   error?: string;
@@ -313,3 +314,20 @@ const translatedBackendMessages: Record<string, string> = {
   "credit card not found": "No encontramos esa tarjeta.",
   "internal server error": "Ocurrio un error inesperado en el servidor.",
 };
+
+function resolveApiBaseUrl() {
+  if (typeof window !== "undefined" && isTauriRuntime()) {
+    return "http://localhost:8080";
+  }
+
+  const viteApiUrl = import.meta.env.VITE_API_URL?.trim();
+  if (viteApiUrl) {
+    return viteApiUrl.replace(/\/$/, "");
+  }
+
+  if (import.meta.env.DEV) {
+    return "http://localhost:8080";
+  }
+
+  throw new Error("Missing VITE_API_URL for the web/PWA runtime.");
+}

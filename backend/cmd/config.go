@@ -14,9 +14,11 @@ const (
 	refreshTokenTTLEnvKey    = "REFRESH_TOKEN_TTL"
 	portEnvKey               = "PORT"
 	bcryptCostEnvKey         = "BCRYPT_COST"
+	environmentEnvKey        = "ENV"
 	remoteDBURLEnvKey        = "REMOTE_DB_URL"
 	supabaseURLEnvKey        = "SUPABASE_URL"
 	supabaseServiceKeyEnvKey = "SUPABASE_SERVICE_ROLE_KEY"
+	corsAllowedOriginsEnvKey = "CORS_ALLOWED_ORIGINS"
 )
 
 var (
@@ -32,9 +34,11 @@ type appConfig struct {
 	refreshTokenTTL    time.Duration
 	port               string
 	bcryptCost         int
+	environment        string
 	remoteDatabaseURL  string
 	supabaseURL        string
 	supabaseServiceKey string
+	corsAllowedOrigins []string
 }
 
 type getenvFunc func(string) string
@@ -86,10 +90,16 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 		refreshTokenTTL:    refreshTokenTTL,
 		port:               port,
 		bcryptCost:         bcryptCost,
+		environment:        strings.ToLower(strings.TrimSpace(getenv(environmentEnvKey))),
 		remoteDatabaseURL:  strings.TrimSpace(getenv(remoteDBURLEnvKey)),
 		supabaseURL:        strings.TrimRight(strings.TrimSpace(getenv(supabaseURLEnvKey)), "/"),
 		supabaseServiceKey: strings.TrimSpace(getenv(supabaseServiceKeyEnvKey)),
+		corsAllowedOrigins: parseCSV(getenv(corsAllowedOriginsEnvKey)),
 	}, nil
+}
+
+func (config appConfig) isProduction() bool {
+	return config.environment == "production"
 }
 
 func requiredEnvironmentValue(getenv getenvFunc, key string) (string, error) {
@@ -117,4 +127,16 @@ func parsePositiveDuration(rawValue string, sentinelError error) (time.Duration,
 	}
 
 	return parsedDuration, nil
+}
+
+func parseCSV(rawValue string) []string {
+	parts := strings.Split(rawValue, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }

@@ -1,35 +1,26 @@
 "use client"
 
-import { getCurrentWindow } from "@tauri-apps/api/window"
 import { Maximize2, Minus, X } from "lucide-react"
 import type { MouseEvent } from "react"
 
 import { Button } from "@/components/ui/button"
-
-declare global {
-  interface Window {
-    __TAURI_INTERNALS__?: unknown
-  }
-}
-
-function isTauriRuntime() {
-  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__)
-}
+import { isTauriRuntime } from "@/lib/runtime"
 
 export function WindowTitlebar() {
   if (!isTauriRuntime()) {
     return null
   }
 
-  const appWindow = getCurrentWindow()
-
   function handleWindowAction(
     event: MouseEvent<HTMLButtonElement>,
-    action: () => Promise<void>,
+    action: "minimize" | "toggleMaximize" | "close",
   ) {
     event.preventDefault()
     event.stopPropagation()
-    void action()
+    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+      const appWindow = getCurrentWindow()
+      return appWindow[action]()
+    })
   }
 
   return (
@@ -57,7 +48,7 @@ export function WindowTitlebar() {
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Minimizar ventana"
-          onClick={(event) => handleWindowAction(event, () => appWindow.minimize())}
+          onClick={(event) => handleWindowAction(event, "minimize")}
         >
           <Minus className="size-4" />
         </Button>
@@ -66,9 +57,7 @@ export function WindowTitlebar() {
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Maximizar o restaurar ventana"
-          onClick={(event) =>
-            handleWindowAction(event, () => appWindow.toggleMaximize())
-          }
+          onClick={(event) => handleWindowAction(event, "toggleMaximize")}
         >
           <Maximize2 className="size-3.5" />
         </Button>
@@ -77,7 +66,7 @@ export function WindowTitlebar() {
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-red-500 hover:text-white"
           aria-label="Cerrar ventana"
-          onClick={(event) => handleWindowAction(event, () => appWindow.close())}
+          onClick={(event) => handleWindowAction(event, "close")}
         >
           <X className="size-4" />
         </Button>
