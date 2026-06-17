@@ -109,6 +109,10 @@ func run() error {
 	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
 	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
 	notificationUseCase := services.NewNotificationService(notificationRepository, applicationLogger)
+	var syncService *services.SyncService
+	if remoteDatabase != nil {
+		syncService = services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
+	}
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
 	boardHandler := handlers.NewBoardHandler(boardUseCase, applicationLogger)
@@ -116,6 +120,7 @@ func run() error {
 	creditCardHandler := handlers.NewCreditCardHandler(creditCardUseCase, applicationLogger)
 	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
 	notificationHandler := handlers.NewNotificationHandler(notificationUseCase, applicationLogger)
+	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
@@ -131,6 +136,7 @@ func run() error {
 		creditCardHandler.RegisterRoutes(protectedRouter)
 		financialAccountHandler.RegisterRoutes(protectedRouter)
 		notificationHandler.RegisterRoutes(protectedRouter)
+		systemHandler.RegisterRoutes(protectedRouter)
 	})
 
 	server := &http.Server{
@@ -143,7 +149,6 @@ func run() error {
 	defer stopSignals()
 
 	if remoteDatabase != nil {
-		syncService := services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
 		go startSyncWorker(shutdownContext, syncService, applicationLogger)
 	}
 	go startAvatarStorageWorker(shutdownContext, sqliteDatabase, config.supabaseURL, config.supabaseServiceKey, applicationLogger)
