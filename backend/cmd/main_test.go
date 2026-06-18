@@ -2,9 +2,9 @@ package main
 
 import (
 	"errors"
-	"os"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +13,7 @@ import (
 
 func TestRun_MissingConfiguration_ReturnsErrMissingEnvironmentVariable(t *testing.T) {
 	// Arrange
+	changeWorkingDirectory(t, t.TempDir())
 	t.Setenv(jwtSecretEnvKey, "")
 	t.Setenv(accessTokenTTLEnvKey, "")
 	t.Setenv(refreshTokenTTLEnvKey, "")
