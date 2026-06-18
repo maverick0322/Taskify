@@ -8,7 +8,7 @@ import (
 	"github.com/maverick0322/taskify/backend/internal/core/services"
 )
 
-const syncWorkerInterval = 30 * time.Second
+const syncWorkerInterval = time.Minute
 
 func startSyncWorker(ctx context.Context, syncService *services.SyncService, logger ports.Logger) {
 	runSafeSyncCycle(ctx, syncService, logger)

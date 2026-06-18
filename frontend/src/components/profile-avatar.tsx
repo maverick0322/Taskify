@@ -6,6 +6,7 @@ import { Camera, Loader2 } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { localAvatarSrc, selectAndStoreAvatar } from "@/lib/avatar-storage"
+import { isTauriRuntime } from "@/lib/runtime"
 import { cn } from "@/lib/utils"
 import { ApiError, getFriendlyErrorMessage } from "@/services/api"
 import {
@@ -22,6 +23,8 @@ interface ProfileAvatarProps {
 
 export function ProfileAvatar({ className, editable = true }: ProfileAvatarProps) {
   const queryClient = useQueryClient()
+  const isDesktopRuntime = isTauriRuntime()
+  const canEditAvatar = editable && isDesktopRuntime
   const user = useAuthStore((state) => state.user)
   const updateUserProfile = useAuthStore((state) => state.updateUserProfile)
   const [errorMessage, setErrorMessage] = useState("")
@@ -40,6 +43,9 @@ export function ProfileAvatar({ className, editable = true }: ProfileAvatarProps
       const userId = profileQuery.data?.id || user?.id
       if (!userId) {
         throw new Error("No hay usuario activo")
+      }
+      if (!isDesktopRuntime) {
+        throw new Error("La carga de avatar solo está disponible en la app de escritorio.")
       }
 
       const avatarLocalPath = await selectAndStoreAvatar(userId)
@@ -71,12 +77,13 @@ export function ProfileAvatar({ className, editable = true }: ProfileAvatarProps
   }, [profileQuery.data, updateUserProfile])
 
   const activeUser = mergeUserAndProfile(user, profileQuery.data)
-  const avatarSource =
-    localAvatarSrc(activeUser?.avatarLocalPath) ?? activeUser?.avatarUrl ?? undefined
+  const avatarSource = isDesktopRuntime
+    ? localAvatarSrc(activeUser?.avatarLocalPath) ?? activeUser?.avatarUrl ?? undefined
+    : undefined
   const isPending = avatarMutation.isPending || profileQuery.isLoading
 
   function handleClick() {
-    if (!editable || avatarMutation.isPending) {
+    if (!canEditAvatar || avatarMutation.isPending) {
       return
     }
     avatarMutation.mutate()
@@ -88,29 +95,31 @@ export function ProfileAvatar({ className, editable = true }: ProfileAvatarProps
         type="button"
         className={cn(
           "group relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          !editable && "pointer-events-none",
+          !canEditAvatar && "pointer-events-none",
         )}
-        aria-label="Cambiar foto de perfil"
-        disabled={!editable || avatarMutation.isPending}
+        aria-label={canEditAvatar ? "Cambiar foto de perfil" : "Foto de perfil"}
+        disabled={!canEditAvatar || avatarMutation.isPending}
         onClick={handleClick}
       >
         <Avatar className={className}>
-          <AvatarImage
-            src={avatarSource}
-            alt={activeUser?.fullName ?? "Taskify User"}
-            onError={(event) => {
-              console.error("avatar image failed to load", {
-                src: event.currentTarget.currentSrc || event.currentTarget.src,
-                avatarLocalPath: activeUser?.avatarLocalPath,
-                avatarUrl: activeUser?.avatarUrl,
-              })
-            }}
-          />
+          {avatarSource ? (
+            <AvatarImage
+              src={avatarSource}
+              alt={activeUser?.fullName ?? "Taskify User"}
+              onError={(event) => {
+                console.error("avatar image failed to load", {
+                  src: event.currentTarget.currentSrc || event.currentTarget.src,
+                  avatarLocalPath: activeUser?.avatarLocalPath,
+                  avatarUrl: activeUser?.avatarUrl,
+                })
+              }}
+            />
+          ) : null}
           <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
             {activeUser?.initials ?? "TU"}
           </AvatarFallback>
         </Avatar>
-        {editable ? (
+        {canEditAvatar ? (
           <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
             {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />}
           </span>

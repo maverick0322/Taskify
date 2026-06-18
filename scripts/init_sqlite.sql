@@ -228,6 +228,8 @@ CREATE TABLE IF NOT EXISTS account_payable_payments (
     category TEXT NOT NULL,
     created_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
     CONSTRAINT chk_account_payable_payments_amount_positive CHECK (amount_cents > 0),
     CONSTRAINT uq_account_payable_payments_cycle UNIQUE (account_payable_id, due_date)
 );
@@ -265,6 +267,29 @@ CREATE TABLE IF NOT EXISTS storage_sync_jobs (
     CONSTRAINT uq_storage_sync_jobs_entity UNIQUE (entity_type, entity_id)
 );
 CREATE INDEX IF NOT EXISTS idx_storage_sync_jobs_status ON storage_sync_jobs(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS sync_runtime_flags (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+INSERT INTO sync_runtime_flags (key, value)
+VALUES ('suppress_outbox', '0')
+ON CONFLICT(key) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS sync_outbox (
+    id TEXT PRIMARY KEY,
+    table_name TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    next_attempt_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_sync_outbox_entity UNIQUE (table_name, entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_next_attempt ON sync_outbox(status, next_attempt_at, updated_at);
 
 CREATE TABLE IF NOT EXISTS sync_state (
     key TEXT PRIMARY KEY,

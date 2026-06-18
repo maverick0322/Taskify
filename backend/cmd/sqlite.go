@@ -74,6 +74,9 @@ func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
 	if err := ensureSQLiteSyncMetadata(ctx, database); err != nil {
 		return err
 	}
+	if err := ensureSQLiteOutbox(ctx, database); err != nil {
+		return err
+	}
 	if err := ensureSQLiteAvatarStorage(ctx, database); err != nil {
 		return err
 	}
@@ -186,7 +189,7 @@ func ensureSQLiteTransactionsCompletedStatus(ctx context.Context, database *sql.
 }
 
 func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
-	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions", "financial_accounts", "ledger_entries", "credit_card_statements"} {
+	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions", "financial_accounts", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
 		if err := ensureSQLiteColumn(ctx, database, table, "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
 			return err
 		}
@@ -234,6 +237,80 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 		return err
 	}
 
+	return nil
+}
+
+func ensureSQLiteOutbox(ctx context.Context, database *sql.DB) error {
+	_, err := database.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS sync_runtime_flags (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
+		INSERT INTO sync_runtime_flags (key, value)
+		VALUES ('suppress_outbox', '0')
+		ON CONFLICT(key) DO NOTHING;
+
+		CREATE TABLE IF NOT EXISTS sync_outbox (
+			id TEXT PRIMARY KEY,
+			table_name TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			operation TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT NULL,
+			next_attempt_at DATETIME NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uq_sync_outbox_entity UNIQUE (table_name, entity_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_sync_outbox_status_next_attempt ON sync_outbox(status, next_attempt_at, updated_at);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to initialize sqlite sync outbox: %w", err)
+	}
+
+	for _, table := range []string{"users", "boards", "columns", "tasks", "financial_accounts", "transactions", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
+		if err := ensureSQLiteOutboxTriggers(ctx, database, table); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func ensureSQLiteOutboxTriggers(ctx context.Context, database *sql.DB, table string) error {
+	_, err := database.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TRIGGER IF NOT EXISTS trg_%[1]s_sync_outbox_insert
+		AFTER INSERT ON %[1]s
+		WHEN (SELECT value FROM sync_runtime_flags WHERE key = 'suppress_outbox') != '1'
+		BEGIN
+			INSERT INTO sync_outbox (id, table_name, entity_id, operation, status, attempts, last_error, next_attempt_at, created_at, updated_at)
+			VALUES ('%[1]s:' || NEW.id, '%[1]s', NEW.id, 'upsert', 'pending', 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			ON CONFLICT(table_name, entity_id) DO UPDATE SET
+				operation = 'upsert',
+				status = 'pending',
+				last_error = NULL,
+				next_attempt_at = NULL,
+				updated_at = CURRENT_TIMESTAMP;
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS trg_%[1]s_sync_outbox_update
+		AFTER UPDATE ON %[1]s
+		WHEN (SELECT value FROM sync_runtime_flags WHERE key = 'suppress_outbox') != '1'
+		BEGIN
+			INSERT INTO sync_outbox (id, table_name, entity_id, operation, status, attempts, last_error, next_attempt_at, created_at, updated_at)
+			VALUES ('%[1]s:' || NEW.id, '%[1]s', NEW.id, 'upsert', 'pending', 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			ON CONFLICT(table_name, entity_id) DO UPDATE SET
+				operation = 'upsert',
+				status = 'pending',
+				last_error = NULL,
+				next_attempt_at = NULL,
+				updated_at = CURRENT_TIMESTAMP;
+		END;
+	`, table))
+	if err != nil {
+		return fmt.Errorf("failed to initialize sqlite sync outbox triggers for %s: %w", table, err)
+	}
 	return nil
 }
 

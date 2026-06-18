@@ -229,9 +229,13 @@ CREATE TABLE IF NOT EXISTS account_payable_payments (
     category TEXT NOT NULL,
     created_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ NULL,
     CONSTRAINT chk_account_payable_payments_amount_positive CHECK (amount_cents > 0),
     CONSTRAINT uq_account_payable_payments_cycle UNIQUE (account_payable_id, due_date)
 );
+ALTER TABLE account_payable_payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE account_payable_payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
 CREATE INDEX IF NOT EXISTS idx_account_payable_payments_user_id ON account_payable_payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_account_payable_payments_account_payable_id ON account_payable_payments(account_payable_id);
 

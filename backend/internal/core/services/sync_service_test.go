@@ -21,6 +21,7 @@ func TestSyncService_SyncOncePushesAndPullsRows(t *testing.T) {
 	remoteUpdatedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
 	cycleAt := time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC)
 	insertSyncUser(t, local, "local-user", "local@example.com", localUpdatedAt, nil)
+	enqueueSyncOutbox(t, local, "users", "local-user")
 	insertSyncUser(t, remote, "remote-user", "remote@example.com", remoteUpdatedAt, nil)
 
 	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
@@ -32,7 +33,8 @@ func TestSyncService_SyncOncePushesAndPullsRows(t *testing.T) {
 
 	assertSyncUserExists(t, local, "remote-user", "remote@example.com")
 	assertSyncUserExists(t, remote, "local-user", "local@example.com")
-	assertSyncState(t, local, cycleAt)
+	assertSyncState(t, local, remotePullSyncStateKey, cycleAt)
+	assertOutboxEmpty(t, local)
 }
 
 func TestSyncService_SyncOnceLastWriteWinsByUpdatedAt(t *testing.T) {
@@ -42,6 +44,7 @@ func TestSyncService_SyncOnceLastWriteWinsByUpdatedAt(t *testing.T) {
 	localUpdatedAt := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	remoteUpdatedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
 	insertSyncUser(t, local, "user-1", "older@example.com", localUpdatedAt, nil)
+	enqueueSyncOutbox(t, local, "users", "user-1")
 	insertSyncUser(t, remote, "user-1", "newer@example.com", remoteUpdatedAt, nil)
 
 	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
@@ -61,6 +64,7 @@ func TestSyncService_SyncOnceReplicatesSoftDelete(t *testing.T) {
 
 	deletedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
 	insertSyncUser(t, local, "user-1", "deleted@example.com", deletedAt, &deletedAt)
+	enqueueSyncOutbox(t, local, "users", "user-1")
 
 	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
 	service.now = func() time.Time { return time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC) }
@@ -81,6 +85,8 @@ func TestSyncService_SyncOnceReplicatesSoftDelete(t *testing.T) {
 func TestSyncService_SyncOnceRemoteFailureDoesNotAdvanceState(t *testing.T) {
 	local := openSyncTestDatabase(t)
 	remote := openSyncTestDatabase(t)
+	insertSyncUser(t, local, "local-user", "local@example.com", time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC), nil)
+	enqueueSyncOutbox(t, local, "users", "local-user")
 	remote.Close()
 
 	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
@@ -96,6 +102,48 @@ func TestSyncService_SyncOnceRemoteFailureDoesNotAdvanceState(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected sync_state to remain empty, got %d rows", count)
+	}
+	assertOutboxCount(t, local, 1)
+}
+
+func TestSyncService_SyncOncePullDoesNotEnqueueOutbox(t *testing.T) {
+	local := openSyncTestDatabase(t)
+	remote := openSyncTestDatabase(t)
+
+	remoteUpdatedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
+	insertSyncUser(t, remote, "remote-user", "remote@example.com", remoteUpdatedAt, nil)
+
+	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
+	service.now = func() time.Time { return time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC) }
+
+	if err := service.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("expected sync success, got %v", err)
+	}
+
+	assertSyncUserExists(t, local, "remote-user", "remote@example.com")
+	assertOutboxEmpty(t, local)
+}
+
+func TestSyncService_SyncOnceSyncsAccountPayablePayments(t *testing.T) {
+	local := openSyncTestDatabase(t)
+	remote := openSyncTestDatabase(t)
+
+	updatedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
+	insertAccountPayablePayment(t, remote, "payment-1", updatedAt)
+
+	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
+	service.now = func() time.Time { return time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC) }
+
+	if err := service.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("expected sync success, got %v", err)
+	}
+
+	var amountCents int
+	if err := local.QueryRow("SELECT amount_cents FROM account_payable_payments WHERE id = ?", "payment-1").Scan(&amountCents); err != nil {
+		t.Fatalf("failed to query account payable payment: %v", err)
+	}
+	if amountCents != 12500 {
+		t.Fatalf("expected amount 12500, got %d", amountCents)
 	}
 }
 
@@ -154,15 +202,71 @@ func assertSyncUserExists(t *testing.T, database *sql.DB, id, expectedEmail stri
 	}
 }
 
-func assertSyncState(t *testing.T, database *sql.DB, expected time.Time) {
+func enqueueSyncOutbox(t *testing.T, database *sql.DB, tableName, entityID string) {
+	t.Helper()
+
+	_, err := database.Exec(
+		`INSERT INTO sync_outbox (id, table_name, entity_id, operation, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 'upsert', 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		 ON CONFLICT(table_name, entity_id) DO UPDATE SET status = 'pending', updated_at = CURRENT_TIMESTAMP`,
+		tableName+":"+entityID,
+		tableName,
+		entityID,
+	)
+	if err != nil {
+		t.Fatalf("failed to enqueue sync outbox row: %v", err)
+	}
+}
+
+func insertAccountPayablePayment(t *testing.T, database *sql.DB, id string, updatedAt time.Time) {
+	t.Helper()
+
+	_, err := database.Exec(
+		`INSERT INTO account_payable_payments (id, account_payable_id, user_id, due_date, paid_at, amount_cents, concept, category, created_transaction_id, created_at, updated_at, deleted_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+		id,
+		"payable-1",
+		"user-1",
+		updatedAt,
+		updatedAt,
+		12500,
+		"Pago CFE",
+		"Servicios",
+		"transaction-1",
+		updatedAt,
+		updatedAt,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert account payable payment: %v", err)
+	}
+}
+
+func assertSyncState(t *testing.T, database *sql.DB, key string, expected time.Time) {
 	t.Helper()
 
 	var lastSyncAt time.Time
-	if err := database.QueryRow("SELECT last_successful_sync_at FROM sync_state WHERE key = ?", syncStateKey).Scan(&lastSyncAt); err != nil {
+	if err := database.QueryRow("SELECT last_successful_sync_at FROM sync_state WHERE key = ?", key).Scan(&lastSyncAt); err != nil {
 		t.Fatalf("failed to query sync state: %v", err)
 	}
 	if !lastSyncAt.Equal(expected) {
 		t.Fatalf("expected sync state %v, got %v", expected, lastSyncAt)
+	}
+}
+
+func assertOutboxEmpty(t *testing.T, database *sql.DB) {
+	t.Helper()
+	assertOutboxCount(t, database, 0)
+}
+
+func assertOutboxCount(t *testing.T, database *sql.DB, expected int) {
+	t.Helper()
+
+	var count int
+	if err := database.QueryRow("SELECT COUNT(*) FROM sync_outbox").Scan(&count); err != nil {
+		t.Fatalf("failed to count sync outbox: %v", err)
+	}
+	if count != expected {
+		t.Fatalf("expected sync_outbox count %d, got %d", expected, count)
 	}
 }
 
@@ -188,6 +292,22 @@ CREATE TABLE financial_accounts (id TEXT PRIMARY KEY, user_id TEXT, type TEXT, n
 CREATE TABLE transactions (id TEXT PRIMARY KEY, user_id TEXT, credit_card_id TEXT, payment_account_id TEXT NULL, destination_account_id TEXT NULL, type TEXT, concept TEXT, category TEXT, amount_cents INTEGER, date DATETIME, status TEXT, msi INTEGER NULL, installment_number INTEGER NULL, installment_count INTEGER NULL, recurrence TEXT, recurrence_limit INTEGER NULL, last_paid_at DATETIME NULL, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE ledger_entries (id TEXT PRIMARY KEY, user_id TEXT, account_id TEXT, transaction_id TEXT, amount_cents INTEGER, entry_type TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE credit_card_statements (id TEXT PRIMARY KEY, user_id TEXT, credit_account_id TEXT, cycle_start DATETIME, cycle_end DATETIME, payment_due_date DATETIME, statement_amount_cents INTEGER, paid_amount_cents INTEGER, status TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
+CREATE TABLE account_payable_payments (id TEXT PRIMARY KEY, account_payable_id TEXT, user_id TEXT, due_date DATETIME, paid_at DATETIME, amount_cents INTEGER, concept TEXT, category TEXT, created_transaction_id TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE notifications (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, message TEXT, is_read BOOLEAN, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME NULL);
 CREATE TABLE sync_state (key TEXT PRIMARY KEY, last_successful_sync_at DATETIME NOT NULL, updated_at DATETIME NOT NULL);
+CREATE TABLE sync_runtime_flags (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO sync_runtime_flags (key, value) VALUES ('suppress_outbox', '0');
+CREATE TABLE sync_outbox (
+	id TEXT PRIMARY KEY,
+	table_name TEXT NOT NULL,
+	entity_id TEXT NOT NULL,
+	operation TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	attempts INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NULL,
+	next_attempt_at DATETIME NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(table_name, entity_id)
+);
 `

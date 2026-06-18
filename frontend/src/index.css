@@ -96,6 +96,10 @@
     min-height: 100dvh;
     overscroll-behavior: none;
   }
+  button,
+  a {
+    touch-action: manipulation;
+  }
   html {
     @apply font-sans;
     min-height: 100%;
