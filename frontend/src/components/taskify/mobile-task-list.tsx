@@ -1,264 +1,256 @@
 "use client"
 
-import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { AlertCircle, Clock, Inbox, MessageSquare, Paperclip } from "lucide-react"
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Clock, MessageSquare, Paperclip } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { formatTaskDueDateLabel } from "@/lib/task-dates"
+import { cn } from "@/lib/utils"
+import type {
+  Task,
+  TaskAssignee,
+  TaskPriority,
+  TaskStatus,
+} from "@/services/taskService"
 
-type Priority = "Alta" | "Media" | "Baja"
+type MobilePriority = "Alta" | "Media" | "Baja"
+type MobileStatus = "Pendiente" | "En Progreso" | "Completado"
 
-interface Task {
+interface MobileTaskListProps {
+  tasks: Task[]
+  isLoading?: boolean
+  isError?: boolean
+  errorMessage?: string
+}
+
+interface MobileTask {
   id: string
   title: string
   description?: string
-  priority: Priority
+  priority: MobilePriority
   dueDate: string
   tag?: string
-  assignees?: { name: string; seed: string }[]
+  assignees?: TaskAssignee[]
   comments?: number
   attachments?: number
-  status: "Pendiente" | "En Progreso" | "Completado"
+  status: MobileStatus
 }
 
-const priorityConfig: Record<Priority, { className: string; dotColor: string }> = {
+const priorityConfig: Record<MobilePriority, { className: string; dotColor: string }> = {
   Alta: {
-    className:
-      "bg-red-100 text-red-700 border-red-200",
+    className: "bg-red-100 text-red-700 border-red-200",
     dotColor: "bg-red-500",
   },
   Media: {
-    className:
-      "bg-amber-100 text-amber-700 border-amber-200",
+    className: "bg-amber-100 text-amber-700 border-amber-200",
     dotColor: "bg-amber-500",
   },
   Baja: {
-    className:
-      "bg-blue-100 text-blue-700 border-blue-200",
+    className: "bg-blue-100 text-blue-700 border-blue-200",
     dotColor: "bg-blue-500",
   },
 }
 
-const allTasks: Task[] = [
-  // Alta priority
-  {
-    id: "t1",
-    title: "Diseñar sistema de autenticación",
-    description: "Crear wireframes y flujos de login, registro y recuperación de contraseña.",
-    priority: "Alta",
-    dueDate: "15 Jun 2026",
-    tag: "Diseño",
-    assignees: [{ name: "Ana García", seed: "ana" }, { name: "Carlos López", seed: "carlos" }],
-    comments: 4,
-    attachments: 2,
-    status: "Pendiente",
-  },
-  {
-    id: "t4",
-    title: "Implementar dashboard analítico",
-    description: "Integrar gráficos de barras y líneas con datos en tiempo real.",
-    priority: "Alta",
-    dueDate: "12 Jun 2026",
-    tag: "Frontend",
-    assignees: [{ name: "Ana García", seed: "ana" }],
-    comments: 7,
-    attachments: 3,
-    status: "En Progreso",
-  },
-  {
-    id: "t5",
-    title: "API REST para gestión de usuarios",
-    description: "Endpoints CRUD con validación y autenticación JWT.",
-    priority: "Alta",
-    dueDate: "14 Jun 2026",
-    tag: "Backend",
-    assignees: [{ name: "Carlos López", seed: "carlos" }, { name: "Luis Martínez", seed: "luis" }],
-    comments: 3,
-    status: "En Progreso",
-  },
-  {
-    id: "t10",
-    title: "Reunión de kickoff con el equipo",
-    description: "Alineación de objetivos, cronograma y asignación inicial de responsabilidades.",
-    priority: "Alta",
-    dueDate: "28 May 2026",
-    assignees: [{ name: "Ana García", seed: "ana" }, { name: "Carlos López", seed: "carlos" }],
-    comments: 10,
-    status: "Completado",
-  },
-  // Media priority
-  {
-    id: "t2",
-    title: "Configurar CI/CD con GitHub Actions",
-    description: "Automatizar el pipeline de build, test y deploy a producción.",
-    priority: "Media",
-    dueDate: "20 Jun 2026",
-    tag: "DevOps",
-    assignees: [{ name: "Luis Martínez", seed: "luis" }],
-    comments: 2,
-    status: "Pendiente",
-  },
-  {
-    id: "t6",
-    title: "Pruebas de integración E2E",
-    priority: "Media",
-    dueDate: "18 Jun 2026",
-    assignees: [{ name: "Maria Torres", seed: "maria" }],
-    comments: 1,
-    status: "En Progreso",
-  },
-  {
-    id: "t7",
-    title: "Setup inicial del proyecto Next.js",
-    description: "Configuración de TypeScript, Tailwind CSS, ESLint y estructura de carpetas.",
-    priority: "Media",
-    dueDate: "1 Jun 2026",
-    tag: "Setup",
-    assignees: [{ name: "Pedro Ruiz", seed: "pedro" }],
-    comments: 5,
-    status: "Completado",
-  },
-  // Baja priority
-  {
-    id: "t3",
-    title: "Optimizar consultas de base de datos",
-    priority: "Baja",
-    dueDate: "30 Jun 2026",
-    assignees: [{ name: "Maria Torres", seed: "maria" }, { name: "Pedro Ruiz", seed: "pedro" }],
-    attachments: 1,
-    status: "Pendiente",
-  },
-  {
-    id: "t8",
-    title: "Definir paleta de colores y tipografía",
-    priority: "Baja",
-    dueDate: "3 Jun 2026",
-    tag: "Diseño",
-    assignees: [{ name: "Ana García", seed: "ana" }, { name: "Maria Torres", seed: "maria" }],
-    attachments: 4,
-    status: "Completado",
-  },
-  {
-    id: "t9",
-    title: "Documentar arquitectura del sistema",
-    priority: "Baja",
-    dueDate: "5 Jun 2026",
-    assignees: [{ name: "Carlos López", seed: "carlos" }],
-    comments: 2,
-    attachments: 1,
-    status: "Completado",
-  },
-]
-
-const groups: { priority: Priority; label: string }[] = [
+const groups: { priority: MobilePriority; label: string }[] = [
   { priority: "Alta", label: "Prioridad Alta" },
   { priority: "Media", label: "Prioridad Media" },
   { priority: "Baja", label: "Prioridad Baja" },
 ]
 
-const statusConfig: Record<Task["status"], { className: string }> = {
+const statusConfig: Record<MobileStatus, { className: string }> = {
   Pendiente: { className: "bg-slate-100 text-slate-600 border-slate-200" },
   "En Progreso": { className: "bg-indigo-100 text-indigo-700 border-indigo-200" },
   Completado: { className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 }
 
-function MobileTaskRow({ task }: { task: Task }) {
-  const s = statusConfig[task.status]
+function MobileTaskRow({ task }: { task: MobileTask }) {
+  const status = statusConfig[task.status]
 
   return (
     <article className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold leading-snug text-card-foreground flex-1">
+        <h3 className="flex-1 text-sm font-semibold leading-snug text-card-foreground">
           {task.title}
         </h3>
         <Badge
           variant="outline"
-          className={cn("shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full border", s.className)}
+          className={cn(
+            "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+            status.className,
+          )}
         >
           {task.status}
         </Badge>
       </div>
 
-      {task.description && (
-        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+      {task.description ? (
+        <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
           {task.description}
         </p>
-      )}
+      ) : null}
 
-      <div className="flex items-center justify-between pt-2 border-t border-border/60">
+      <div className="flex items-center justify-between border-t border-border/60 pt-2">
         <div className="flex items-center gap-1 text-muted-foreground">
           <Clock className="size-3" />
           <span className="text-[11px] font-medium">{task.dueDate}</span>
         </div>
 
         <div className="flex items-center gap-2">
-          {(task.comments ?? 0) > 0 && (
+          {(task.comments ?? 0) > 0 ? (
             <div className="flex items-center gap-1 text-muted-foreground">
               <MessageSquare className="size-3" />
               <span className="text-[11px]">{task.comments}</span>
             </div>
-          )}
-          {(task.attachments ?? 0) > 0 && (
+          ) : null}
+          {(task.attachments ?? 0) > 0 ? (
             <div className="flex items-center gap-1 text-muted-foreground">
               <Paperclip className="size-3" />
               <span className="text-[11px]">{task.attachments}</span>
             </div>
-          )}
-          {(task.assignees?.length ?? 0) > 0 && (
+          ) : null}
+          {(task.assignees?.length ?? 0) > 0 ? (
             <div className="flex -space-x-1.5">
-              {task.assignees!.slice(0, 3).map((a) => (
-                <Avatar key={a.seed} className="size-5 ring-1 ring-card">
+              {task.assignees?.slice(0, 3).map((assignee) => (
+                <Avatar key={`${task.id}-${assignee.seed}`} className="size-5 ring-1 ring-card">
                   <AvatarImage
-                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${a.seed}`}
-                    alt={a.name}
+                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${assignee.seed}`}
+                    alt={assignee.name}
                   />
-                  <AvatarFallback className="bg-primary/10 text-primary text-[9px] font-bold">
-                    {a.name.charAt(0)}
+                  <AvatarFallback className="bg-primary/10 text-[9px] font-bold text-primary">
+                    {assignee.name.charAt(0)}
                   </AvatarFallback>
                 </Avatar>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </article>
   )
 }
 
-export function MobileTaskList() {
+export function MobileTaskList({
+  tasks,
+  isLoading = false,
+  isError = false,
+  errorMessage,
+}: MobileTaskListProps) {
+  const mobileTasks = tasks.map(taskResponseToMobileTask)
+
   return (
     <main
       className="flex-1 overflow-y-auto bg-canvas px-4 py-5"
       aria-label="Lista de tareas por prioridad"
     >
-      <div className="flex flex-col gap-6 pb-6">
-        {groups.map(({ priority, label }) => {
-          const tasks = allTasks.filter((t) => t.priority === priority)
-          const { dotColor } = priorityConfig[priority]
+      {isLoading ? <MobileTaskListSkeleton /> : null}
 
-          return (
-            <section key={priority} aria-labelledby={`group-${priority}`}>
-              <div className="mb-3 flex items-center gap-2">
-                <span className={cn("size-2.5 rounded-full shrink-0", dotColor)} aria-hidden="true" />
-                <h2
-                  id={`group-${priority}`}
-                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                >
-                  {label}
-                </h2>
-                <span className="ml-auto text-xs font-medium text-muted-foreground">
-                  {tasks.length}
-                </span>
-              </div>
+      {!isLoading && isError ? (
+        <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-center text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+          <AlertCircle className="size-6" />
+          <p className="text-sm font-medium">
+            {errorMessage ?? "No pudimos cargar este tablero."}
+          </p>
+        </div>
+      ) : null}
 
-              <div className="flex flex-col gap-3">
-                {tasks.map((task) => (
-                  <MobileTaskRow key={task.id} task={task} />
-                ))}
-              </div>
-            </section>
-          )
-        })}
-      </div>
+      {!isLoading && !isError && mobileTasks.length === 0 ? (
+        <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/60 px-4 py-8 text-center">
+          <Inbox className="size-7 text-muted-foreground" />
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-semibold text-foreground">Este tablero está vacío</p>
+            <p className="text-xs text-muted-foreground">
+              Crea una tarea para empezar a organizarlo.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {!isLoading && !isError && mobileTasks.length > 0 ? (
+        <div className="flex flex-col gap-6 pb-6">
+          {groups.map(({ priority, label }) => {
+            const priorityTasks = mobileTasks.filter((task) => task.priority === priority)
+            const { dotColor } = priorityConfig[priority]
+
+            return (
+              <section key={priority} aria-labelledby={`group-${priority}`}>
+                <div className="mb-3 flex items-center gap-2">
+                  <span
+                    className={cn("size-2.5 shrink-0 rounded-full", dotColor)}
+                    aria-hidden="true"
+                  />
+                  <h2
+                    id={`group-${priority}`}
+                    className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    {label}
+                  </h2>
+                  <span className="ml-auto text-xs font-medium text-muted-foreground">
+                    {priorityTasks.length}
+                  </span>
+                </div>
+
+                {priorityTasks.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {priorityTasks.map((task) => (
+                      <MobileTaskRow key={task.id} task={task} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">
+                    Sin tareas en esta prioridad.
+                  </p>
+                )}
+              </section>
+            )
+          })}
+        </div>
+      ) : null}
     </main>
   )
+}
+
+function MobileTaskListSkeleton() {
+  return (
+    <div className="flex flex-col gap-3">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <Skeleton key={index} className="h-28 rounded-xl" />
+      ))}
+    </div>
+  )
+}
+
+function taskResponseToMobileTask(task: Task): MobileTask {
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description || undefined,
+    priority: priorityToMobilePriority(task.priority),
+    dueDate: formatTaskDueDateLabel(task.dueDate),
+    tag: task.tag,
+    assignees: task.assignees ?? [],
+    comments: task.comments ?? 0,
+    attachments: task.attachments ?? 0,
+    status: statusToMobileStatus(task.status),
+  }
+}
+
+function priorityToMobilePriority(priority: TaskPriority): MobilePriority {
+  const priorities: Record<TaskPriority, MobilePriority> = {
+    high: "Alta",
+    medium: "Media",
+    low: "Baja",
+  }
+
+  return priorities[priority]
+}
+
+function statusToMobileStatus(status: TaskStatus): MobileStatus {
+  const statuses: Record<TaskStatus, MobileStatus> = {
+    todo: "Pendiente",
+    in_progress: "En Progreso",
+    done: "Completado",
+  }
+
+  return statuses[status]
 }

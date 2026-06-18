@@ -56,8 +56,8 @@ func main() {
 }
 
 func run() error {
-	if err := godotenv.Overload(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to load local environment file: %w", err)
+	if err := loadLocalEnvironment(); err != nil {
+		return err
 	}
 
 	config, err := loadAppConfig(os.Getenv)
@@ -228,6 +228,27 @@ func run() error {
 	}
 
 	applicationLogger.Info("http server stopped")
+	return nil
+}
+
+func loadLocalEnvironment() error {
+	envPaths := []string{
+		".env",
+		"../.env",
+		"../../backend/.env",
+		"../backend/.env",
+	}
+
+	for _, envPath := range envPaths {
+		if err := godotenv.Overload(envPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("failed to load local environment file %s: %w", envPath, err)
+		}
+		return nil
+	}
+
 	return nil
 }
 

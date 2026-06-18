@@ -503,7 +503,12 @@ export function TaskifyDashboard() {
           <>
             <div className="flex flex-1 flex-col overflow-hidden md:hidden">
               {selectedBoardId ? (
-                <MobileTaskList />
+                <MobileTaskList
+                  tasks={boardTasks}
+                  isLoading={isLoading}
+                  isError={isError}
+                  errorMessage={taskErrorMessage}
+                />
               ) : (
                 <AllTasksView />
               )}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -82,6 +83,49 @@ func TestStartHTTPServer_InvalidAddress_SendsServerError(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected server error before timeout")
+	}
+}
+
+func TestLoadLocalEnvironment_MissingFilesReturnsNil(t *testing.T) {
+	// Arrange
+	changeWorkingDirectory(t, t.TempDir())
+
+	// Act
+	err := loadLocalEnvironment()
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestLoadLocalEnvironment_LoadsBackendRelativeEnv(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	workingDirectory := filepath.Join(root, "frontend", "src-tauri")
+	backendDirectory := filepath.Join(root, "backend")
+	if err := os.MkdirAll(workingDirectory, 0755); err != nil {
+		t.Fatalf("failed to create working directory: %v", err)
+	}
+	if err := os.MkdirAll(backendDirectory, 0755); err != nil {
+		t.Fatalf("failed to create backend directory: %v", err)
+	}
+	envPath := filepath.Join(backendDirectory, ".env")
+	if err := os.WriteFile(envPath, []byte("TASKIFY_TEST_SIDE_CAR_ENV=loaded\n"), 0644); err != nil {
+		t.Fatalf("failed to write env file: %v", err)
+	}
+	t.Setenv("TASKIFY_TEST_SIDE_CAR_ENV", "")
+	changeWorkingDirectory(t, workingDirectory)
+
+	// Act
+	err := loadLocalEnvironment()
+
+	// Assert
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got := os.Getenv("TASKIFY_TEST_SIDE_CAR_ENV"); got != "loaded" {
+		t.Fatalf("expected env to be loaded, got %q", got)
 	}
 }
 
@@ -168,4 +212,21 @@ func assertCORSHeaders(t *testing.T, response *httptest.ResponseRecorder, expect
 			t.Errorf("expected %s header %q, got %q", header, expectedValue, got)
 		}
 	}
+}
+
+func changeWorkingDirectory(t *testing.T, directory string) {
+	t.Helper()
+
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to resolve current directory: %v", err)
+	}
+	if err := os.Chdir(directory); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previousDirectory); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
 }
