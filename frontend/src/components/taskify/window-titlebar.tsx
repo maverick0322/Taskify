@@ -23,14 +23,31 @@ export function WindowTitlebar() {
     })
   }
 
+  function stopTitlebarDrag(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+  }
+
+  function handleTitlebarMouseDown(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+      getCurrentWindow().startDragging(),
+    )
+  }
+
   return (
     <div
       data-tauri-drag-region
-      className="flex h-8 shrink-0 select-none items-center justify-between border-b border-border bg-card pl-3 text-card-foreground"
+      className="flex h-8 shrink-0 select-none items-center border-b border-border bg-card text-card-foreground"
+      onMouseDown={handleTitlebarMouseDown}
     >
       <div
         data-tauri-drag-region
-        className="flex min-w-0 items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 pl-3 text-xs font-semibold tracking-wide text-muted-foreground"
       >
         <span
           data-tauri-drag-region
@@ -42,12 +59,13 @@ export function WindowTitlebar() {
         </span>
       </div>
 
-      <div className="flex h-full items-center">
+      <div className="flex h-full shrink-0 items-center">
         <Button
           variant="ghost"
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Minimizar ventana"
+          onMouseDown={stopTitlebarDrag}
           onClick={(event) => handleWindowAction(event, "minimize")}
         >
           <Minus className="size-4" />
@@ -57,6 +75,7 @@ export function WindowTitlebar() {
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Maximizar o restaurar ventana"
+          onMouseDown={stopTitlebarDrag}
           onClick={(event) => handleWindowAction(event, "toggleMaximize")}
         >
           <Maximize2 className="size-3.5" />
@@ -66,6 +85,7 @@ export function WindowTitlebar() {
           size="icon"
           className="h-8 w-11 rounded-none text-muted-foreground hover:bg-red-500 hover:text-white"
           aria-label="Cerrar ventana"
+          onMouseDown={stopTitlebarDrag}
           onClick={(event) => handleWindowAction(event, "close")}
         >
           <X className="size-4" />

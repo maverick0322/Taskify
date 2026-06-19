@@ -27,6 +27,7 @@ import { FinancialControlView } from "@/components/financial-control-view";
 import { notifyCriticalAlerts } from "@/lib/notifications";
 import { parseTaskDueDate } from "@/lib/task-dates";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useSyncEvents } from "@/hooks/useSyncEvents";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { getBoards } from "@/services/boardService";
 import {
@@ -469,6 +470,7 @@ export function TaskifyDashboard() {
   }, []);
 
   useKeyboardShortcuts({ setCurrentView: handleShortcutViewChange });
+  useSyncEvents();
 
   return (
     <div className="pwa-safe-shell flex min-h-0 flex-1 overflow-hidden bg-canvas">

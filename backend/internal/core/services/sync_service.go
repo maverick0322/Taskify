@@ -31,6 +31,7 @@ type SyncService struct {
 	remoteDialect SyncDialect
 	logger        ports.Logger
 	now           func() time.Time
+	eventHub      *SyncEventHub
 	mutex         sync.Mutex
 }
 
@@ -44,37 +45,100 @@ func NewSyncService(local, remote *sql.DB, remoteDialect SyncDialect, logger por
 	}
 }
 
+func (service *SyncService) SetEventHub(eventHub *SyncEventHub) {
+	service.eventHub = eventHub
+}
+
+func (service *SyncService) EventHub() *SyncEventHub {
+	return service.eventHub
+}
+
 func (service *SyncService) SyncOnce(ctx context.Context) error {
+	return service.syncOnce(ctx, false)
+}
+
+func (service *SyncService) ForceFullPull(ctx context.Context) error {
+	return service.syncOnce(ctx, true)
+}
+
+func (service *SyncService) NeedsBootstrapPull(ctx context.Context) (bool, error) {
+	if service == nil || service.local == nil {
+		return false, errors.New("sync: local database is required")
+	}
+	_, err := service.syncState(ctx, remotePullSyncStateKey)
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return false, err
+}
+
+func (service *SyncService) syncOnce(ctx context.Context, fullPull bool) error {
 	if service == nil || service.local == nil || service.remote == nil {
 		return errors.New("sync: databases are required")
 	}
 	service.mutex.Lock()
 	defer service.mutex.Unlock()
 
-	if err := service.pushPendingOutbox(ctx); err != nil {
-		return err
-	}
-
-	lastSyncAt, err := service.lastRemotePullSyncAt(ctx)
-	if err != nil {
-		return err
-	}
 	cycleSyncAt := service.now().UTC()
+	service.logger.Info("[SYNC] Ciclo iniciado", "fullPull", fullPull)
 
-	for _, table := range syncTableSpecs() {
-		if err := service.pullTable(ctx, table, lastSyncAt, cycleSyncAt); err != nil {
-			return fmt.Errorf("sync pull %s: %w", table.name, err)
+	pendingOutbox, pushedOutbox, err := service.pushPendingOutbox(ctx)
+	if err != nil {
+		service.logger.Warn("[SYNC] Ciclo falló en push", "pending", pendingOutbox, "pushed", pushedOutbox, "error", err)
+		return err
+	}
+
+	lastSyncAt := time.Unix(0, 0).UTC()
+	if !fullPull {
+		lastSyncAt, err = service.lastRemotePullSyncAt(ctx)
+		if err != nil {
+			service.logger.Warn("[SYNC] Ciclo falló leyendo watermark", "error", err)
+			return err
 		}
 	}
 
-	if err := service.saveSyncState(ctx, remotePullSyncStateKey, cycleSyncAt); err != nil {
+	userIDMap, err := service.remoteToLocalUserIDMap(ctx)
+	if err != nil {
+		service.logger.Warn("[SYNC] Ciclo falló resolviendo usuarios por email", "error", err)
 		return err
 	}
 
+	totalPulledRows := 0
+	for _, table := range syncTableSpecs() {
+		pulledRows, err := service.pullTable(ctx, table, lastSyncAt, cycleSyncAt, userIDMap)
+		if err != nil {
+			service.logger.Warn("[SYNC] Ciclo falló en pull", "table", table.name, "from", lastSyncAt, "to", cycleSyncAt, "error", err)
+			return fmt.Errorf("sync pull %s: %w", table.name, err)
+		}
+		totalPulledRows += pulledRows
+		service.logger.Info("[SYNC] Pull tabla completado", "table", table.name, "rows", pulledRows)
+	}
+
+	if err := service.saveSyncState(ctx, remotePullSyncStateKey, cycleSyncAt); err != nil {
+		service.logger.Warn("[SYNC] Ciclo falló guardando watermark", "watermark", cycleSyncAt, "error", err)
+		return err
+	}
+
+	service.logger.Info(
+		"[SYNC] Ciclo completado",
+		"fullPull", fullPull,
+		"outboxPending", pendingOutbox,
+		"outboxPushed", pushedOutbox,
+		"pulledRows", totalPulledRows,
+		"watermarkFrom", lastSyncAt,
+		"watermarkTo", cycleSyncAt,
+	)
+	if totalPulledRows > 0 && service.eventHub != nil {
+		service.eventHub.Publish(SyncUpdatedEvent)
+		service.logger.Info("[SYNC] Evento SSE publicado", "event", SyncUpdatedEvent, "pulledRows", totalPulledRows)
+	}
 	return nil
 }
 
-func (service *SyncService) pushPendingOutbox(ctx context.Context) error {
+func (service *SyncService) pushPendingOutbox(ctx context.Context) (int, int, error) {
 	rows, err := service.local.QueryContext(
 		ctx,
 		`SELECT id, table_name, entity_id
@@ -87,34 +151,36 @@ func (service *SyncService) pushPendingOutbox(ctx context.Context) error {
 		syncOutboxBatchSize,
 	)
 	if err != nil {
-		return fmt.Errorf("sync: failed to read outbox: %w", err)
+		return 0, 0, fmt.Errorf("sync: failed to read outbox: %w", err)
 	}
 
 	entries := make([]syncOutboxEntry, 0)
 	for rows.Next() {
 		var entry syncOutboxEntry
 		if err := rows.Scan(&entry.id, &entry.tableName, &entry.entityID); err != nil {
-			return err
+			return len(entries), 0, err
 		}
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return len(entries), 0, err
 	}
 	if err := rows.Close(); err != nil {
-		return err
+		return len(entries), 0, err
 	}
 
+	pushed := 0
 	for _, entry := range entries {
 		if err := service.pushOutboxEntry(ctx, entry); err != nil {
 			if markErr := service.markOutboxEntryFailed(ctx, entry.id, err); markErr != nil {
-				return fmt.Errorf("sync push %s.%s failed and could not update outbox: %v: %w", entry.tableName, entry.entityID, err, markErr)
+				return len(entries), pushed, fmt.Errorf("sync push %s.%s failed and could not update outbox: %v: %w", entry.tableName, entry.entityID, err, markErr)
 			}
-			return fmt.Errorf("sync push %s.%s: %w", entry.tableName, entry.entityID, err)
+			return len(entries), pushed, fmt.Errorf("sync push %s.%s: %w", entry.tableName, entry.entityID, err)
 		}
+		pushed++
 	}
 
-	return nil
+	return len(entries), pushed, nil
 }
 
 func (service *SyncService) pushOutboxEntry(ctx context.Context, entry syncOutboxEntry) error {
@@ -172,45 +238,149 @@ func (service *SyncService) markOutboxEntryFailed(ctx context.Context, entryID s
 	return err
 }
 
-func (service *SyncService) pullTable(ctx context.Context, table syncTableSpec, from, to time.Time) error {
+func (service *SyncService) pullTable(ctx context.Context, table syncTableSpec, from, to time.Time, userIDMap map[string]string) (int, error) {
 	rows, err := service.remote.QueryContext(ctx, incrementalSelectSQL(table, service.remoteDialect), dialectTimeValue(service.remoteDialect, from), dialectTimeValue(service.remoteDialect, to))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer rows.Close()
 
 	tx, err := service.local.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	if err := setOutboxSuppression(ctx, tx, true); err != nil {
-		return err
+		return 0, err
 	}
 
 	upsertSQL := lwwUpsertSQL(table, SyncDialectSQLite)
+	pulledRows := 0
 	for rows.Next() {
 		values, err := scanSyncRow(rows, len(table.columns))
 		if err != nil {
-			return err
+			return pulledRows, err
 		}
+		rewritePulledUserIdentity(table, values, userIDMap)
 		if _, err := tx.ExecContext(ctx, upsertSQL, values...); err != nil {
-			return err
+			return pulledRows, err
 		}
+		pulledRows++
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return pulledRows, err
 	}
 
 	if err := setOutboxSuppression(ctx, tx, false); err != nil {
-		return err
+		return pulledRows, err
 	}
 	if err := tx.Commit(); err != nil {
-		return err
+		return pulledRows, err
 	}
 
-	return nil
+	return pulledRows, nil
+}
+
+func (service *SyncService) remoteToLocalUserIDMap(ctx context.Context) (map[string]string, error) {
+	localRows, err := service.local.QueryContext(ctx, "SELECT id, email FROM users WHERE deleted_at IS NULL")
+	if err != nil {
+		return nil, fmt.Errorf("sync: failed to read local users for identity reconciliation: %w", err)
+	}
+	defer localRows.Close()
+
+	localIDByEmail := make(map[string]string)
+	emails := make([]string, 0)
+	for localRows.Next() {
+		var id string
+		var email string
+		if err := localRows.Scan(&id, &email); err != nil {
+			return nil, err
+		}
+		normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+		if normalizedEmail == "" {
+			continue
+		}
+		localIDByEmail[normalizedEmail] = id
+		emails = append(emails, normalizedEmail)
+	}
+	if err := localRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(emails) == 0 {
+		return map[string]string{}, nil
+	}
+
+	placeholders := make([]string, 0, len(emails))
+	args := make([]interface{}, 0, len(emails))
+	for index, email := range emails {
+		placeholders = append(placeholders, placeholder(service.remoteDialect, index+1))
+		args = append(args, email)
+	}
+
+	query := fmt.Sprintf(
+		"SELECT id, email FROM users WHERE lower(email) IN (%s) AND deleted_at IS NULL",
+		strings.Join(placeholders, ", "),
+	)
+	remoteRows, err := service.remote.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sync: failed to read remote users for identity reconciliation: %w", err)
+	}
+	defer remoteRows.Close()
+
+	remoteToLocal := make(map[string]string)
+	for remoteRows.Next() {
+		var remoteID string
+		var email string
+		if err := remoteRows.Scan(&remoteID, &email); err != nil {
+			return nil, err
+		}
+		localID, ok := localIDByEmail[strings.ToLower(strings.TrimSpace(email))]
+		if !ok || localID == "" || remoteID == "" {
+			continue
+		}
+		if remoteID != localID {
+			remoteToLocal[remoteID] = localID
+		}
+	}
+	if err := remoteRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(remoteToLocal) > 0 {
+		service.logger.Warn("[SYNC] UUID remoto/local distinto para usuario; se mapeará por email durante pull", "mappedUsers", len(remoteToLocal))
+	}
+
+	return remoteToLocal, nil
+}
+
+func rewritePulledUserIdentity(table syncTableSpec, values []interface{}, userIDMap map[string]string) {
+	if len(userIDMap) == 0 {
+		return
+	}
+	if table.name == "users" && len(values) > 0 {
+		if localID, ok := userIDMap[syncStringValue(values[0])]; ok {
+			values[0] = localID
+		}
+	}
+	for index, column := range table.columns {
+		if column != "user_id" {
+			continue
+		}
+		if localID, ok := userIDMap[syncStringValue(values[index])]; ok {
+			values[index] = localID
+		}
+	}
+}
+
+func syncStringValue(value interface{}) string {
+	switch typedValue := value.(type) {
+	case string:
+		return typedValue
+	case []byte:
+		return string(typedValue)
+	default:
+		return fmt.Sprint(typedValue)
+	}
 }
 
 func setOutboxSuppression(ctx context.Context, tx *sql.Tx, enabled bool) error {

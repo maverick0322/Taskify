@@ -100,12 +100,23 @@ func run() error {
 		defer sqliteDatabase.Close()
 
 		if config.remoteDatabaseURL != "" {
+			applicationLogger.Info("[SYNC] Intentando conectar a DB Remota")
 			remoteDatabase, err = openRemotePostgresDatabase(startupContext, config.remoteDatabaseURL)
 			if err != nil {
-				applicationLogger.Warn("remote sync disabled because postgres initialization failed", "error", err)
+				applicationLogger.Error("[SYNC] Error conectando a DB Remota; sync remoto desactivado", "error", err)
 			} else {
-				defer remoteDatabase.Close()
+				applicationLogger.Info("[SYNC] Conectado a DB Remota exitosamente")
+				if err := logRemoteSyncDiagnostics(startupContext, sqliteDatabase, remoteDatabase, applicationLogger); err != nil {
+					applicationLogger.Error("[SYNC] Diagnóstico remoto falló; sync remoto desactivado para evitar watermark incorrecto", "error", err)
+					remoteDatabase.Close()
+					remoteDatabase = nil
+				}
+				if remoteDatabase != nil {
+					defer remoteDatabase.Close()
+				}
 			}
+		} else {
+			applicationLogger.Warn("[SYNC] REMOTE_DB_URL vacío: sync remoto desactivado")
 		}
 	}
 	passwordHasher, err := auth.NewBcryptHasher(config.bcryptCost)
@@ -164,6 +175,8 @@ func run() error {
 	var syncService *services.SyncService
 	if !isProduction && remoteDatabase != nil {
 		syncService = services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
+		syncService.SetEventHub(services.NewSyncEventHub())
+		applicationLogger.Info("[SYNC] Servicio de sincronización inicializado")
 	}
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
@@ -172,13 +185,14 @@ func run() error {
 	creditCardHandler := handlers.NewCreditCardHandler(creditCardUseCase, applicationLogger)
 	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
 	notificationHandler := handlers.NewNotificationHandler(notificationUseCase, applicationLogger)
-	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, applicationLogger)
+	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, tokenValidator, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
 	router.Use(withCORS(config.corsAllowedOrigins))
 	router.Get("/swagger/*", httpSwagger.WrapHandler)
 	userHandler.RegisterRoutes(router)
+	systemHandler.RegisterEventRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
 		userHandler.RegisterProtectedRoutes(protectedRouter)
@@ -246,10 +260,98 @@ func loadLocalEnvironment() error {
 			}
 			return fmt.Errorf("failed to load local environment file %s: %w", envPath, err)
 		}
+		log.Printf("[SYNC] .env cargado desde %s", envPath)
 		return nil
 	}
 
+	log.Print("[SYNC] No se encontró archivo .env local; usando variables del entorno del proceso")
 	return nil
+}
+
+func logRemoteSyncDiagnostics(ctx context.Context, localDatabase, remoteDatabase *sql.DB, logger ports.Logger) error {
+	var currentUser string
+	var sessionUser string
+	if err := remoteDatabase.QueryRowContext(ctx, "SELECT current_user, session_user").Scan(&currentUser, &sessionUser); err != nil {
+		return fmt.Errorf("remote identity query failed: %w", err)
+	}
+
+	remoteCounts := make(map[string]int64)
+	for _, tableName := range []string{"users", "boards", "tasks"} {
+		var count int64
+		if err := remoteDatabase.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count); err != nil {
+			return fmt.Errorf("remote count %s failed: %w", tableName, err)
+		}
+		remoteCounts[tableName] = count
+	}
+
+	localEmails, err := localUserEmails(ctx, localDatabase)
+	if err != nil {
+		return err
+	}
+	matchingRemoteUsers := int64(0)
+	if len(localEmails) > 0 {
+		matchingRemoteUsers, err = countRemoteUsersByEmail(ctx, remoteDatabase, localEmails)
+		if err != nil {
+			return err
+		}
+	}
+
+	logger.Info(
+		"[SYNC] Diagnóstico remoto",
+		"currentUser", currentUser,
+		"sessionUser", sessionUser,
+		"remoteUsers", remoteCounts["users"],
+		"remoteBoards", remoteCounts["boards"],
+		"remoteTasks", remoteCounts["tasks"],
+		"localEmailCount", len(localEmails),
+		"matchingRemoteUsers", matchingRemoteUsers,
+	)
+
+	if remoteCounts["boards"] == 0 && matchingRemoteUsers > 0 {
+		logger.Warn("[SYNC] Usuarios remotos visibles pero 0 boards visibles; revisar RLS, filtros por user_id o datos remotos")
+	}
+
+	return nil
+}
+
+func localUserEmails(ctx context.Context, localDatabase *sql.DB) ([]string, error) {
+	rows, err := localDatabase.QueryContext(ctx, "SELECT email FROM users WHERE deleted_at IS NULL LIMIT 20")
+	if err != nil {
+		return nil, fmt.Errorf("local users email query failed: %w", err)
+	}
+	defer rows.Close()
+
+	emails := make([]string, 0)
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email != "" {
+			emails = append(emails, email)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return emails, nil
+}
+
+func countRemoteUsersByEmail(ctx context.Context, remoteDatabase *sql.DB, emails []string) (int64, error) {
+	placeholders := make([]string, 0, len(emails))
+	args := make([]interface{}, 0, len(emails))
+	for index, email := range emails {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", index+1))
+		args = append(args, email)
+	}
+
+	query := fmt.Sprintf("SELECT COUNT(*) FROM users WHERE lower(email) IN (%s) AND deleted_at IS NULL", strings.Join(placeholders, ", "))
+	var count int64
+	if err := remoteDatabase.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("remote matching users query failed: %w", err)
+	}
+	return count, nil
 }
 
 func startHTTPServer(server *http.Server, serverErrors chan<- error) {

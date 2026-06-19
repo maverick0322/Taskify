@@ -124,6 +124,58 @@ func TestSyncService_SyncOncePullDoesNotEnqueueOutbox(t *testing.T) {
 	assertOutboxEmpty(t, local)
 }
 
+func TestSyncService_SyncOncePublishesEventWhenPullAppliesRows(t *testing.T) {
+	local := openSyncTestDatabase(t)
+	remote := openSyncTestDatabase(t)
+
+	remoteUpdatedAt := time.Date(2026, 6, 11, 10, 5, 0, 0, time.UTC)
+	insertSyncUser(t, remote, "remote-user", "remote@example.com", remoteUpdatedAt, nil)
+
+	eventHub := NewSyncEventHub()
+	events, unsubscribe := eventHub.Subscribe()
+	defer unsubscribe()
+
+	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
+	service.SetEventHub(eventHub)
+	service.now = func() time.Time { return time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC) }
+
+	if err := service.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("expected sync success, got %v", err)
+	}
+
+	select {
+	case eventName := <-events:
+		if eventName != SyncUpdatedEvent {
+			t.Fatalf("expected event %s, got %s", SyncUpdatedEvent, eventName)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected sync updated event")
+	}
+}
+
+func TestSyncService_SyncOnceDoesNotPublishEventWhenPullIsEmpty(t *testing.T) {
+	local := openSyncTestDatabase(t)
+	remote := openSyncTestDatabase(t)
+
+	eventHub := NewSyncEventHub()
+	events, unsubscribe := eventHub.Subscribe()
+	defer unsubscribe()
+
+	service := NewSyncService(local, remote, SyncDialectSQLite, &mockLogger{})
+	service.SetEventHub(eventHub)
+	service.now = func() time.Time { return time.Date(2026, 6, 11, 10, 10, 0, 0, time.UTC) }
+
+	if err := service.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("expected sync success, got %v", err)
+	}
+
+	select {
+	case eventName := <-events:
+		t.Fatalf("expected no event, got %s", eventName)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
 func TestSyncService_SyncOnceSyncsAccountPayablePayments(t *testing.T) {
 	local := openSyncTestDatabase(t)
 	remote := openSyncTestDatabase(t)
