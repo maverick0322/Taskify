@@ -22,7 +22,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NewBoardDialog } from "@/components/taskify/new-board-dialog"
-import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/toast-provider"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -284,8 +283,6 @@ export function Sidebar({
           </span>
         </div>
 
-        <Separator className="bg-sidebar-border" />
-
         {/* Nav Items */}
         <nav className="flex flex-col gap-1 px-3 pt-4">
           {navItems.map(({ icon: Icon, label, view }) => {
@@ -400,7 +397,7 @@ export function Sidebar({
         </div>
 
         {/* Bottom Actions */}
-        <div className="border-t border-sidebar-border px-3 py-3">
+        <div className="border-t border-sidebar-foreground/10 px-3 py-3">
           <div className="flex gap-1 justify-center mb-3">
             <Tooltip>
               <TooltipTrigger asChild>

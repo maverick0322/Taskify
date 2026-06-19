@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertCircle, Clock, Inbox, MessageSquare, Paperclip } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -115,16 +114,7 @@ function MobileTaskRow({
         <h3 className="flex-1 text-sm font-semibold leading-snug text-card-foreground">
           {task.title}
         </h3>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-              status.className,
-            )}
-          >
-            {task.status}
-          </Badge>
+        <div className="flex shrink-0 items-start">
           <Select
             value={currentColumnId}
             onValueChange={(columnId) => onMoveTask(task.id, columnId)}
@@ -132,12 +122,16 @@ function MobileTaskRow({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 w-[8.5rem] rounded-md px-2 text-[11px] text-muted-foreground"
+              className={cn(
+                "h-auto w-[8.5rem] rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow-none",
+                "focus:ring-2 focus:ring-ring focus:ring-offset-1 [&>svg]:size-3",
+                status.className,
+              )}
               aria-label="Mover tarea a otra columna"
             >
-              <SelectValue />
+              <SelectValue>{task.status}</SelectValue>
             </SelectTrigger>
-            <SelectContent align="end">
+            <SelectContent align="end" className="min-w-[8.5rem]">
               {columns.map((column) => (
                 <SelectItem key={column.id} value={column.id}>
                   {column.name}

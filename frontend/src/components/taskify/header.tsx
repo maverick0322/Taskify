@@ -339,11 +339,11 @@ export function Header({
                 ) : null}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-3">
-              <PopoverHeader>
+            <PopoverContent align="end" className="w-80 p-0">
+              <PopoverHeader className="px-4 py-3">
                 <PopoverTitle>Notificaciones</PopoverTitle>
               </PopoverHeader>
-              <div className="mt-2 max-h-96 overflow-y-auto">
+              <div className="max-h-96 overflow-y-auto px-2 pb-2">
                 {notificationsQuery.isLoading ? (
                   <p className="px-3 py-6 text-center text-sm text-muted-foreground">
                     Cargando notificaciones...
@@ -353,12 +353,12 @@ export function Header({
                     Sin notificaciones
                   </p>
                 ) : (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col">
                     {notifications.map((notification) => (
                       <button
                         key={notification.id}
                         type="button"
-                        className="flex w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted"
+                        className="flex w-full cursor-pointer items-start gap-3 border-b border-gray-200 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-muted dark:border-gray-700"
                         disabled={markReadMutation.isPending}
                         onClick={() => {
                           if (!notification.isRead) {
@@ -376,10 +376,10 @@ export function Header({
                         />
                         <span className="flex min-w-0 flex-1 flex-col gap-1">
                           <span className="text-sm font-medium text-foreground">
-                            {notification.title}
+                            {notification.title || "Recordatorio de Taskify"}
                           </span>
                           <span className="text-xs leading-relaxed text-muted-foreground">
-                            {notification.message}
+                            {notification.message || "Tienes una actualización pendiente en tu espacio de trabajo."}
                           </span>
                           <span className="text-[11px] text-muted-foreground/80">
                             {formatNotificationDate(notification.createdAt)}
