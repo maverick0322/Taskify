@@ -263,10 +263,14 @@ func (service *SyncService) pullTable(ctx context.Context, table syncTableSpec, 
 			return pulledRows, err
 		}
 		rewritePulledUserIdentity(table, values, userIDMap)
-		if _, err := tx.ExecContext(ctx, upsertSQL, values...); err != nil {
+		result, err := tx.ExecContext(ctx, upsertSQL, values...)
+		if err != nil {
 			return pulledRows, err
 		}
-		pulledRows++
+		rowsAffected, err := result.RowsAffected()
+		if err != nil || rowsAffected > 0 {
+			pulledRows++
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return pulledRows, err

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { isTauriRuntime } from "@/lib/runtime";
 import { API_BASE_URL } from "@/services/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -9,7 +10,7 @@ export function useSyncEvents() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!accessToken || typeof EventSource === "undefined") {
+    if (!isTauriRuntime() || !accessToken || typeof EventSource === "undefined") {
       return;
     }
 

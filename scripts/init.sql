@@ -272,3 +272,51 @@ CREATE TABLE IF NOT EXISTS columns (
 );
 CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id);
 CREATE INDEX IF NOT EXISTS idx_columns_board_id_position ON columns(board_id, position);
+
+CREATE OR REPLACE FUNCTION notify_taskify_sync()
+RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify(
+        'taskify_sync_events',
+        json_build_object(
+            'table', TG_TABLE_NAME,
+            'operation', TG_OP,
+            'id', COALESCE(NEW.id, OLD.id)
+        )::text
+    );
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+DECLARE
+    sync_table text;
+    trigger_name text;
+BEGIN
+    FOREACH sync_table IN ARRAY ARRAY[
+        'users',
+        'boards',
+        'columns',
+        'tasks',
+        'financial_accounts',
+        'transactions',
+        'ledger_entries',
+        'credit_card_statements',
+        'account_payable_payments',
+        'notifications'
+    ]
+    LOOP
+        trigger_name := 'trg_' || sync_table || '_taskify_sync_notify';
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_trigger
+            WHERE tgname = trigger_name
+        ) THEN
+            EXECUTE format(
+                'CREATE TRIGGER %I AFTER INSERT OR UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION notify_taskify_sync()',
+                trigger_name,
+                sync_table
+            );
+        END IF;
+    END LOOP;
+END $$;

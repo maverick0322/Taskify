@@ -173,9 +173,11 @@ func run() error {
 	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
 	notificationUseCase := services.NewNotificationService(notificationRepository, applicationLogger)
 	var syncService *services.SyncService
+	var syncSignalBus *services.SyncSignalBus
 	if !isProduction && remoteDatabase != nil {
 		syncService = services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
 		syncService.SetEventHub(services.NewSyncEventHub())
+		syncSignalBus = services.NewSyncSignalBus()
 		applicationLogger.Info("[SYNC] Servicio de sincronización inicializado")
 	}
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
@@ -195,6 +197,9 @@ func run() error {
 	systemHandler.RegisterEventRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
+		if !isProduction && syncSignalBus != nil {
+			protectedRouter.Use(middleware.NotifySyncOnSuccessfulMutation(syncSignalBus))
+		}
 		userHandler.RegisterProtectedRoutes(protectedRouter)
 		taskHandler.RegisterRoutes(protectedRouter)
 		boardHandler.RegisterRoutes(protectedRouter)
@@ -215,7 +220,8 @@ func run() error {
 	defer stopSignals()
 
 	if !isProduction && remoteDatabase != nil {
-		go startSyncWorker(shutdownContext, syncService, applicationLogger)
+		go startSyncWorker(shutdownContext, syncService, syncSignalBus, applicationLogger)
+		go startRemoteChangeListener(shutdownContext, config.remoteDatabaseURL, syncSignalBus, applicationLogger)
 	}
 	if !isProduction {
 		go startAvatarStorageWorker(shutdownContext, sqliteDatabase, config.supabaseURL, config.supabaseServiceKey, applicationLogger)

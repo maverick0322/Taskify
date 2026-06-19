@@ -10,20 +10,24 @@ import (
 	"github.com/maverick0322/taskify/backend/internal/core/services"
 )
 
-const syncWorkerInterval = time.Minute
+const syncWorkerFallbackInterval = 5 * time.Minute
 
-func startSyncWorker(ctx context.Context, syncService *services.SyncService, logger ports.Logger) {
-	logger.Info("[SYNC] Worker iniciado; intervalo=1m")
+func startSyncWorker(ctx context.Context, syncService *services.SyncService, signalBus *services.SyncSignalBus, logger ports.Logger) {
+	logger.Info("[SYNC] Worker iniciado; fallback=5m")
 	runSafeSyncCycle(ctx, syncService, logger, shouldRunBootstrapPull(ctx, syncService, logger))
 
-	ticker := time.NewTicker(syncWorkerInterval)
+	ticker := time.NewTicker(syncWorkerFallbackInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case reason := <-signalBus.Signals():
+			logger.Info("[SYNC] Worker despertado por señal", "reason", string(reason))
+			runSafeSyncCycle(ctx, syncService, logger, false)
 		case <-ticker.C:
+			logger.Info("[SYNC] Worker despertado por fallback ticker", "reason", string(services.SyncSignalFallbackTick))
 			runSafeSyncCycle(ctx, syncService, logger, false)
 		}
 	}
