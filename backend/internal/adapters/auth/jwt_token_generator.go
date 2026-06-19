@@ -45,6 +45,7 @@ type taskifyClaims struct {
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
+	Role      string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -110,6 +111,7 @@ func (generator *JWTTokenGenerator) signToken(subject ports.TokenSubject, issued
 		Email:     subject.Email,
 		FirstName: subject.FirstName,
 		LastName:  subject.LastName,
+		Role:      "authenticated",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   subject.UserID,
 			IssuedAt:  jwt.NewNumericDate(issuedAt),

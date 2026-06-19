@@ -148,6 +148,12 @@ func TestJWTTokenGenerator_GenerateTokenPairValidSubject_ContainsExpectedClaims(
 	if accessClaims.FirstName != subject.FirstName || accessClaims.LastName != subject.LastName {
 		t.Errorf("expected access name %s %s, got %s %s", subject.FirstName, subject.LastName, accessClaims.FirstName, accessClaims.LastName)
 	}
+	if accessClaims.Role != "authenticated" {
+		t.Errorf("expected access role authenticated, got %s", accessClaims.Role)
+	}
+	if refreshClaims.Role != "authenticated" {
+		t.Errorf("expected refresh role authenticated, got %s", refreshClaims.Role)
+	}
 	if accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time) != accessTokenTTL {
 		t.Errorf("expected access ttl %v, got %v", accessTokenTTL, accessClaims.ExpiresAt.Time.Sub(accessClaims.IssuedAt.Time))
 	}

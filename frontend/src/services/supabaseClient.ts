@@ -17,3 +17,13 @@ export function getSupabaseClient() {
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
   return supabaseClient;
 }
+
+export function authenticateSupabaseRealtime(accessToken: string) {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  supabase.realtime.setAuth(accessToken);
+  return supabase;
+}
