@@ -12,6 +12,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { TaskCard } from "@/components/taskify/task-card"
+import type { DisplayColumn } from "@/components/taskify/kanban-column-helpers"
 import type { KanbanTask } from "@/components/taskify/kanban-board"
 import type { Task } from "@/services/taskService"
 import { Check, MoreHorizontal, Palette, Plus, Save, Trash2, X } from "lucide-react"
@@ -57,7 +58,10 @@ interface KanbanColumnProps {
   color: string
   tasks: KanbanTask[]
   selectedBoardId?: string
+  columnOptions: DisplayColumn[]
+  movePending?: boolean
   onEditTask: (task: Task) => void
+  onMoveTask: (taskId: string, columnId: string) => void
   onAddTask: (columnId: string) => void
   onUpdateColumn: (columnId: string, name: string, color: string) => void
   onRequestDeleteColumn: (columnId: string, title: string) => void
@@ -78,7 +82,10 @@ export function KanbanColumn({
   color,
   tasks,
   selectedBoardId,
+  columnOptions,
+  movePending = false,
   onEditTask,
+  onMoveTask,
   onAddTask,
   onUpdateColumn,
   onRequestDeleteColumn,
@@ -263,7 +270,11 @@ export function KanbanColumn({
                 key={task.id}
                 index={index}
                 selectedBoardId={selectedBoardId}
+                columnOptions={columnOptions}
+                currentColumnId={columnId}
+                movePending={movePending}
                 onEditTask={onEditTask}
+                onMoveTask={onMoveTask}
                 {...task}
               />
             ))}

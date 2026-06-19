@@ -46,13 +46,13 @@ const (
 			priority = ?,
 			due_date = ?,
 			updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteDeleteTaskQuery = `
 		UPDATE tasks
 		SET deleted_at = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 )
 
@@ -116,6 +116,7 @@ func (repository *SQLiteTaskRepository) Update(ctx context.Context, task *domain
 		return ports.ErrTaskRepositoryUnavailable
 	}
 
+	updatedAt := timeValue(task.UpdatedAt())
 	if _, err := repository.database.ExecContext(
 		ctx,
 		sqliteUpdateTaskQuery,
@@ -126,8 +127,9 @@ func (repository *SQLiteTaskRepository) Update(ctx context.Context, task *domain
 		string(task.Status()),
 		string(task.Priority()),
 		nullableTime(task.DueDate()),
-		timeValue(task.UpdatedAt()),
+		updatedAt,
 		task.ID(),
+		updatedAt,
 	); err != nil {
 		repository.logger.Error("failed to update task", "userID", task.UserID(), "taskID", task.ID(), "error", err)
 		return ports.ErrTaskRepositoryUnavailable
@@ -138,7 +140,7 @@ func (repository *SQLiteTaskRepository) Update(ctx context.Context, task *domain
 
 func (repository *SQLiteTaskRepository) Delete(ctx context.Context, id string) error {
 	deletedAt := timeValue(time.Now())
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTaskQuery, deletedAt, deletedAt, id); err != nil {
+	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTaskQuery, deletedAt, deletedAt, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete task", "taskID", id, "error", err)
 		return ports.ErrTaskRepositoryUnavailable
 	}

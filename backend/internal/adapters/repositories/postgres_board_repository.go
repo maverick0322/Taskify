@@ -21,13 +21,13 @@ const (
 	getBoardByIDQuery = `
 		SELECT id, user_id, name, created_at, updated_at
 		FROM boards
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	getBoardsByUserIDQuery = `
 		SELECT id, user_id, name, created_at, updated_at
 		FROM boards
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC
 	`
 
@@ -35,12 +35,33 @@ const (
 		UPDATE boards
 		SET name = $2,
 			updated_at = $3
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $3
 	`
 
 	deleteBoardQuery = `
-		DELETE FROM boards
-		WHERE id = $1
+		WITH deleted_board AS (
+			UPDATE boards
+			SET deleted_at = $2, updated_at = $2
+			WHERE id = $1 AND deleted_at IS NULL AND updated_at < $2
+			RETURNING id
+		),
+		deleted_columns AS (
+			UPDATE columns
+			SET deleted_at = $2, updated_at = $2
+			WHERE board_id IN (SELECT id FROM deleted_board)
+			  AND deleted_at IS NULL
+			  AND updated_at < $2
+			RETURNING id
+		),
+		deleted_tasks AS (
+			UPDATE tasks
+			SET deleted_at = $2, updated_at = $2
+			WHERE board_id IN (SELECT id FROM deleted_board)
+			  AND deleted_at IS NULL
+			  AND updated_at < $2
+			RETURNING id
+		)
+		SELECT 1
 	`
 )
 
@@ -137,7 +158,8 @@ func (repository *PostgresBoardRepository) Update(ctx context.Context, board *do
 }
 
 func (repository *PostgresBoardRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.Exec(ctx, deleteBoardQuery, id); err != nil {
+	deletedAt := time.Now().UTC()
+	if _, err := repository.database.Exec(ctx, deleteBoardQuery, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete board", "boardID", id, "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}

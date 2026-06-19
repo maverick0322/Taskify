@@ -48,13 +48,13 @@ const (
 			priority = $7,
 			due_date = $8,
 			updated_at = $9
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $9
 	`
 
 	deleteTaskQuery = `
 		UPDATE tasks
 		SET deleted_at = $2, updated_at = $2
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $2
 	`
 )
 

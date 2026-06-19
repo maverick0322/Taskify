@@ -21,90 +21,90 @@ const (
 	getTransactionByIDQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	getTransactionsByUserIDQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDFromQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND date >= $2
+		WHERE user_id = $1 AND date >= $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDToQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND date < $2
+		WHERE user_id = $1 AND date < $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDRangeQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND date >= $2 AND date < $3
+		WHERE user_id = $1 AND date >= $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND credit_card_id = $2
+		WHERE user_id = $1 AND credit_card_id = $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDFromQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3
+		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDToQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND credit_card_id = $2 AND date < $3
+		WHERE user_id = $1 AND credit_card_id = $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDRangeQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND date < $4
+		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND date < $4 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND payment_account_id = $2
+		WHERE user_id = $1 AND payment_account_id = $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDFromQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3
+		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDToQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND payment_account_id = $2 AND date < $3
+		WHERE user_id = $1 AND payment_account_id = $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDRangeQuery = `
 		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3 AND date < $4
+		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3 AND date < $4 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
@@ -126,12 +126,13 @@ const (
 			recurrence_limit = $15,
 			last_paid_at = $16,
 			updated_at = $17
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $17
 	`
 
 	deleteTransactionQuery = `
-		DELETE FROM transactions
-		WHERE id = $1
+		UPDATE transactions
+		SET deleted_at = $2, updated_at = $2
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $2
 	`
 
 	createAccountPayablePaymentQuery = `
@@ -142,14 +143,14 @@ const (
 	getPaidCyclesByUserIDQuery = `
 		SELECT account_payable_id, due_date, paid_at
 		FROM account_payable_payments
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY due_date ASC
 	`
 
 	getPaidCyclesByAccountPayableIDQuery = `
 		SELECT due_date, paid_at
 		FROM account_payable_payments
-		WHERE account_payable_id = $1
+		WHERE account_payable_id = $1 AND deleted_at IS NULL
 		ORDER BY due_date ASC
 	`
 )
@@ -410,7 +411,8 @@ func (repository *PostgresTransactionRepository) CreateManyWithLedger(ctx contex
 }
 
 func (repository *PostgresTransactionRepository) Delete(ctx context.Context, id string) error {
-	if _, err := repository.database.Exec(ctx, deleteTransactionQuery, id); err != nil {
+	deletedAt := time.Now().UTC()
+	if _, err := repository.database.Exec(ctx, deleteTransactionQuery, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete transaction", "transactionID", id, "error", err)
 		return ports.ErrTransactionRepositoryUnavailable
 	}

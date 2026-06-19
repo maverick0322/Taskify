@@ -8,6 +8,14 @@ import {
   columnColorConfig,
   type ColumnColor,
 } from "@/components/taskify/kanban-column"
+import {
+  DEFAULT_KANBAN_COLUMNS,
+  buildVisibleColumns,
+  movePayloadForColumn,
+  statusForColumn,
+  taskBelongsToColumn,
+  type DisplayColumn,
+} from "@/components/taskify/kanban-column-helpers"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
@@ -46,16 +54,6 @@ export interface KanbanTask {
   attachments?: number
 }
 
-const DEFAULT_COLUMNS: Array<{
-  name: string
-  color: ColumnColor
-  status: TaskStatus
-}> = [
-  { name: "Pendiente", color: "slate", status: "todo" },
-  { name: "En Progreso", color: "indigo", status: "in_progress" },
-  { name: "Completado", color: "emerald", status: "done" },
-]
-
 interface KanbanBoardProps {
   selectedBoardId?: string
   tasks: Task[]
@@ -71,11 +69,6 @@ interface MoveTaskContext {
   previousLocalTasks?: Task[]
   previousTasks?: Task[]
   previousGlobalTasks?: Task[]
-}
-
-interface DisplayColumn extends BoardColumn {
-  isFallback?: boolean
-  fallbackStatus?: TaskStatus
 }
 
 export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
@@ -119,7 +112,7 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
 
     setBootstrappingBoardId(selectedBoardId)
     Promise.all(
-      DEFAULT_COLUMNS.map((column, index) =>
+      DEFAULT_KANBAN_COLUMNS.map((column, index) =>
         createColumn(selectedBoardId, {
           name: column.name,
           color: column.color,
@@ -147,23 +140,10 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     [boardColumns],
   )
 
-  const visibleColumns = useMemo<DisplayColumn[]>(() => {
-    if (persistedColumns.length > 0) {
-      return persistedColumns
-    }
-
-    return DEFAULT_COLUMNS.map((column, index) => ({
-      id: `fallback-${column.status}`,
-      boardId: selectedBoardId ?? "",
-      name: column.name,
-      color: column.color,
-      position: index,
-      createdAt: "",
-      updatedAt: "",
-      isFallback: true,
-      fallbackStatus: column.status,
-    }))
-  }, [persistedColumns, selectedBoardId])
+  const visibleColumns = useMemo<DisplayColumn[]>(
+    () => buildVisibleColumns(persistedColumns, selectedBoardId ?? ""),
+    [persistedColumns, selectedBoardId],
+  )
 
   const moveMutation = useMutation<void, Error, MoveTaskVariables, MoveTaskContext>({
     mutationFn: async ({ taskId, columnId, status }) => {
@@ -327,6 +307,18 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
     })
   }
 
+  function handleMoveTaskByColumn(taskId: string, columnId: string) {
+    const destinationColumn = visibleColumns.find((column) => column.id === columnId)
+    if (!destinationColumn) {
+      return
+    }
+
+    moveMutation.mutate({
+      taskId,
+      ...movePayloadForColumn(destinationColumn, visibleColumns),
+    })
+  }
+
   function handleEditTask(task: Task) {
     setTaskToEdit(task)
     setNewTaskStatus(undefined)
@@ -382,7 +374,10 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
                 .filter((task) => taskBelongsToColumn(task, column, visibleColumns))
                 .map(taskResponseToKanbanTask)}
               selectedBoardId={selectedBoardId}
+              columnOptions={visibleColumns}
+              movePending={moveMutation.isPending}
               onEditTask={handleEditTask}
+              onMoveTask={handleMoveTaskByColumn}
               onAddTask={handleAddTask}
               onUpdateColumn={(columnId, name, color) =>
                 updateColumnMutation.mutate({ columnId, name, color })
@@ -510,23 +505,6 @@ export function KanbanBoard({ selectedBoardId, tasks }: KanbanBoardProps) {
       />
     </main>
   )
-}
-
-function statusForColumn(column: DisplayColumn, columns: DisplayColumn[]): TaskStatus | undefined {
-  if (column.fallbackStatus) {
-    return column.fallbackStatus
-  }
-
-  const columnIndex = columns.findIndex((visibleColumn) => visibleColumn.id === column.id)
-  return DEFAULT_COLUMNS[columnIndex]?.status
-}
-
-function taskBelongsToColumn(task: Task, column: DisplayColumn, columns: DisplayColumn[]) {
-  if (task.columnId) {
-    return task.columnId === column.id
-  }
-
-  return statusForColumn(column, columns) === task.status
 }
 
 function taskResponseToKanbanTask(task: Task): KanbanTask {

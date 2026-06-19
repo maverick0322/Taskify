@@ -343,5 +343,70 @@ BEGIN
         ) THEN
             ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
         END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime'
+              AND schemaname = 'public'
+              AND tablename = 'columns'
+        ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE columns;
+        END IF;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+       AND to_regprocedure('auth.uid()') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'boards'
+              AND policyname = 'taskify_boards_realtime_select'
+        ) THEN
+            CREATE POLICY taskify_boards_realtime_select
+            ON boards
+            FOR SELECT
+            TO authenticated
+            USING (user_id = auth.uid()::text);
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'tasks'
+              AND policyname = 'taskify_tasks_realtime_select'
+        ) THEN
+            CREATE POLICY taskify_tasks_realtime_select
+            ON tasks
+            FOR SELECT
+            TO authenticated
+            USING (user_id = auth.uid()::text);
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'columns'
+              AND policyname = 'taskify_columns_realtime_select'
+        ) THEN
+            CREATE POLICY taskify_columns_realtime_select
+            ON columns
+            FOR SELECT
+            TO authenticated
+            USING (
+                EXISTS (
+                    SELECT 1
+                    FROM boards
+                    WHERE boards.id = columns.board_id
+                      AND boards.user_id = auth.uid()::text
+                )
+            );
+        END IF;
     END IF;
 END $$;

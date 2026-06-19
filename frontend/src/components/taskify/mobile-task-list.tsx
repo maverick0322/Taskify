@@ -1,24 +1,43 @@
 "use client"
 
+import { useMemo } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertCircle, Clock, Inbox, MessageSquare, Paperclip } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import {
+  buildVisibleColumns,
+  columnIDForTask,
+  movePayloadForColumn,
+  type DisplayColumn,
+} from "@/components/taskify/kanban-column-helpers"
 import { formatTaskDueDateLabel } from "@/lib/task-dates"
 import { cn } from "@/lib/utils"
+import { getBoardColumns } from "@/services/boardService"
 import type {
   Task,
   TaskAssignee,
   TaskPriority,
   TaskStatus,
 } from "@/services/taskService"
+import { moveTaskToColumn, updateTaskStatus } from "@/services/taskService"
 
 type MobilePriority = "Alta" | "Media" | "Baja"
 type MobileStatus = "Pendiente" | "En Progreso" | "Completado"
 
 interface MobileTaskListProps {
   tasks: Task[]
+  selectedBoardId?: string | null
   isLoading?: boolean
   isError?: boolean
   errorMessage?: string
@@ -35,6 +54,7 @@ interface MobileTask {
   comments?: number
   attachments?: number
   status: MobileStatus
+  task: Task
 }
 
 const priorityConfig: Record<MobilePriority, { className: string; dotColor: string }> = {
@@ -64,8 +84,30 @@ const statusConfig: Record<MobileStatus, { className: string }> = {
   Completado: { className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 }
 
-function MobileTaskRow({ task }: { task: MobileTask }) {
+interface MoveTaskVariables {
+  taskId: string
+  columnId: string | null
+  status?: TaskStatus
+}
+
+interface MoveTaskContext {
+  previousBoardTasks?: Task[]
+  previousGlobalTasks?: Task[]
+}
+
+function MobileTaskRow({
+  task,
+  columns,
+  movePending,
+  onMoveTask,
+}: {
+  task: MobileTask
+  columns: DisplayColumn[]
+  movePending: boolean
+  onMoveTask: (taskId: string, columnId: string) => void
+}) {
   const status = statusConfig[task.status]
+  const currentColumnId = columnIDForTask(task.task, columns)
 
   return (
     <article className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -73,15 +115,37 @@ function MobileTaskRow({ task }: { task: MobileTask }) {
         <h3 className="flex-1 text-sm font-semibold leading-snug text-card-foreground">
           {task.title}
         </h3>
-        <Badge
-          variant="outline"
-          className={cn(
-            "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-            status.className,
-          )}
-        >
-          {task.status}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge
+            variant="outline"
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+              status.className,
+            )}
+          >
+            {task.status}
+          </Badge>
+          <Select
+            value={currentColumnId}
+            onValueChange={(columnId) => onMoveTask(task.id, columnId)}
+            disabled={movePending || columns.length === 0}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-[8.5rem] rounded-md px-2 text-[11px] text-muted-foreground"
+              aria-label="Mover tarea a otra columna"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {columns.map((column) => (
+                <SelectItem key={column.id} value={column.id}>
+                  {column.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {task.description ? (
@@ -132,11 +196,81 @@ function MobileTaskRow({ task }: { task: MobileTask }) {
 
 export function MobileTaskList({
   tasks,
+  selectedBoardId,
   isLoading = false,
   isError = false,
   errorMessage,
 }: MobileTaskListProps) {
+  const queryClient = useQueryClient()
+  const columnsQueryKey = useMemo(
+    () => ["boards", selectedBoardId, "columns"],
+    [selectedBoardId],
+  )
+  const boardTasksQueryKey = useMemo(() => ["tasks", selectedBoardId], [selectedBoardId])
+  const { data: boardColumns = [] } = useQuery({
+    queryKey: columnsQueryKey,
+    queryFn: () => getBoardColumns(selectedBoardId ?? ""),
+    enabled: Boolean(selectedBoardId),
+  })
+  const persistedColumns = useMemo(
+    () => [...boardColumns].sort((first, second) => first.position - second.position),
+    [boardColumns],
+  )
+  const visibleColumns = useMemo(
+    () => buildVisibleColumns(persistedColumns, selectedBoardId ?? ""),
+    [persistedColumns, selectedBoardId],
+  )
+  const moveMutation = useMutation<void, Error, MoveTaskVariables, MoveTaskContext>({
+    mutationFn: async ({ taskId, columnId, status }) => {
+      await moveTaskToColumn(taskId, columnId)
+      if (status) {
+        await updateTaskStatus({ taskId, status })
+      }
+    },
+    onMutate: async ({ taskId, columnId, status }) => {
+      await queryClient.cancelQueries({ queryKey: boardTasksQueryKey })
+      await queryClient.cancelQueries({ queryKey: ["tasks", "global"] })
+
+      const previousBoardTasks = queryClient.getQueryData<Task[]>(boardTasksQueryKey)
+      const previousGlobalTasks = queryClient.getQueryData<Task[]>(["tasks", "global"])
+
+      const applyTaskMove = (currentTasks: Task[] = []) =>
+        currentTasks.map((currentTask) =>
+          currentTask.id === taskId
+            ? { ...currentTask, columnId, ...(status ? { status } : {}) }
+            : currentTask,
+        )
+
+      queryClient.setQueryData<Task[]>(boardTasksQueryKey, applyTaskMove)
+      queryClient.setQueryData<Task[]>(["tasks", "global"], applyTaskMove)
+
+      return { previousBoardTasks, previousGlobalTasks }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousBoardTasks) {
+        queryClient.setQueryData(boardTasksQueryKey, context.previousBoardTasks)
+      }
+      if (context?.previousGlobalTasks) {
+        queryClient.setQueryData(["tasks", "global"], context.previousGlobalTasks)
+      }
+    },
+    onSettled: () => {
+      invalidateTaskCaches(queryClient, selectedBoardId)
+    },
+  })
   const mobileTasks = tasks.map(taskResponseToMobileTask)
+
+  function handleMoveTask(taskId: string, columnId: string) {
+    const destinationColumn = visibleColumns.find((column) => column.id === columnId)
+    if (!destinationColumn) {
+      return
+    }
+
+    moveMutation.mutate({
+      taskId,
+      ...movePayloadForColumn(destinationColumn, visibleColumns),
+    })
+  }
 
   return (
     <main
@@ -193,7 +327,13 @@ export function MobileTaskList({
                 {priorityTasks.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {priorityTasks.map((task) => (
-                      <MobileTaskRow key={task.id} task={task} />
+                      <MobileTaskRow
+                        key={task.id}
+                        task={task}
+                        columns={visibleColumns}
+                        movePending={moveMutation.isPending}
+                        onMoveTask={handleMoveTask}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -232,6 +372,7 @@ function taskResponseToMobileTask(task: Task): MobileTask {
     comments: task.comments ?? 0,
     attachments: task.attachments ?? 0,
     status: statusToMobileStatus(task.status),
+    task,
   }
 }
 

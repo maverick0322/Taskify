@@ -509,6 +509,7 @@ export function TaskifyDashboard() {
               {selectedBoardId ? (
                 <MobileTaskList
                   tasks={boardTasks}
+                  selectedBoardId={selectedBoardId}
                   isLoading={isLoading}
                   isError={isError}
                   errorMessage={taskErrorMessage}

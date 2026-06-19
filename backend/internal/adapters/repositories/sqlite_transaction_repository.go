@@ -124,13 +124,13 @@ const (
 			recurrence_limit = ?,
 			last_paid_at = ?,
 			updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteDeleteTransactionQuery = `
 		UPDATE transactions
 		SET deleted_at = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteCreateAccountPayablePaymentQuery = `
@@ -141,14 +141,14 @@ const (
 	sqliteGetPaidCyclesByUserIDQuery = `
 		SELECT account_payable_id, due_date, paid_at
 		FROM account_payable_payments
-		WHERE user_id = ?
+		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY due_date ASC
 	`
 
 	sqliteGetPaidCyclesByAccountPayableIDQuery = `
 		SELECT due_date, paid_at
 		FROM account_payable_payments
-		WHERE account_payable_id = ?
+		WHERE account_payable_id = ? AND deleted_at IS NULL
 		ORDER BY due_date ASC
 	`
 )
@@ -380,7 +380,7 @@ func (repository *SQLiteTransactionRepository) CreateManyWithLedger(ctx context.
 
 func (repository *SQLiteTransactionRepository) Delete(ctx context.Context, id string) error {
 	deletedAt := timeValue(time.Now())
-	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTransactionQuery, deletedAt, deletedAt, id); err != nil {
+	if _, err := repository.database.ExecContext(ctx, sqliteDeleteTransactionQuery, deletedAt, deletedAt, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete transaction", "transactionID", id, "error", err)
 		return ports.ErrTransactionRepositoryUnavailable
 	}
@@ -393,7 +393,8 @@ func execSQLiteCreateTransaction(ctx context.Context, executor sqliteTransaction
 }
 
 func execSQLiteUpdateTransaction(ctx context.Context, executor sqliteTransactionExecutor, transaction *domain.Transaction) (sql.Result, error) {
-	return executor.ExecContext(ctx, sqliteUpdateTransactionQuery, string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), timeValue(transaction.UpdatedAt()), transaction.ID())
+	updatedAt := timeValue(transaction.UpdatedAt())
+	return executor.ExecContext(ctx, sqliteUpdateTransactionQuery, string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), updatedAt, transaction.ID(), updatedAt)
 }
 
 func (repository *SQLiteTransactionRepository) queryTransactions(ctx context.Context, query string, arguments []interface{}, message string, keysAndValues ...interface{}) ([]*domain.Transaction, error) {

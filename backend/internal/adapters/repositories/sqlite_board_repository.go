@@ -33,25 +33,25 @@ const (
 		UPDATE boards
 		SET name = ?,
 			updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteDeleteBoardQuery = `
 		UPDATE boards
 		SET deleted_at = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteSoftDeleteBoardColumnsQuery = `
 		UPDATE columns
 		SET deleted_at = ?, updated_at = ?
-		WHERE board_id = ? AND deleted_at IS NULL
+		WHERE board_id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 
 	sqliteSoftDeleteBoardTasksQuery = `
 		UPDATE tasks
 		SET deleted_at = ?, updated_at = ?
-		WHERE board_id = ? AND deleted_at IS NULL
+		WHERE board_id = ? AND deleted_at IS NULL AND updated_at < ?
 	`
 )
 
@@ -119,7 +119,8 @@ func (repository *SQLiteBoardRepository) Update(ctx context.Context, board *doma
 		return ports.ErrBoardRepositoryUnavailable
 	}
 
-	if _, err := repository.database.ExecContext(ctx, sqliteUpdateBoardQuery, board.Name(), timeValue(board.UpdatedAt()), board.ID()); err != nil {
+	updatedAt := timeValue(board.UpdatedAt())
+	if _, err := repository.database.ExecContext(ctx, sqliteUpdateBoardQuery, board.Name(), updatedAt, board.ID(), updatedAt); err != nil {
 		repository.logger.Error("failed to update board", "userID", board.UserID(), "boardID", board.ID(), "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}
@@ -136,15 +137,15 @@ func (repository *SQLiteBoardRepository) Delete(ctx context.Context, id string) 
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, sqliteDeleteBoardQuery, deletedAt, deletedAt, id); err != nil {
+	if _, err := tx.ExecContext(ctx, sqliteDeleteBoardQuery, deletedAt, deletedAt, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete board", "boardID", id, "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}
-	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardColumnsQuery, deletedAt, deletedAt, id); err != nil {
+	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardColumnsQuery, deletedAt, deletedAt, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete board columns", "boardID", id, "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}
-	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardTasksQuery, deletedAt, deletedAt, id); err != nil {
+	if _, err := tx.ExecContext(ctx, sqliteSoftDeleteBoardTasksQuery, deletedAt, deletedAt, id, deletedAt); err != nil {
 		repository.logger.Error("failed to delete board tasks", "boardID", id, "error", err)
 		return ports.ErrBoardRepositoryUnavailable
 	}

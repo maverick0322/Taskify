@@ -20,10 +20,9 @@ import {
 } from "@/components/ui/select"
 import {
   deleteTask,
-  updateTaskStatus,
   type Task,
-  type TaskStatus,
 } from "@/services/taskService"
+import type { DisplayColumn } from "@/components/taskify/kanban-column-helpers"
 
 type Priority = "Alta" | "Media" | "Baja"
 
@@ -32,6 +31,10 @@ interface TaskCardProps {
   index: number
   task: Task
   selectedBoardId?: string
+  columnOptions: DisplayColumn[]
+  currentColumnId: string
+  movePending?: boolean
+  onMoveTask: (taskId: string, columnId: string) => void
   onEditTask: (task: Task) => void
   title: string
   description?: string
@@ -61,19 +64,15 @@ const priorityConfig: Record<Priority, { label: string; className: string }> = {
   },
 }
 
-const statusLabels: Record<TaskStatus, string> = {
-  todo: "Por hacer",
-  in_progress: "En progreso",
-  done: "Terminado",
-}
-
-const taskStatusOptions: TaskStatus[] = ["todo", "in_progress", "done"]
-
 export function TaskCard({
   id,
   index,
   task,
   selectedBoardId,
+  columnOptions,
+  currentColumnId,
+  movePending = false,
+  onMoveTask,
   onEditTask,
   title,
   description,
@@ -87,66 +86,11 @@ export function TaskCard({
   const { label, className } = priorityConfig[priority]
   const queryClient = useQueryClient()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const boardTasksQueryKey = ["tasks", selectedBoardId]
-  const globalTasksQueryKey = ["tasks", "global"]
   const deleteMutation = useMutation({
     mutationFn: deleteTask,
     onSuccess: () => {
       invalidateTaskCaches(queryClient, selectedBoardId)
       setDeleteDialogOpen(false)
-    },
-  })
-  const statusMutation = useMutation<
-    void,
-    Error,
-    { taskId: string; status: TaskStatus },
-    { previousBoardTasks?: Task[]; previousGlobalTasks?: Task[] }
-  >({
-    mutationFn: updateTaskStatus,
-    onMutate: async ({ taskId, status }) => {
-      const queryKeys = selectedBoardId
-        ? [boardTasksQueryKey, globalTasksQueryKey]
-        : [globalTasksQueryKey]
-
-      await Promise.all(
-        queryKeys.map((queryKey) => queryClient.cancelQueries({ queryKey })),
-      )
-
-      const previousBoardTasks = selectedBoardId
-        ? queryClient.getQueryData<Task[]>(boardTasksQueryKey)
-        : undefined
-      const previousGlobalTasks =
-        queryClient.getQueryData<Task[]>(globalTasksQueryKey)
-
-      if (selectedBoardId) {
-        queryClient.setQueryData<Task[]>(boardTasksQueryKey, (currentTasks = []) =>
-          currentTasks.map((currentTask) =>
-            currentTask.id === taskId
-              ? { ...currentTask, status }
-              : currentTask,
-          ),
-        )
-      }
-
-      queryClient.setQueryData<Task[]>(globalTasksQueryKey, (currentTasks = []) =>
-        currentTasks.map((currentTask) =>
-          currentTask.id === taskId ? { ...currentTask, status } : currentTask,
-        ),
-      )
-
-      return { previousBoardTasks, previousGlobalTasks }
-    },
-    onError: (_error, _variables, context) => {
-      if (selectedBoardId && context?.previousBoardTasks) {
-        queryClient.setQueryData(boardTasksQueryKey, context.previousBoardTasks)
-      }
-
-      if (context?.previousGlobalTasks) {
-        queryClient.setQueryData(globalTasksQueryKey, context.previousGlobalTasks)
-      }
-    },
-    onSettled: () => {
-      invalidateTaskCaches(queryClient, selectedBoardId)
     },
   })
 
@@ -164,12 +108,12 @@ export function TaskCard({
     deleteMutation.mutate(id)
   }
 
-  function handleStatusChange(status: TaskStatus) {
-    if (status === task.status) {
+  function handleColumnChange(columnId: string) {
+    if (columnId === currentColumnId) {
       return
     }
 
-    statusMutation.mutate({ taskId: id, status })
+    onMoveTask(id, columnId)
   }
 
   return (
@@ -209,21 +153,21 @@ export function TaskCard({
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Select
-                value={task.status}
-                onValueChange={(value) => handleStatusChange(value as TaskStatus)}
-                disabled={statusMutation.isPending}
+                value={currentColumnId}
+                onValueChange={handleColumnChange}
+                disabled={movePending || columnOptions.length === 0}
               >
                 <SelectTrigger
                   size="sm"
-                  className="h-6 w-[6.75rem] rounded-md px-2 text-[11px] text-muted-foreground"
-                  aria-label="Cambiar estado de la tarea"
+                  className="h-6 w-[7.75rem] rounded-md px-2 text-[11px] text-muted-foreground"
+                  aria-label="Mover tarea a otra columna"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent align="end">
-                  {taskStatusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {statusLabels[status]}
+                  {columnOptions.map((column) => (
+                    <SelectItem key={column.id} value={column.id}>
+                      {column.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
