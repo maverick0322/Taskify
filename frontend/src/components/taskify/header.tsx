@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
@@ -17,13 +18,11 @@ import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { ProfileAvatar } from "@/components/profile-avatar"
 import type { CurrentView } from "@/components/taskify/navigation"
+import { buildCriticalAlerts, getCurrentMonthRange } from "@/lib/critical-alerts"
 import { useUIStore } from "@/store/useUIStore"
 import { updateBoardName, type Board } from "@/services/boardService"
-import {
-  getNotifications,
-  markNotificationAsRead,
-} from "@/services/notification_api"
-import { notifyAppNotification } from "@/lib/notifications"
+import { getTransactions } from "@/services/financial_api"
+import { getTasks } from "@/services/taskService"
 import { Plus, Bell, Menu, Moon, Pencil, Sun } from "lucide-react"
 
 interface HeaderProps {
@@ -73,24 +72,40 @@ export function Header({
   const setNewTaskOpen = useUIStore((state) => state.setNewTaskModalOpen)
   const notificationsOpen = useUIStore((state) => state.isNotificationsOpen)
   const setNotificationsOpen = useUIStore((state) => state.setNotificationsOpen)
-  const notifiedThisSession = useRef<Set<string>>(new Set())
   const boardNameInputRef = useRef<HTMLInputElement>(null)
   const skipNextBoardNameBlur = useRef(false)
   const canEditBoardName = activeView === "tasks" && Boolean(selectedBoardId && selectedBoardName)
-  const notificationsQuery = useQuery({
-    queryKey: ["notifications"],
-    queryFn: getNotifications,
+  const currentMonthRange = useMemo(() => getCurrentMonthRange(), [])
+  const criticalTasksQuery = useQuery({
+    queryKey: ["tasks", "global"],
+    queryFn: () => getTasks(),
     refetchOnMount: true,
     refetchOnWindowFocus: true,
   })
-  const markReadMutation = useMutation({
-    mutationFn: markNotificationAsRead,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["notifications"] })
-    },
+  const criticalTransactionsQuery = useQuery({
+    queryKey: [
+      "financial",
+      "transactions",
+      currentMonthRange.startDate,
+      currentMonthRange.endDate,
+    ],
+    queryFn: () =>
+      getTransactions({
+        startDate: currentMonthRange.startDate,
+        endDate: currentMonthRange.endDate,
+      }),
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   })
-  const notifications = notificationsQuery.data ?? []
-  const unreadNotifications = notifications.filter((notification) => !notification.isRead)
+  const alerts = useMemo(
+    () =>
+      buildCriticalAlerts({
+        tasks: criticalTasksQuery.data ?? [],
+        transactions: criticalTransactionsQuery.data ?? [],
+      }),
+    [criticalTasksQuery.data, criticalTransactionsQuery.data],
+  )
+  const alertsLoading = criticalTasksQuery.isLoading || criticalTransactionsQuery.isLoading
   const updateBoardNameMutation = useMutation({
     mutationFn: ({ boardId, name }: { boardId: string; name: string }) =>
       updateBoardName(boardId, name),
@@ -180,16 +195,6 @@ export function Header({
 
     updateBoardNameMutation.mutate({ boardId: selectedBoardId, name: nextName })
   }
-
-  useEffect(() => {
-    unreadNotifications.forEach((notification) => {
-      if (notifiedThisSession.current.has(notification.id)) {
-        return
-      }
-      notifiedThisSession.current.add(notification.id)
-      void notifyAppNotification(notification)
-    })
-  }, [unreadNotifications])
 
   return (
     <>
@@ -334,60 +339,68 @@ export function Header({
                 aria-label="Notificaciones"
               >
                 <Bell className="size-4" />
-                {unreadNotifications.length > 0 ? (
+                {alerts.length > 0 ? (
                   <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary" aria-hidden="true" />
                 ) : null}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-0">
+            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0">
               <PopoverHeader className="px-4 py-3">
                 <PopoverTitle>Notificaciones</PopoverTitle>
+                <p className="text-xs text-muted-foreground">
+                  {alerts.length} alertas activas en {currentMonthRange.label}
+                </p>
               </PopoverHeader>
-              <div className="max-h-96 overflow-y-auto px-2 pb-2">
-                {notificationsQuery.isLoading ? (
+              <div className="max-h-[28rem] overflow-y-auto px-3 pb-3">
+                {alertsLoading ? (
                   <p className="px-3 py-6 text-center text-sm text-muted-foreground">
                     Cargando notificaciones...
                   </p>
-                ) : notifications.length === 0 ? (
+                ) : alerts.length === 0 ? (
                   <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    Sin notificaciones
+                    Todo al día, no hay alertas urgentes este mes
                   </p>
                 ) : (
-                  <div className="flex flex-col">
-                    {notifications.map((notification) => (
-                      <button
-                        key={notification.id}
-                        type="button"
-                        className="flex w-full cursor-pointer items-start gap-3 border-b border-gray-200 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-muted dark:border-gray-700"
-                        disabled={markReadMutation.isPending}
-                        onClick={() => {
-                          if (!notification.isRead) {
-                            markReadMutation.mutate(notification.id)
-                          }
-                        }}
-                      >
-                        <span
-                          className={
-                            notification.isRead
-                              ? "mt-1.5 size-2 shrink-0 rounded-full bg-transparent"
-                              : "mt-1.5 size-2 shrink-0 rounded-full bg-primary"
-                          }
-                          aria-hidden="true"
-                        />
-                        <span className="flex min-w-0 flex-1 flex-col gap-1">
-                          <span className="text-sm font-medium text-foreground">
-                            {notification.title || "Recordatorio de Taskify"}
-                          </span>
-                          <span className="text-xs leading-relaxed text-muted-foreground">
-                            {notification.message || "Tienes una actualización pendiente en tu espacio de trabajo."}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground/80">
-                            {formatNotificationDate(notification.createdAt)}
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <ul className="flex flex-col gap-3">
+                    {alerts.map(
+                      ({
+                        id,
+                        icon: Icon,
+                        badge,
+                        badgeVariant,
+                        className,
+                        title,
+                        detail,
+                      }) => (
+                        <li
+                          key={id}
+                          className="flex items-start gap-3 rounded-lg border border-border/40 bg-muted/30 p-4"
+                        >
+                          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={badgeVariant}
+                                className={
+                                  className
+                                    ? `${className} shrink-0`
+                                    : "shrink-0"
+                                }
+                              >
+                                {badge}
+                              </Badge>
+                            </div>
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {detail}
+                            </p>
+                          </div>
+                        </li>
+                      ),
+                    )}
+                  </ul>
                 )}
               </div>
             </PopoverContent>
@@ -412,17 +425,4 @@ export function Header({
       </header>
     </>
   )
-}
-
-function formatNotificationDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
 }

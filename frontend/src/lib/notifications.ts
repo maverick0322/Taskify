@@ -1,8 +1,9 @@
 import { isTauriRuntime } from "@/lib/runtime"
+import type { CriticalAlert } from "@/lib/critical-alerts"
 import type { AppNotification } from "@/services/notification_api"
 
-export async function notifyCriticalAlerts(count: number) {
-  if (count <= 0) {
+export async function notifyCriticalAlerts(alerts: CriticalAlert[]) {
+  if (alerts.length === 0) {
     return
   }
 
@@ -12,12 +13,9 @@ export async function notifyCriticalAlerts(count: number) {
       return
     }
 
-    await sendTaskifyNotification(
-      "Taskify",
-      `Tienes ${count} alerta${count === 1 ? "" : "s"} crítica${
-        count === 1 ? "" : "s"
-      } hoy`,
-    )
+    for (const alert of alerts) {
+      await sendTaskifyNotification("Taskify", `${alert.title}\n${alert.detail}`)
+    }
   } catch {
     // Native notifications are only available inside Tauri and may be denied by the OS.
   }

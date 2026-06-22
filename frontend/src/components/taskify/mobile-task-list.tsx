@@ -123,8 +123,8 @@ function MobileTaskRow({
             <SelectTrigger
               size="sm"
               className={cn(
-                "h-auto w-[8.5rem] rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow-none",
-                "focus:ring-2 focus:ring-ring focus:ring-offset-1 [&>svg]:size-3",
+                "h-auto w-fit min-w-0 justify-center gap-1 rounded-full border px-2.5 py-0.5 text-center text-[11px] font-semibold shadow-none",
+                "focus:ring-2 focus:ring-ring focus:ring-offset-1 [&>span]:text-center [&>svg]:size-3",
                 status.className,
               )}
               aria-label="Mover tarea a otra columna"

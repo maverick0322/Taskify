@@ -1,5 +1,6 @@
 "use client"
 
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import { Maximize2, Minus, X } from "lucide-react"
 import type { MouseEvent } from "react"
 
@@ -17,10 +18,7 @@ export function WindowTitlebar() {
   ) {
     event.preventDefault()
     event.stopPropagation()
-    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
-      const appWindow = getCurrentWindow()
-      return appWindow[action]()
-    })
+    void getCurrentWindow()[action]()
   }
 
   function stopTitlebarDrag(event: MouseEvent<HTMLButtonElement>) {
@@ -28,15 +26,22 @@ export function WindowTitlebar() {
   }
 
   function handleTitlebarMouseDown(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.detail > 1) {
+      return
+    }
+
+    event.stopPropagation()
+    void getCurrentWindow().startDragging()
+  }
+
+  function handleTitlebarDoubleClick(event: MouseEvent<HTMLDivElement>) {
     if (event.button !== 0) {
       return
     }
 
     event.preventDefault()
     event.stopPropagation()
-    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
-      getCurrentWindow().startDragging(),
-    )
+    void getCurrentWindow().toggleMaximize()
   }
 
   return (
@@ -44,6 +49,7 @@ export function WindowTitlebar() {
       data-tauri-drag-region
       className="flex h-8 shrink-0 select-none items-center border-b border-border bg-card text-card-foreground"
       onMouseDown={handleTitlebarMouseDown}
+      onDoubleClick={handleTitlebarDoubleClick}
     >
       <div
         data-tauri-drag-region

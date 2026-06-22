@@ -35,6 +35,12 @@ const priorityCellBg: Record<AgendaTask["priority"], string> = {
   Baja: "bg-blue-50",
 }
 
+const priorityCellText: Record<AgendaTask["priority"], string> = {
+  Alta: "text-red-900",
+  Media: "text-amber-900",
+  Baja: "text-blue-900",
+}
+
 const priorityBadge: Record<AgendaTask["priority"], string> = {
   Alta: "bg-red-100 text-red-700 border-red-200",
   Media: "bg-amber-100 text-amber-700 border-amber-200",
@@ -331,7 +337,12 @@ function CalendarGrid({
                         priorityDot[task.priority],
                       )}
                     />
-                    <span className="truncate text-[10px] font-medium leading-none text-foreground/80">
+                    <span
+                      className={cn(
+                        "truncate text-[10px] font-medium leading-none",
+                        priorityCellText[task.priority],
+                      )}
+                    >
                       {task.title}
                     </span>
                   </button>
