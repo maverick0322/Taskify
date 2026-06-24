@@ -42,34 +42,32 @@ Taskify uses a hybrid architecture:
 
 ## Architecture Diagram
 
-```plantuml
-@startuml
-skinparam componentStyle uml2
+```mermaid
+flowchart LR
+    subgraph Desktop["Desktop Client (Tauri)"]
+        direction TB
+        DesktopUI["React UI"]
+        GoMotor["Go Sync Motor (Sidecar)"]
+        SQLite[("SQLite (Local State)")]
+        
+        DesktopUI <-->|gRPC / HTTP| GoMotor
+        GoMotor <-->|Read / Write| SQLite
+    end
 
-package "Desktop Client (Tauri)" {
-  [React UI] as DesktopUI
-  [Go Sync Engine\n(Sidecar)] as GoMotor
-  database "SQLite\n(Local State)" as SQLite
+    subgraph Web["Web Client (PWA)"]
+        WebUI["React UI"]
+    end
 
-  DesktopUI <--> GoMotor : gRPC / HTTP
-  GoMotor <--> SQLite : Read/Write
-}
+    subgraph Cloud["Cloud Infrastructure"]
+        direction TB
+        Postgres[("PostgreSQL (Supabase)")]
+        WS["Realtime Server (WebSockets)"]
+    end
 
-package "Web Client (PWA)" {
-  [React UI] as WebUI
-}
-
-cloud "Cloud Infrastructure" {
-  database "PostgreSQL\n(Supabase)" as Postgres
-  [Realtime Server\n(WebSockets)] as WS
-}
-
-GoMotor <--> Postgres : Async Sync (Pull/Push)
-WebUI <--> Postgres : REST API
-WebUI <--> WS : Subscribe (Events)
-WS --> GoMotor : Broadcast
-
-@enduml
+    GoMotor <-->|"Async Sync (Pull/Push)"| Postgres
+    WebUI <-->|"REST API"| Postgres
+    WebUI <-->|"Subscribe (Events)"| WS
+    WS -->|"Broadcast"| GoMotor
 ```
 
 ---
