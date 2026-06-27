@@ -72,12 +72,14 @@ CREATE TABLE IF NOT EXISTS credit_cards (
     payment_day INTEGER NOT NULL,
     limit_cents BIGINT NOT NULL,
     color TEXT NOT NULL,
+    network TEXT NOT NULL DEFAULT 'Visa',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ NULL
 );
 CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id ON credit_cards(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_cards_user_id_bank ON credit_cards(user_id, bank);
+ALTER TABLE credit_cards ADD COLUMN IF NOT EXISTS network TEXT NOT NULL DEFAULT 'Visa';
 
 CREATE TABLE IF NOT EXISTS financial_accounts (
     id TEXT PRIMARY KEY,
@@ -92,15 +94,17 @@ CREATE TABLE IF NOT EXISTS financial_accounts (
     cutoff_day INTEGER NULL,
     payment_day INTEGER NULL,
     color TEXT NOT NULL DEFAULT 'from-zinc-700 to-zinc-950',
+    network TEXT NOT NULL DEFAULT 'Visa',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ NULL
 );
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id ON financial_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id_type ON financial_accounts(user_id, type);
+ALTER TABLE financial_accounts ADD COLUMN IF NOT EXISTS network TEXT NOT NULL DEFAULT 'Visa';
 
-INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at)
-SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at
+INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at)
+SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at
 FROM credit_cards
 WHERE deleted_at IS NULL
 ON CONFLICT(id) DO UPDATE SET
@@ -111,6 +115,7 @@ ON CONFLICT(id) DO UPDATE SET
     cutoff_day = excluded.cutoff_day,
     payment_day = excluded.payment_day,
     color = excluded.color,
+    network = excluded.network,
     updated_at = excluded.updated_at;
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -128,6 +133,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     msi INTEGER NULL,
     installment_number INTEGER NULL,
     installment_count INTEGER NULL,
+    is_historical BOOLEAN NOT NULL DEFAULT FALSE,
     recurrence TEXT NOT NULL DEFAULT 'once',
     recurrence_limit INTEGER NULL,
     last_paid_at TIMESTAMPTZ NULL,
@@ -140,6 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user_id_credit_card_id ON transactio
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_payment_account_id ON transactions(user_id, payment_account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date ON transactions(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id_status ON transactions(user_id, status);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_historical BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id TEXT PRIMARY KEY,

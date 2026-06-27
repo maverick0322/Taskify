@@ -105,6 +105,7 @@ type Transaction struct {
 	destinationAccountID *string
 	installmentNumber    *int
 	installmentCount     *int
+	isHistorical         bool
 	recurrence           TransactionRecurrence
 	recurrenceLimit      *int
 	lastPaidAt           *time.Time
@@ -173,6 +174,7 @@ func RehydrateTransaction(
 	lastPaidAt *time.Time,
 	createdAt,
 	updatedAt time.Time,
+	isHistorical ...bool,
 ) (*Transaction, error) {
 	transactionFields, err := validateTransactionFields(id, userID, transactionType, concept, category, amountCents, date, status, msi, creditCardID, recurrence, recurrenceLimit)
 	if err != nil {
@@ -183,6 +185,11 @@ func RehydrateTransaction(
 	}
 	if updatedAt.IsZero() {
 		return nil, ErrInvalidTransactionUpdatedAt
+	}
+
+	historical := false
+	if len(isHistorical) > 0 {
+		historical = isHistorical[0]
 	}
 
 	return &Transaction{
@@ -196,6 +203,7 @@ func RehydrateTransaction(
 		status:          status,
 		msi:             normalizeOptionalTransactionMSI(msi),
 		creditCardID:    transactionFields.creditCardID,
+		isHistorical:    historical,
 		recurrence:      recurrence,
 		recurrenceLimit: normalizeOptionalTransactionRecurrenceLimit(recurrence, recurrenceLimit),
 		lastPaidAt:      normalizeOptionalTransactionTime(lastPaidAt),
@@ -240,6 +248,11 @@ func (transaction *Transaction) SetAccountingDetails(paymentAccountID, destinati
 	transaction.destinationAccountID = normalizeOptionalTransactionCreditCardID(destinationAccountID)
 	transaction.installmentNumber = normalizeOptionalTransactionMSI(installmentNumber)
 	transaction.installmentCount = normalizeOptionalTransactionMSI(installmentCount)
+	transaction.touch()
+}
+
+func (transaction *Transaction) SetHistorical(isHistorical bool) {
+	transaction.isHistorical = isHistorical
 	transaction.touch()
 }
 
@@ -331,6 +344,10 @@ func (transaction *Transaction) InstallmentNumber() *int {
 
 func (transaction *Transaction) InstallmentCount() *int {
 	return normalizeOptionalTransactionMSI(transaction.installmentCount)
+}
+
+func (transaction *Transaction) IsHistorical() bool {
+	return transaction.isHistorical
 }
 
 func (transaction *Transaction) Recurrence() TransactionRecurrence {

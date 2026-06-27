@@ -14,20 +14,20 @@ import (
 
 const (
 	createFinancialAccountQuery = `
-		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	getFinancialAccountByIDQuery = `
-		SELECT id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at
+		SELECT id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at
 		FROM financial_accounts WHERE id = $1 AND deleted_at IS NULL
 	`
 	getFinancialAccountsByUserIDQuery = `
-		SELECT id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at
+		SELECT id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at
 		FROM financial_accounts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY type ASC, created_at ASC
 	`
 	updateFinancialAccountQuery = `
 		UPDATE financial_accounts
-		SET name = $2, institution = $3, last4 = $4, opening_balance_cents = $5, current_balance_cents = $6, credit_limit_cents = $7, cutoff_day = $8, payment_day = $9, color = $10, updated_at = $11
+		SET name = $2, institution = $3, last4 = $4, opening_balance_cents = $5, current_balance_cents = $6, credit_limit_cents = $7, cutoff_day = $8, payment_day = $9, color = $10, network = $11, updated_at = $12
 		WHERE id = $1
 	`
 	deleteFinancialAccountQuery = `
@@ -54,7 +54,7 @@ func (repository *PostgresFinancialAccountRepository) Create(ctx context.Context
 	if account == nil {
 		return ports.ErrFinancialAccountRepositoryUnavailable
 	}
-	_, err := repository.database.Exec(ctx, createFinancialAccountQuery, account.ID(), account.UserID(), string(account.Type()), account.Name(), account.Institution(), nullableTransactionCreditCardID(account.Last4()), account.OpeningBalanceCents(), account.CurrentBalanceCents(), nullableAccountInt64(account.CreditLimitCents()), nullableAccountInt(account.CutoffDay()), nullableAccountInt(account.PaymentDay()), account.Color(), account.CreatedAt(), account.UpdatedAt())
+	_, err := repository.database.Exec(ctx, createFinancialAccountQuery, account.ID(), account.UserID(), string(account.Type()), account.Name(), account.Institution(), nullableTransactionCreditCardID(account.Last4()), account.OpeningBalanceCents(), account.CurrentBalanceCents(), nullableAccountInt64(account.CreditLimitCents()), nullableAccountInt(account.CutoffDay()), nullableAccountInt(account.PaymentDay()), account.Color(), account.Network(), account.CreatedAt(), account.UpdatedAt())
 	if err == nil {
 		return nil
 	}
@@ -100,7 +100,7 @@ func (repository *PostgresFinancialAccountRepository) Update(ctx context.Context
 	if account == nil {
 		return ports.ErrFinancialAccountRepositoryUnavailable
 	}
-	_, err := repository.database.Exec(ctx, updateFinancialAccountQuery, account.ID(), account.Name(), account.Institution(), nullableTransactionCreditCardID(account.Last4()), account.OpeningBalanceCents(), account.CurrentBalanceCents(), nullableAccountInt64(account.CreditLimitCents()), nullableAccountInt(account.CutoffDay()), nullableAccountInt(account.PaymentDay()), account.Color(), account.UpdatedAt())
+	_, err := repository.database.Exec(ctx, updateFinancialAccountQuery, account.ID(), account.Name(), account.Institution(), nullableTransactionCreditCardID(account.Last4()), account.OpeningBalanceCents(), account.CurrentBalanceCents(), nullableAccountInt64(account.CreditLimitCents()), nullableAccountInt(account.CutoffDay()), nullableAccountInt(account.PaymentDay()), account.Color(), account.Network(), account.UpdatedAt())
 	if err != nil {
 		return ports.ErrFinancialAccountRepositoryUnavailable
 	}
@@ -118,17 +118,17 @@ func (repository *PostgresFinancialAccountRepository) Delete(ctx context.Context
 
 func (repository *PostgresFinancialAccountRepository) scanAccount(row pgx.Row) (*domain.FinancialAccount, error) {
 	var stored struct {
-		id, userID, accountType, name, institution, color string
+		id, userID, accountType, name, institution, color, network string
 		last4                                             *string
 		openingBalanceCents, currentBalanceCents          int64
 		creditLimitCents                                  *int64
 		cutoffDay, paymentDay                             *int
 		createdAt, updatedAt                              time.Time
 	}
-	if err := row.Scan(&stored.id, &stored.userID, &stored.accountType, &stored.name, &stored.institution, &stored.last4, &stored.openingBalanceCents, &stored.currentBalanceCents, &stored.creditLimitCents, &stored.cutoffDay, &stored.paymentDay, &stored.color, &stored.createdAt, &stored.updatedAt); err != nil {
+	if err := row.Scan(&stored.id, &stored.userID, &stored.accountType, &stored.name, &stored.institution, &stored.last4, &stored.openingBalanceCents, &stored.currentBalanceCents, &stored.creditLimitCents, &stored.cutoffDay, &stored.paymentDay, &stored.color, &stored.network, &stored.createdAt, &stored.updatedAt); err != nil {
 		return nil, err
 	}
-	return domain.RehydrateFinancialAccount(stored.id, stored.userID, domain.FinancialAccountType(stored.accountType), stored.name, stored.institution, stored.last4, stored.openingBalanceCents, stored.currentBalanceCents, stored.creditLimitCents, stored.cutoffDay, stored.paymentDay, stored.color, stored.createdAt, stored.updatedAt)
+	return domain.RehydrateFinancialAccount(stored.id, stored.userID, domain.FinancialAccountType(stored.accountType), stored.name, stored.institution, stored.last4, stored.openingBalanceCents, stored.currentBalanceCents, stored.creditLimitCents, stored.cutoffDay, stored.paymentDay, stored.color, stored.network, stored.createdAt, stored.updatedAt)
 }
 
 func nullableAccountInt(value *int) interface{} {

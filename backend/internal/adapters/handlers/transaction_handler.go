@@ -82,6 +82,7 @@ func (handler *TransactionHandler) CreateTransaction(response http.ResponseWrite
 		transactionRecurrenceFromRequest(createRequest.Recurrence),
 		createRequest.RecurrenceLimit,
 		createRequest.PaymentAccountID,
+		createRequest.PaidInstallments,
 	)
 	if err != nil {
 		handler.handleTransactionError(response, err)
@@ -312,6 +313,14 @@ func (handler *TransactionHandler) validateTransactionRequest(response http.Resp
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
 		return false
 	}
+	if transactionRequest.PaidInstallments < 0 {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
+	if transactionRequest.MSI != nil && transactionRequest.PaidInstallments > *transactionRequest.MSI {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction data"})
+		return false
+	}
 
 	return true
 }
@@ -452,6 +461,7 @@ func transactionResponseFromDomain(transaction *domain.Transaction) transactionR
 		DestinationAccountID: transaction.DestinationAccountID(),
 		InstallmentNumber:    transaction.InstallmentNumber(),
 		InstallmentCount:     transaction.InstallmentCount(),
+		IsHistorical:         transaction.IsHistorical(),
 		Recurrence:           string(transaction.Recurrence()),
 		RecurrenceLimit:      transaction.RecurrenceLimit(),
 		LastPaidAt:           nullableTimeResponse(lastPaidAt),
@@ -490,6 +500,7 @@ type transactionRequest struct {
 	PaymentAccountID *string `json:"paymentAccountId"`
 	Recurrence       string  `json:"recurrence"`
 	RecurrenceLimit  *int    `json:"recurrenceLimit"`
+	PaidInstallments int     `json:"paidInstallments"`
 }
 
 type payAccountPayableRequest struct {
@@ -510,6 +521,7 @@ type transactionResponse struct {
 	DestinationAccountID *string             `json:"destinationAccountId"`
 	InstallmentNumber    *int                `json:"installmentNumber"`
 	InstallmentCount     *int                `json:"installmentCount"`
+	IsHistorical         bool                `json:"isHistorical"`
 	Recurrence           string              `json:"recurrence"`
 	RecurrenceLimit      *int                `json:"recurrenceLimit"`
 	LastPaidAt           *string             `json:"lastPaidAt"`

@@ -39,9 +39,9 @@ func NewCreditCardService(
 	}
 }
 
-func (service *creditCardService) CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*domain.CreditCard, error) {
+func (service *creditCardService) CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) (*domain.CreditCard, error) {
 	creditCardID := service.idGenerator.Generate()
-	creditCard, err := domain.NewCreditCard(creditCardID, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color)
+	creditCard, err := domain.NewCreditCard(creditCardID, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color, network)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +84,13 @@ func (service *creditCardService) GetCardsWithSummary(ctx context.Context, userI
 	return summaries, nil
 }
 
-func (service *creditCardService) UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) error {
+func (service *creditCardService) UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) error {
 	creditCard, err := service.getAuthorizedCreditCard(ctx, userID, creditCardID)
 	if err != nil {
 		return err
 	}
 
-	if err := creditCard.Update(name, bank, last4, cutoffDay, paymentDay, limitCents, color); err != nil {
+	if err := creditCard.Update(name, bank, last4, cutoffDay, paymentDay, limitCents, color, network); err != nil {
 		return err
 	}
 
@@ -237,6 +237,7 @@ func calculateCreditCardDebt(transactions []*domain.Transaction) int64 {
 	var currentDebtCents int64
 	for _, transaction := range transactions {
 		if transaction == nil ||
+			transaction.IsHistorical() ||
 			transaction.Status() != domain.TransactionStatusPaid ||
 			transaction.Type() != domain.TransactionTypeExpense {
 			continue

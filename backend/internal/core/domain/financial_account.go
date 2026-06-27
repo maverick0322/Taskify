@@ -29,6 +29,7 @@ var (
 	ErrInvalidFinancialAccountCreditLimit  = errors.New("domain: credit account limit must be greater than zero")
 	ErrInvalidFinancialAccountCutoffDay    = errors.New("domain: credit account cutoff day must be between 1 and 31")
 	ErrInvalidFinancialAccountPaymentDay   = errors.New("domain: credit account payment day must be between 1 and 31")
+	ErrInvalidFinancialAccountNetwork      = errors.New("domain: invalid financial account network")
 	ErrInsufficientFinancialAccountFunds   = errors.New("domain: insufficient financial account funds")
 	ErrFinancialAccountCreditLimitExceeded = errors.New("domain: credit account limit exceeded")
 )
@@ -46,12 +47,13 @@ type FinancialAccount struct {
 	cutoffDay           *int
 	paymentDay          *int
 	color               string
+	network             string
 	createdAt           time.Time
 	updatedAt           time.Time
 }
 
-func NewFinancialAccount(id, userID string, accountType FinancialAccountType, name, institution string, last4 *string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string) (*FinancialAccount, error) {
-	fields, err := validateFinancialAccountFields(id, userID, accountType, name, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay)
+func NewFinancialAccount(id, userID string, accountType FinancialAccountType, name, institution string, last4 *string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string) (*FinancialAccount, error) {
+	fields, err := validateFinancialAccountFields(id, userID, accountType, name, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay, network)
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +71,14 @@ func NewFinancialAccount(id, userID string, accountType FinancialAccountType, na
 		cutoffDay:           normalizeOptionalInt(cutoffDay),
 		paymentDay:          normalizeOptionalInt(paymentDay),
 		color:               strings.TrimSpace(color),
+		network:             fields.network,
 		createdAt:           now,
 		updatedAt:           now,
 	}, nil
 }
 
-func RehydrateFinancialAccount(id, userID string, accountType FinancialAccountType, name, institution string, last4 *string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string, createdAt, updatedAt time.Time) (*FinancialAccount, error) {
-	account, err := NewFinancialAccount(id, userID, accountType, name, institution, last4, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay, color)
+func RehydrateFinancialAccount(id, userID string, accountType FinancialAccountType, name, institution string, last4 *string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string, createdAt, updatedAt time.Time) (*FinancialAccount, error) {
+	account, err := NewFinancialAccount(id, userID, accountType, name, institution, last4, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay, color, network)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +116,12 @@ func (account *FinancialAccount) CreditLimitCents() *int64 {
 func (account *FinancialAccount) CutoffDay() *int      { return normalizeOptionalInt(account.cutoffDay) }
 func (account *FinancialAccount) PaymentDay() *int     { return normalizeOptionalInt(account.paymentDay) }
 func (account *FinancialAccount) Color() string        { return account.color }
+func (account *FinancialAccount) Network() string      { return account.network }
 func (account *FinancialAccount) CreatedAt() time.Time { return account.createdAt }
 func (account *FinancialAccount) UpdatedAt() time.Time { return account.updatedAt }
 
-func validateFinancialAccountFields(id, userID string, accountType FinancialAccountType, name string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int) (struct{ id, userID, name string }, error) {
-	fields := struct{ id, userID, name string }{id: strings.TrimSpace(id), userID: strings.TrimSpace(userID), name: strings.TrimSpace(name)}
+func validateFinancialAccountFields(id, userID string, accountType FinancialAccountType, name string, openingBalanceCents, currentBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, network string) (struct{ id, userID, name, network string }, error) {
+	fields := struct{ id, userID, name, network string }{id: strings.TrimSpace(id), userID: strings.TrimSpace(userID), name: strings.TrimSpace(name), network: strings.TrimSpace(network)}
 	if fields.id == "" {
 		return fields, ErrInvalidFinancialAccountID
 	}
@@ -142,6 +146,14 @@ func validateFinancialAccountFields(id, userID string, accountType FinancialAcco
 		}
 		if paymentDay == nil || *paymentDay < 1 || *paymentDay > 31 {
 			return fields, ErrInvalidFinancialAccountPaymentDay
+		}
+	}
+	if accountType != FinancialAccountTypeCash {
+		if fields.network == "" {
+			fields.network = CreditCardNetworkVisa
+		}
+		if !isValidCardNetwork(fields.network) {
+			return fields, ErrInvalidFinancialAccountNetwork
 		}
 	}
 	return fields, nil

@@ -14,95 +14,95 @@ import (
 
 const (
 	createTransactionQuery = `
-		INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
 
 	getTransactionByIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	getTransactionsByUserIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date >= $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date < $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND date >= $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND credit_card_id = $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND credit_card_id = $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndCreditCardIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND credit_card_id = $2 AND date >= $3 AND date < $4 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND payment_account_id = $2 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND payment_account_id = $2 AND date < $3 AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	getTransactionsByUserIDAndPaymentAccountIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = $1 AND payment_account_id = $2 AND date >= $3 AND date < $4 AND deleted_at IS NULL
 		ORDER BY date DESC
@@ -122,11 +122,12 @@ const (
 			destination_account_id = $11,
 			installment_number = $12,
 			installment_count = $13,
-			recurrence = $14,
-			recurrence_limit = $15,
-			last_paid_at = $16,
-			updated_at = $17
-		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $17
+			is_historical = $14,
+			recurrence = $15,
+			recurrence_limit = $16,
+			last_paid_at = $17,
+			updated_at = $18
+		WHERE id = $1 AND deleted_at IS NULL AND updated_at < $18
 	`
 
 	deleteTransactionQuery = `
@@ -421,11 +422,11 @@ func (repository *PostgresTransactionRepository) Delete(ctx context.Context, id 
 }
 
 func execPostgresCreateTransaction(ctx context.Context, executor postgresTransactionDatabase, transaction *domain.Transaction) (pgconn.CommandTag, error) {
-	return executor.Exec(ctx, createTransactionQuery, transaction.ID(), transaction.UserID(), nullableTransactionCreditCardID(transaction.CreditCardID()), nullableTransactionCreditCardID(transaction.PaymentAccountID()), nullableTransactionCreditCardID(transaction.DestinationAccountID()), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), transaction.Date(), string(transaction.Status()), nullableTransactionMSI(transaction.MSI()), nullableTransactionMSI(transaction.InstallmentNumber()), nullableTransactionMSI(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableTransactionRecurrenceLimit(transaction.RecurrenceLimit()), nullableTransactionTime(transaction.LastPaidAt()), transaction.CreatedAt(), transaction.UpdatedAt())
+	return executor.Exec(ctx, createTransactionQuery, transaction.ID(), transaction.UserID(), nullableTransactionCreditCardID(transaction.CreditCardID()), nullableTransactionCreditCardID(transaction.PaymentAccountID()), nullableTransactionCreditCardID(transaction.DestinationAccountID()), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), transaction.Date(), string(transaction.Status()), nullableTransactionMSI(transaction.MSI()), nullableTransactionMSI(transaction.InstallmentNumber()), nullableTransactionMSI(transaction.InstallmentCount()), transaction.IsHistorical(), string(transaction.Recurrence()), nullableTransactionRecurrenceLimit(transaction.RecurrenceLimit()), nullableTransactionTime(transaction.LastPaidAt()), transaction.CreatedAt(), transaction.UpdatedAt())
 }
 
 func execPostgresUpdateTransaction(ctx context.Context, executor postgresTransactionDatabase, transaction *domain.Transaction) (pgconn.CommandTag, error) {
-	return executor.Exec(ctx, updateTransactionQuery, transaction.ID(), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), transaction.Date(), string(transaction.Status()), nullableTransactionMSI(transaction.MSI()), nullableTransactionCreditCardID(transaction.CreditCardID()), nullableTransactionCreditCardID(transaction.PaymentAccountID()), nullableTransactionCreditCardID(transaction.DestinationAccountID()), nullableTransactionMSI(transaction.InstallmentNumber()), nullableTransactionMSI(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableTransactionRecurrenceLimit(transaction.RecurrenceLimit()), nullableTransactionTime(transaction.LastPaidAt()), transaction.UpdatedAt())
+	return executor.Exec(ctx, updateTransactionQuery, transaction.ID(), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), transaction.Date(), string(transaction.Status()), nullableTransactionMSI(transaction.MSI()), nullableTransactionCreditCardID(transaction.CreditCardID()), nullableTransactionCreditCardID(transaction.PaymentAccountID()), nullableTransactionCreditCardID(transaction.DestinationAccountID()), nullableTransactionMSI(transaction.InstallmentNumber()), nullableTransactionMSI(transaction.InstallmentCount()), transaction.IsHistorical(), string(transaction.Recurrence()), nullableTransactionRecurrenceLimit(transaction.RecurrenceLimit()), nullableTransactionTime(transaction.LastPaidAt()), transaction.UpdatedAt())
 }
 
 func (repository *PostgresTransactionRepository) scanTransaction(row pgx.Row) (*domain.Transaction, error) {
@@ -445,6 +446,7 @@ func (repository *PostgresTransactionRepository) scanTransaction(row pgx.Row) (*
 		&storedTransaction.msi,
 		&storedTransaction.installmentNumber,
 		&storedTransaction.installmentCount,
+		&storedTransaction.isHistorical,
 		&storedTransaction.recurrence,
 		&storedTransaction.recurrenceLimit,
 		&storedTransaction.lastPaidAt,
@@ -470,6 +472,7 @@ func (repository *PostgresTransactionRepository) scanTransaction(row pgx.Row) (*
 		storedTransaction.lastPaidAt,
 		storedTransaction.createdAt,
 		storedTransaction.updatedAt,
+		storedTransaction.isHistorical,
 	)
 	if err != nil {
 		return nil, err
@@ -514,6 +517,7 @@ type storedTransaction struct {
 	msi                  *int
 	installmentNumber    *int
 	installmentCount     *int
+	isHistorical         bool
 	recurrence           string
 	recurrenceLimit      *int
 	lastPaidAt           *time.Time

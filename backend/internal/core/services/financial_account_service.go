@@ -26,9 +26,9 @@ func NewFinancialAccountService(repository ports.FinancialAccountRepository, idG
 	return &financialAccountService{repository: repository, transactionRepository: transactions, idGenerator: idGenerator, logger: logger}
 }
 
-func (service *financialAccountService) CreateAccount(ctx context.Context, userID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string) (*domain.FinancialAccount, error) {
+func (service *financialAccountService) CreateAccount(ctx context.Context, userID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string) (*domain.FinancialAccount, error) {
 	accountID := service.idGenerator.Generate()
-	account, err := domain.NewFinancialAccount(accountID, userID, accountType, name, institution, last4, openingBalanceCents, openingBalanceCents, creditLimitCents, cutoffDay, paymentDay, color)
+	account, err := domain.NewFinancialAccount(accountID, userID, accountType, name, institution, last4, openingBalanceCents, openingBalanceCents, creditLimitCents, cutoffDay, paymentDay, color, network)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (service *financialAccountService) GetAccounts(ctx context.Context, userID 
 			return accounts, nil
 		}
 	}
-	cashAccount, err := domain.NewFinancialAccount(service.idGenerator.Generate(), userID, domain.FinancialAccountTypeCash, defaultCashAccountName, "", nil, 0, 0, nil, nil, nil, "from-zinc-700 to-zinc-950")
+	cashAccount, err := domain.NewFinancialAccount(service.idGenerator.Generate(), userID, domain.FinancialAccountTypeCash, defaultCashAccountName, "", nil, 0, 0, nil, nil, nil, "from-zinc-700 to-zinc-950", "")
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (service *financialAccountService) GetAccountTransactions(ctx context.Conte
 	return transactions, nil
 }
 
-func (service *financialAccountService) UpdateAccount(ctx context.Context, userID, accountID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string) error {
+func (service *financialAccountService) UpdateAccount(ctx context.Context, userID, accountID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string) error {
 	existingAccount, err := service.getAuthorizedAccount(ctx, userID, accountID)
 	if err != nil {
 		return err
@@ -117,7 +117,7 @@ func (service *financialAccountService) UpdateAccount(ctx context.Context, userI
 	if existingAccount.OpeningBalanceCents() == existingAccount.CurrentBalanceCents() {
 		currentBalanceCents = openingBalanceCents
 	}
-	account, err := domain.NewFinancialAccount(accountID, userID, accountType, name, institution, last4, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay, color)
+	account, err := domain.NewFinancialAccount(accountID, userID, accountType, name, institution, last4, openingBalanceCents, currentBalanceCents, creditLimitCents, cutoffDay, paymentDay, color, network)
 	if err != nil {
 		return err
 	}

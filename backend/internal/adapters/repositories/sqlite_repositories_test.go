@@ -114,7 +114,7 @@ func TestSQLiteRepositories_PersistAndQueryLocalFirstData(t *testing.T) {
 	}
 
 	// Act + Assert: financial data and date filters
-	creditCard, err := domain.NewCreditCard("card-1", user.ID(), "Clásica", "BBVA", "1234", 10, 20, 5000000, "from-blue-600 to-sky-500")
+	creditCard, err := domain.NewCreditCard("card-1", user.ID(), "Clásica", "BBVA", "1234", 10, 20, 5000000, "from-blue-600 to-sky-500", domain.CreditCardNetworkVisa)
 	if err != nil {
 		t.Fatalf("failed to create credit card: %v", err)
 	}

@@ -17,8 +17,15 @@ var (
 	ErrInvalidCreditCardPaymentDay = errors.New("domain: credit card payment day must be between 1 and 31")
 	ErrInvalidCreditCardLimit      = errors.New("domain: credit card limit must be greater than zero")
 	ErrInvalidCreditCardColor      = errors.New("domain: credit card color cannot be empty")
+	ErrInvalidCreditCardNetwork    = errors.New("domain: invalid credit card network")
 	ErrInvalidCreditCardCreatedAt  = errors.New("domain: credit card created at cannot be zero")
 	ErrInvalidCreditCardUpdatedAt  = errors.New("domain: credit card updated at cannot be zero")
+)
+
+const (
+	CreditCardNetworkVisa            = "Visa"
+	CreditCardNetworkMastercard      = "Mastercard"
+	CreditCardNetworkAmericanExpress = "American Express"
 )
 
 type CreditCard struct {
@@ -31,12 +38,13 @@ type CreditCard struct {
 	paymentDay int
 	limitCents int64
 	color      string
+	network    string
 	createdAt  time.Time
 	updatedAt  time.Time
 }
 
-func NewCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*CreditCard, error) {
-	fields, err := validateCreditCardFields(id, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color)
+func NewCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) (*CreditCard, error) {
+	fields, err := validateCreditCardFields(id, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color, network)
 	if err != nil {
 		return nil, err
 	}
@@ -52,13 +60,14 @@ func NewCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymentDay i
 		paymentDay: paymentDay,
 		limitCents: limitCents,
 		color:      fields.color,
+		network:    fields.network,
 		createdAt:  currentTime,
 		updatedAt:  currentTime,
 	}, nil
 }
 
-func RehydrateCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string, createdAt, updatedAt time.Time) (*CreditCard, error) {
-	fields, err := validateCreditCardFields(id, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color)
+func RehydrateCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string, createdAt, updatedAt time.Time) (*CreditCard, error) {
+	fields, err := validateCreditCardFields(id, userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color, network)
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +88,14 @@ func RehydrateCreditCard(id, userID, name, bank, last4 string, cutoffDay, paymen
 		paymentDay: paymentDay,
 		limitCents: limitCents,
 		color:      fields.color,
+		network:    fields.network,
 		createdAt:  createdAt,
 		updatedAt:  updatedAt,
 	}, nil
 }
 
-func (card *CreditCard) Update(name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) error {
-	fields, err := validateCreditCardFields(card.id, card.userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color)
+func (card *CreditCard) Update(name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) error {
+	fields, err := validateCreditCardFields(card.id, card.userID, name, bank, last4, cutoffDay, paymentDay, limitCents, color, network)
 	if err != nil {
 		return err
 	}
@@ -97,6 +107,7 @@ func (card *CreditCard) Update(name, bank, last4 string, cutoffDay, paymentDay i
 	card.paymentDay = paymentDay
 	card.limitCents = limitCents
 	card.color = fields.color
+	card.network = fields.network
 	card.touch()
 	return nil
 }
@@ -137,6 +148,10 @@ func (card *CreditCard) Color() string {
 	return card.color
 }
 
+func (card *CreditCard) Network() string {
+	return card.network
+}
+
 func (card *CreditCard) CreatedAt() time.Time {
 	return card.createdAt
 }
@@ -156,9 +171,10 @@ type validatedCreditCardFields struct {
 	bank   string
 	last4  string
 	color  string
+	network string
 }
 
-func validateCreditCardFields(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (validatedCreditCardFields, error) {
+func validateCreditCardFields(id, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) (validatedCreditCardFields, error) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return validatedCreditCardFields{}, ErrInvalidCreditCardID
@@ -201,14 +217,29 @@ func validateCreditCardFields(id, userID, name, bank, last4 string, cutoffDay, p
 		return validatedCreditCardFields{}, ErrInvalidCreditCardColor
 	}
 
+	trimmedNetwork := strings.TrimSpace(network)
+	if trimmedNetwork == "" {
+		trimmedNetwork = CreditCardNetworkVisa
+	}
+	if !isValidCardNetwork(trimmedNetwork) {
+		return validatedCreditCardFields{}, ErrInvalidCreditCardNetwork
+	}
+
 	return validatedCreditCardFields{
-		id:     trimmedID,
-		userID: trimmedUserID,
-		name:   trimmedName,
-		bank:   trimmedBank,
-		last4:  trimmedLast4,
-		color:  trimmedColor,
+		id:      trimmedID,
+		userID:  trimmedUserID,
+		name:    trimmedName,
+		bank:    trimmedBank,
+		last4:   trimmedLast4,
+		color:   trimmedColor,
+		network: trimmedNetwork,
 	}, nil
+}
+
+func isValidCardNetwork(network string) bool {
+	return network == CreditCardNetworkVisa ||
+		network == CreditCardNetworkMastercard ||
+		network == CreditCardNetworkAmericanExpress
 }
 
 func isFourDigitCreditCardSuffix(last4 string) bool {

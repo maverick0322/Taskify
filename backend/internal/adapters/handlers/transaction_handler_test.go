@@ -32,7 +32,7 @@ type mockTransactionUseCase struct {
 	receivedEndDate      time.Time
 }
 
-func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int, paymentAccountID *string) (*domain.Transaction, error) {
+func (useCase *mockTransactionUseCase) CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int, paymentAccountID *string, paidInstallments ...int) (*domain.Transaction, error) {
 	useCase.requestedUserID = userID
 	useCase.createdAmountCents = amountCents
 	return useCase.transactionToReturn, useCase.errToReturn

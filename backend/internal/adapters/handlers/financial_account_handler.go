@@ -88,7 +88,7 @@ func (handler *FinancialAccountHandler) CreateAccount(response http.ResponseWrit
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
 		return
 	}
-	account, err := handler.useCase.CreateAccount(request.Context(), userID, domain.FinancialAccountType(createRequest.Type), createRequest.Name, createRequest.Institution, createRequest.Last4, createRequest.OpeningBalanceCents, createRequest.CreditLimitCents, createRequest.CutoffDay, createRequest.PaymentDay, createRequest.Color)
+	account, err := handler.useCase.CreateAccount(request.Context(), userID, domain.FinancialAccountType(createRequest.Type), createRequest.Name, createRequest.Institution, createRequest.Last4, createRequest.OpeningBalanceCents, createRequest.CreditLimitCents, createRequest.CutoffDay, createRequest.PaymentDay, createRequest.Color, createRequest.Network)
 	if err != nil {
 		handler.handleError(response, err)
 		return
@@ -107,7 +107,7 @@ func (handler *FinancialAccountHandler) UpdateAccount(response http.ResponseWrit
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
 		return
 	}
-	err := handler.useCase.UpdateAccount(request.Context(), userID, chi.URLParam(request, "id"), domain.FinancialAccountType(updateRequest.Type), updateRequest.Name, updateRequest.Institution, updateRequest.Last4, updateRequest.OpeningBalanceCents, updateRequest.CreditLimitCents, updateRequest.CutoffDay, updateRequest.PaymentDay, updateRequest.Color)
+	err := handler.useCase.UpdateAccount(request.Context(), userID, chi.URLParam(request, "id"), domain.FinancialAccountType(updateRequest.Type), updateRequest.Name, updateRequest.Institution, updateRequest.Last4, updateRequest.OpeningBalanceCents, updateRequest.CreditLimitCents, updateRequest.CutoffDay, updateRequest.PaymentDay, updateRequest.Color, updateRequest.Network)
 	if err != nil {
 		handler.handleError(response, err)
 		return
@@ -148,7 +148,8 @@ func isFinancialAccountDomainValidationError(err error) bool {
 		errors.Is(err, domain.ErrInvalidFinancialAccountBalance) ||
 		errors.Is(err, domain.ErrInvalidFinancialAccountCreditLimit) ||
 		errors.Is(err, domain.ErrInvalidFinancialAccountCutoffDay) ||
-		errors.Is(err, domain.ErrInvalidFinancialAccountPaymentDay)
+		errors.Is(err, domain.ErrInvalidFinancialAccountPaymentDay) ||
+		errors.Is(err, domain.ErrInvalidFinancialAccountNetwork)
 }
 
 func (handler *FinancialAccountHandler) transactionDateFilterFromRequest(response http.ResponseWriter, request *http.Request) (ports.TransactionDateFilter, bool) {
@@ -195,6 +196,7 @@ type financialAccountRequest struct {
 	CutoffDay           *int    `json:"cutoffDay"`
 	PaymentDay          *int    `json:"paymentDay"`
 	Color               string  `json:"color"`
+	Network             string  `json:"network"`
 }
 
 type financialAccountResponse struct {
@@ -209,6 +211,7 @@ type financialAccountResponse struct {
 	CutoffDay           *int    `json:"cutoffDay"`
 	PaymentDay          *int    `json:"paymentDay"`
 	Color               string  `json:"color"`
+	Network             string  `json:"network"`
 	CreatedAt           string  `json:"createdAt"`
 	UpdatedAt           string  `json:"updatedAt"`
 }
@@ -248,6 +251,7 @@ func financialAccountResponseFromDomain(account *domain.FinancialAccount) financ
 		CutoffDay:           account.CutoffDay(),
 		PaymentDay:          account.PaymentDay(),
 		Color:               account.Color(),
+		Network:             account.Network(),
 		CreatedAt:           account.CreatedAt().Format(time.RFC3339),
 		UpdatedAt:           account.UpdatedAt().Format(time.RFC3339),
 	}

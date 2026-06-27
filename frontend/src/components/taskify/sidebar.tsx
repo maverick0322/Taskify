@@ -1,34 +1,39 @@
-"use client"
+"use client";
 
-import React, { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { cn } from "@/lib/utils"
-import { isTauriRuntime } from "@/lib/runtime"
-import { ConfirmDialog } from "@/components/confirm-dialog"
-import { invalidateTaskCaches } from "@/components/taskify/task-cache"
-import type { CurrentView } from "@/components/taskify/navigation"
-import type { Board } from "@/services/boardService"
-import { deleteBoard } from "@/services/boardService"
-import { useAuthStore } from "@/store/useAuthStore"
-import { ProfileAvatar } from "@/components/profile-avatar"
-import { Button } from "@/components/ui/button"
+import React, { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
+import { isTauriRuntime } from "@/lib/runtime";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { invalidateTaskCaches } from "@/components/taskify/task-cache";
+import type { CurrentView } from "@/components/taskify/navigation";
+import type { Board } from "@/services/boardService";
+import { deleteBoard } from "@/services/boardService";
+import { useAuthStore } from "@/store/useAuthStore";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { NewBoardDialog } from "@/components/taskify/new-board-dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/components/ui/toast-provider"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { getFriendlyErrorMessage } from "@/services/api"
-import { checkpointSQLite, forceSync } from "@/services/systemService"
-import { updateCurrentUserProfile } from "@/services/userService"
-import { useUIStore } from "@/store/useUIStore"
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NewBoardDialog } from "@/components/taskify/new-board-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/toast-provider";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { getFriendlyErrorMessage } from "@/services/api";
+import { checkpointSQLite, forceSync } from "@/services/systemService";
+import { updateCurrentUserProfile } from "@/services/userService";
+import { useUIStore } from "@/store/useUIStore";
 import {
   LayoutDashboard,
   Plus,
@@ -42,26 +47,35 @@ import {
   LogOut,
   Trash2,
   Loader2,
-} from "lucide-react"
+} from "lucide-react";
 
-const boardColors = ["bg-indigo-500", "bg-violet-500", "bg-amber-500", "bg-emerald-500"]
+const boardColors = [
+  "bg-indigo-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+];
 
-const navItems: { icon: React.ElementType; label: string; view: CurrentView }[] = [
+const navItems: {
+  icon: React.ElementType;
+  label: string;
+  view: CurrentView;
+}[] = [
   { icon: LayoutDashboard, label: "Dashboard", view: "dashboard" },
-  { icon: CheckSquare,     label: "Mis Tareas", view: "tasks" },
-  { icon: Calendar,        label: "Agenda", view: "agenda" },
-  { icon: PieChart,        label: "Control financiero", view: "financial" },
-]
+  { icon: CheckSquare, label: "Mis Tareas", view: "tasks" },
+  { icon: Calendar, label: "Agenda", view: "agenda" },
+  { icon: PieChart, label: "Control financiero", view: "financial" },
+];
 
 interface SidebarProps {
-  className?: string
-  activeView?: CurrentView
-  boards?: Board[]
-  boardsError?: string
-  boardsLoading?: boolean
-  onViewChange?: (view: CurrentView) => void
-  selectedBoardId?: string | null
-  onBoardSelect?: (board: Board) => void
+  className?: string;
+  activeView?: CurrentView;
+  boards?: Board[];
+  boardsError?: string;
+  boardsLoading?: boolean;
+  onViewChange?: (view: CurrentView) => void;
+  selectedBoardId?: string | null;
+  onBoardSelect?: (board: Board) => void;
 }
 
 export function Sidebar({
@@ -74,25 +88,27 @@ export function Sidebar({
   selectedBoardId,
   onBoardSelect,
 }: SidebarProps) {
-  const queryClient = useQueryClient()
-  const user = useAuthStore((state) => state.user)
-  const updateUserProfile = useAuthStore((state) => state.updateUserProfile)
-  const logout = useAuthStore((state) => state.logout)
-  const toast = useToast()
-  const isDesktopRuntime = isTauriRuntime()
-  const [newBoardOpen, setNewBoardOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [displayNameDraft, setDisplayNameDraft] = useState(user?.fullName ?? "")
-  const [boardToDelete, setBoardToDelete] = useState<Board | null>(null)
-  const openHelpModal = useUIStore((state) => state.setHelpModalOpen)
+  const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const updateUserProfile = useAuthStore((state) => state.updateUserProfile);
+  const logout = useAuthStore((state) => state.logout);
+  const toast = useToast();
+  const isDesktopRuntime = isTauriRuntime();
+  const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState(
+    user?.fullName ?? "",
+  );
+  const [boardToDelete, setBoardToDelete] = useState<Board | null>(null);
+  const openHelpModal = useUIStore((state) => state.setHelpModalOpen);
   const deleteBoardMutation = useMutation({
     mutationFn: deleteBoard,
     onSuccess: (_data, boardId) => {
-      queryClient.invalidateQueries({ queryKey: ["boards"] })
-      invalidateTaskCaches(queryClient, boardId)
-      setBoardToDelete(null)
+      queryClient.invalidateQueries({ queryKey: ["boards"] });
+      invalidateTaskCaches(queryClient, boardId);
+      setBoardToDelete(null);
     },
-  })
+  });
   const updateProfileMutation = useMutation({
     mutationFn: updateCurrentUserProfile,
     onSuccess: async (profile) => {
@@ -100,79 +116,85 @@ export function Sidebar({
         email: profile.email,
         firstName: profile.firstName,
         lastName: profile.lastName,
-        fullName: [profile.firstName, profile.lastName].filter(Boolean).join(" "),
+        fullName: [profile.firstName, profile.lastName]
+          .filter(Boolean)
+          .join(" "),
         avatarLocalPath: profile.avatarLocalPath,
         avatarUrl: profile.avatarUrl,
-      })
-      queryClient.setQueryData(["users", "me"], profile)
-      await queryClient.invalidateQueries({ queryKey: ["users", "me"] })
-      toast.success("Nombre actualizado")
+      });
+      queryClient.setQueryData(["users", "me"], profile);
+      await queryClient.invalidateQueries({ queryKey: ["users", "me"] });
+      toast.success("Nombre actualizado");
     },
     onError: (error) => {
-      toast.error(getFriendlyErrorMessage(error))
+      toast.error(getFriendlyErrorMessage(error));
     },
-  })
+  });
   const forceSyncMutation = useMutation({
     mutationFn: forceSync,
     onSuccess: async () => {
-      toast.success("Sincronización completada")
-      await queryClient.invalidateQueries()
+      toast.success("Sincronización completada");
+      await queryClient.invalidateQueries();
     },
     onError: (error) => {
-      toast.error(getFriendlyErrorMessage(error))
+      toast.error(getFriendlyErrorMessage(error));
     },
-  })
+  });
 
   useEffect(() => {
     if (settingsOpen) {
-      setDisplayNameDraft(user?.fullName ?? "")
+      setDisplayNameDraft(user?.fullName ?? "");
     }
-  }, [settingsOpen, user?.fullName])
+  }, [settingsOpen, user?.fullName]);
 
   function handleDeleteBoard(board: Board) {
-    setBoardToDelete(board)
+    setBoardToDelete(board);
   }
 
   function handleConfirmDeleteBoard() {
     if (!boardToDelete) {
-      return
+      return;
     }
 
-    deleteBoardMutation.mutate(boardToDelete.id)
+    deleteBoardMutation.mutate(boardToDelete.id);
   }
 
   function handleSaveProfile() {
-    updateProfileMutation.mutate(displayNameDraft)
+    updateProfileMutation.mutate(displayNameDraft);
   }
 
   async function handleExportBackup() {
     try {
       if (!isDesktopRuntime) {
-        toast.error("La copia de seguridad local solo está disponible en la app de escritorio.")
-        return
+        toast.error(
+          "La copia de seguridad local solo está disponible en la app de escritorio.",
+        );
+        return;
       }
 
       const [{ save }, { copyFile }, { configDir, join }] = await Promise.all([
         import("@tauri-apps/plugin-dialog"),
         import("@tauri-apps/plugin-fs"),
         import("@tauri-apps/api/path"),
-      ])
-      await checkpointSQLite()
+      ]);
+      await checkpointSQLite();
       const destination = await save({
         defaultPath: "taskify_backup.db",
         filters: [{ name: "SQLite DB", extensions: ["db"] }],
-      })
+      });
 
       if (!destination) {
-        return
+        return;
       }
 
-      const source = await join(await configDir(), "Taskify", "taskify.db")
-      await copyFile(source, destination)
-      toast.success("Respaldo guardado correctamente")
+      const source = await join(await configDir(), "Taskify", "taskify.db");
+      await copyFile(source, destination);
+      toast.success("Respaldo guardado correctamente");
     } catch (error) {
-      console.error("backup export failed", error)
-      toast.error(getFriendlyErrorMessage(error, "No pudimos guardar el respaldo."))
+      console.error("backup export failed", error);
+      toast.error(
+        getFriendlyErrorMessage(error, "No pudimos guardar el respaldo."),
+      );
     }
   }
 
@@ -205,12 +227,16 @@ export function Sidebar({
                 />
               </div>
               <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                Este nombre se mostrará en tu perfil y se sincronizará con la nube.
+                Este nombre se mostrará en tu perfil y se sincronizará con la
+                nube.
               </p>
               <Button
                 type="button"
                 className="w-full sm:w-auto"
-                disabled={updateProfileMutation.isPending || displayNameDraft.trim() === ""}
+                disabled={
+                  updateProfileMutation.isPending ||
+                  displayNameDraft.trim() === ""
+                }
                 onClick={handleSaveProfile}
               >
                 {updateProfileMutation.isPending ? (
@@ -243,7 +269,8 @@ export function Sidebar({
                 Exportar copia de seguridad
               </Button>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Puedes forzar la sincronización o guardar una copia local de la base de datos.
+                Puedes forzar la sincronización o guardar una copia local de la
+                base de datos.
               </p>
             </TabsContent>
           </Tabs>
@@ -254,7 +281,7 @@ export function Sidebar({
         open={Boolean(boardToDelete)}
         onOpenChange={(open) => {
           if (!open) {
-            setBoardToDelete(null)
+            setBoardToDelete(null);
           }
         }}
         title="Eliminar tablero"
@@ -270,7 +297,7 @@ export function Sidebar({
       <aside
         className={cn(
           "flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground",
-          className
+          className,
         )}
       >
         {/* Logo */}
@@ -286,7 +313,7 @@ export function Sidebar({
         {/* Nav Items */}
         <nav className="flex flex-col gap-1 px-3 pt-4">
           {navItems.map(({ icon: Icon, label, view }) => {
-            const isActive = view === activeView
+            const isActive = view === activeView;
             return (
               <button
                 key={label}
@@ -301,7 +328,7 @@ export function Sidebar({
                 <Icon className="size-4 shrink-0" />
                 {label}
               </button>
-            )
+            );
           })}
         </nav>
 
@@ -346,53 +373,62 @@ export function Sidebar({
               </p>
             ) : null}
 
-            {!boardsLoading && !boardsError ? boards.map((board, index) => (
-              <div
-                key={board.id}
-                className={cn(
-                  "group flex items-center gap-1 rounded-md px-1 py-1 text-sm transition-colors",
-                  selectedBoardId === board.id
-                    ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                    : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    onViewChange?.("tasks")
-                    onBoardSelect?.(board)
-                  }}
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 text-left"
-                >
-                  <span className={cn("size-2.5 shrink-0 rounded-full", boardColors[index % boardColors.length])} />
-                  <span className="flex-1 truncate">{board.name}</span>
-                  <ChevronRight
+            {!boardsLoading && !boardsError
+              ? boards.map((board, index) => (
+                  <div
+                    key={board.id}
                     className={cn(
-                      "size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-70",
-                      selectedBoardId === board.id && "opacity-70"
+                      "group flex items-center gap-1 rounded-md px-1 py-1 text-sm transition-colors",
+                      selectedBoardId === board.id
+                        ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                        : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
                     )}
-                  />
-                </button>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className={cn(
-                        "size-7 shrink-0 text-sidebar-foreground/45 opacity-0 hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100",
-                        selectedBoardId === board.id && "opacity-70",
-                      )}
-                      disabled={deleteBoardMutation.isPending}
-                      onClick={() => handleDeleteBoard(board)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onViewChange?.("tasks");
+                        onBoardSelect?.(board);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 text-left"
                     >
-                      <Trash2 className="size-3.5" />
-                      <span className="sr-only">Eliminar tablero</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Eliminar tablero</TooltipContent>
-                </Tooltip>
-              </div>
-            )) : null}
+                      <span
+                        className={cn(
+                          "size-2.5 shrink-0 rounded-full",
+                          boardColors[index % boardColors.length],
+                        )}
+                      />
+                      <span className="flex-1 truncate">{board.name}</span>
+                      <ChevronRight
+                        className={cn(
+                          "size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-70",
+                          selectedBoardId === board.id && "opacity-70",
+                        )}
+                      />
+                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={cn(
+                            "size-7 shrink-0 text-sidebar-foreground/45 opacity-0 hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100",
+                            selectedBoardId === board.id && "opacity-70",
+                          )}
+                          disabled={deleteBoardMutation.isPending}
+                          onClick={() => handleDeleteBoard(board)}
+                        >
+                          <Trash2 className="size-3.5" />
+                          <span className="sr-only">Eliminar tablero</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        Eliminar tablero
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                ))
+              : null}
           </div>
         </div>
 
@@ -433,14 +469,18 @@ export function Sidebar({
           <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-sidebar-accent/60 transition-colors">
             <ProfileAvatar className="size-8" />
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-sidebar-foreground">{user?.fullName ?? "Taskify User"}</p>
-              <p className="truncate text-xs text-sidebar-foreground/50">{user?.email ?? "Sin correo"}</p>
+              <p className="truncate text-sm font-medium text-sidebar-foreground">
+                {user?.fullName ?? "Taskify User"}
+              </p>
+              <p className="truncate text-xs text-sidebar-foreground/50">
+                {user?.email ?? "Sin correo"}
+              </p>
             </div>
             <Button
               size="icon"
               variant="ghost"
               className="size-8 shrink-0 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              onClick={logout}
+              onClick={() => logout()}
               aria-label="Cerrar sesion"
             >
               <LogOut className="size-4" />
@@ -449,5 +489,5 @@ export function Sidebar({
         </div>
       </aside>
     </TooltipProvider>
-  )
+  );
 }

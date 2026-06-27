@@ -185,6 +185,13 @@ Configuration is injected securely during the build and deployment process.
 - Safer enterprise deployments.
 - Better secret management practices.
 
+### Operational Rule
+
+- `frontend/.env` must contain only public client variables.
+- Privileged credentials such as `REMOTE_DB_URL`, `JWT_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` must live only in backend/runtime secret stores.
+- Developers should create local `.env` files from the tracked `.env.example` templates; real `.env` files must stay untracked.
+- Desktop Tauri builds must use `REMOTE_API_URL` for cloud synchronization and must not embed direct database credentials inside the executable.
+
 ---
 
 # 🔐 Security
@@ -298,6 +305,7 @@ Goals:
 cd backend
 
 go build \
+  -trimpath \
   -ldflags="-H windowsgui -s -w" \
   -o ../frontend/src-tauri/bin/backend-x86_64-pc-windows-msvc.exe \
   ./cmd
@@ -310,6 +318,9 @@ go build \
 | `-H windowsgui` | Hides console window |
 | `-s` | Removes symbol table |
 | `-w` | Removes debug information |
+| `-trimpath` | Removes local filesystem paths from build metadata |
+
+The automated desktop build already uses these release flags through `frontend/package.json`.
 
 ---
 
@@ -328,6 +339,59 @@ Generated artifacts:
 ```text
 frontend/src-tauri/target/release/bundle/
 ```
+
+---
+
+# Desktop Release Hardening
+
+## What is already hardened
+
+- Desktop sync uses `REMOTE_API_URL`; it no longer connects directly to remote Postgres.
+- Remote sync tokens are stored in the operating system keychain through Tauri, not in desktop `localStorage`.
+- Desktop logout clears the secure session, clears the local sync session, and purges the local SQLite data store.
+- The Tauri webview capability no longer exposes generic shell execution permissions.
+- The Go sidecar release build hides the terminal window and strips debug-heavy metadata.
+
+## Release Checklist
+
+1. Secrets and configuration
+   - Verify `frontend/.env` contains only public values.
+   - Verify desktop build environment sets `REMOTE_API_URL` to the production backend URL.
+   - Verify Render production environment contains `JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, and any database credentials only on the server side.
+   - Verify Supabase keys rotated during phase 1 are the only active ones.
+
+2. Backend and sync
+   - Confirm `/sync/push` and `/sync/pull` are deployed on Render.
+   - Confirm JWT auth is required for both endpoints.
+   - Confirm remote CORS allows the desktop local origin flow already used by the app.
+   - Confirm a real user can login on desktop, create a task offline, reconnect, and see it appear on web.
+
+3. Desktop executable
+   - Run `npm run tauri:build` from `frontend`.
+   - Install the generated `.msi` or `.exe` from `frontend/src-tauri/target/release/bundle/`.
+   - Verify the app starts without a visible sidecar console window.
+   - Verify window dragging, maximize, minimize, and close still work.
+   - Verify desktop relaunch restores the session from the OS keychain.
+   - Verify logout returns to an empty local state after restart.
+
+4. Data safety
+   - Export a backup from the desktop app and verify the SQLite file opens.
+   - Verify purge on logout does not delete files outside the Taskify app data folder.
+   - Verify avatar selection and local backup export still work in release mode.
+
+5. Distribution
+   - Verify app icon, product name, and version are correct in the installer.
+   - Code-sign the Windows installer/executable if you plan external distribution.
+   - Run one clean install test on a machine that never had Taskify installed.
+
+6. Final smoke test
+   - Desktop login
+   - Create/edit/delete data
+   - Sync to web
+   - Web change syncs back to desktop
+   - Restart desktop
+   - Logout
+   - Login as another user on the same machine
 
 ---
 

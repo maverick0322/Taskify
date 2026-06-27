@@ -14,23 +14,23 @@ import (
 
 const (
 	createCreditCardQuery = `
-		INSERT INTO credit_cards (id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO credit_cards (id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	createCreditCardFinancialAccountQuery = `
-		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at)
-		VALUES ($1, $2, 'CREDIT_CARD', $3, $4, $5, 0, 0, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name, institution = excluded.institution, last4 = excluded.last4, credit_limit_cents = excluded.credit_limit_cents, cutoff_day = excluded.cutoff_day, payment_day = excluded.payment_day, color = excluded.color, updated_at = excluded.updated_at
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at)
+		VALUES ($1, $2, 'CREDIT_CARD', $3, $4, $5, 0, 0, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, institution = excluded.institution, last4 = excluded.last4, credit_limit_cents = excluded.credit_limit_cents, cutoff_day = excluded.cutoff_day, payment_day = excluded.payment_day, color = excluded.color, network = excluded.network, updated_at = excluded.updated_at
 	`
 
 	getCreditCardByIDQuery = `
-		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
+		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at
 		FROM credit_cards
 		WHERE id = $1
 	`
 
 	getCreditCardsByUserIDQuery = `
-		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
+		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at
 		FROM credit_cards
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -45,12 +45,13 @@ const (
 			payment_day = $6,
 			limit_cents = $7,
 			color = $8,
-			updated_at = $9
+			network = $9,
+			updated_at = $10
 		WHERE id = $1
 	`
 	updateCreditCardFinancialAccountQuery = `
 		UPDATE financial_accounts
-		SET name = $2, institution = $3, last4 = $4, credit_limit_cents = $5, cutoff_day = $6, payment_day = $7, color = $8, updated_at = $9
+		SET name = $2, institution = $3, last4 = $4, credit_limit_cents = $5, cutoff_day = $6, payment_day = $7, color = $8, network = $9, updated_at = $10
 		WHERE id = $1
 	`
 
@@ -98,11 +99,12 @@ func (repository *PostgresCreditCardRepository) Create(ctx context.Context, cred
 		creditCard.PaymentDay(),
 		creditCard.LimitCents(),
 		creditCard.Color(),
+		creditCard.Network(),
 		creditCard.CreatedAt(),
 		creditCard.UpdatedAt(),
 	)
 	if err == nil {
-		_, _ = repository.database.Exec(ctx, createCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.UserID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.CreatedAt(), creditCard.UpdatedAt())
+		_, _ = repository.database.Exec(ctx, createCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.UserID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.Network(), creditCard.CreatedAt(), creditCard.UpdatedAt())
 		return nil
 	}
 
@@ -161,12 +163,13 @@ func (repository *PostgresCreditCardRepository) Update(ctx context.Context, cred
 		creditCard.PaymentDay(),
 		creditCard.LimitCents(),
 		creditCard.Color(),
+		creditCard.Network(),
 		creditCard.UpdatedAt(),
 	); err != nil {
 		repository.logger.Error("failed to update credit card", "userID", creditCard.UserID(), "creditCardID", creditCard.ID(), "error", err)
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
-	if _, err := repository.database.Exec(ctx, updateCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.UpdatedAt()); err != nil {
+	if _, err := repository.database.Exec(ctx, updateCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.Network(), creditCard.UpdatedAt()); err != nil {
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
 
@@ -198,6 +201,7 @@ func (repository *PostgresCreditCardRepository) scanCreditCard(row pgx.Row) (*do
 		&storedCreditCard.paymentDay,
 		&storedCreditCard.limitCents,
 		&storedCreditCard.color,
+		&storedCreditCard.network,
 		&storedCreditCard.createdAt,
 		&storedCreditCard.updatedAt,
 	); err != nil {
@@ -214,6 +218,7 @@ func (repository *PostgresCreditCardRepository) scanCreditCard(row pgx.Row) (*do
 		storedCreditCard.paymentDay,
 		storedCreditCard.limitCents,
 		storedCreditCard.color,
+		storedCreditCard.network,
 		storedCreditCard.createdAt,
 		storedCreditCard.updatedAt,
 	)
@@ -250,6 +255,7 @@ type storedCreditCard struct {
 	paymentDay int
 	limitCents int64
 	color      string
+	network    string
 	createdAt  time.Time
 	updatedAt  time.Time
 }

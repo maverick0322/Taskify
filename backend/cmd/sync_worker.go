@@ -12,7 +12,13 @@ import (
 
 const syncWorkerFallbackInterval = 5 * time.Minute
 
-func startSyncWorker(ctx context.Context, syncService *services.SyncService, signalBus *services.SyncSignalBus, logger ports.Logger) {
+type backgroundSyncService interface {
+	SyncOnce(ctx context.Context) error
+	ForceFullPull(ctx context.Context) error
+	NeedsBootstrapPull(ctx context.Context) (bool, error)
+}
+
+func startSyncWorker(ctx context.Context, syncService backgroundSyncService, signalBus *services.SyncSignalBus, logger ports.Logger) {
 	logger.Info("[SYNC] Worker iniciado; fallback=5m")
 	runSafeSyncCycle(ctx, syncService, logger, shouldRunBootstrapPull(ctx, syncService, logger))
 
@@ -33,7 +39,7 @@ func startSyncWorker(ctx context.Context, syncService *services.SyncService, sig
 	}
 }
 
-func shouldRunBootstrapPull(ctx context.Context, syncService *services.SyncService, logger ports.Logger) bool {
+func shouldRunBootstrapPull(ctx context.Context, syncService backgroundSyncService, logger ports.Logger) bool {
 	if strings.EqualFold(os.Getenv("SYNC_BOOTSTRAP_PULL"), "true") {
 		logger.Info("[SYNC] Bootstrap pull activado por SYNC_BOOTSTRAP_PULL=true")
 		return true
@@ -49,7 +55,7 @@ func shouldRunBootstrapPull(ctx context.Context, syncService *services.SyncServi
 	return needsBootstrap
 }
 
-func runSafeSyncCycle(ctx context.Context, syncService *services.SyncService, logger ports.Logger, fullPull bool) {
+func runSafeSyncCycle(ctx context.Context, syncService backgroundSyncService, logger ports.Logger, fullPull bool) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			logger.Error("background sync recovered from panic", "panic", recovered)

@@ -59,7 +59,7 @@ func TestCreateCreditCard_ValidData_ReturnsCreditCardAndCreates(t *testing.T) {
 	repository := &mockCreditCardRepository{}
 	service := NewCreditCardService(repository, &mockTransactionRepository{}, &mockTransactionIDGenerator{id: validCreditCardServiceCreditCardID}, &mockTransactionLogger{})
 
-	creditCard, err := service.CreateCreditCard(context.Background(), validCreditCardServiceUserID, "Clasica", "BBVA", "1234", 15, 5, 5000000, "from-blue-500 to-sky-400")
+	creditCard, err := service.CreateCreditCard(context.Background(), validCreditCardServiceUserID, "Clasica", "BBVA", "1234", 15, 5, 5000000, "from-blue-500 to-sky-400", domain.CreditCardNetworkVisa)
 
 	if err != nil {
 		t.Fatalf("expected nil, got: %v", err)
@@ -75,7 +75,7 @@ func TestCreateCreditCard_ValidData_ReturnsCreditCardAndCreates(t *testing.T) {
 func TestCreateCreditCard_InvalidLast4_ReturnsDomainError(t *testing.T) {
 	service := NewCreditCardService(&mockCreditCardRepository{}, &mockTransactionRepository{}, &mockTransactionIDGenerator{id: validCreditCardServiceCreditCardID}, &mockTransactionLogger{})
 
-	_, err := service.CreateCreditCard(context.Background(), validCreditCardServiceUserID, "Clasica", "BBVA", "12", 15, 5, 5000000, "from-blue-500 to-sky-400")
+	_, err := service.CreateCreditCard(context.Background(), validCreditCardServiceUserID, "Clasica", "BBVA", "12", 15, 5, 5000000, "from-blue-500 to-sky-400", domain.CreditCardNetworkVisa)
 
 	if !errors.Is(err, domain.ErrInvalidCreditCardLast4) {
 		t.Errorf("expected error %v, got %v", domain.ErrInvalidCreditCardLast4, err)
@@ -183,7 +183,7 @@ func TestUpdateCreditCard_UnauthorizedCreditCard_ReturnsErrCreditCardNotFound(t 
 	card := createCreditCardServiceCard(t, "other-user-123", 15)
 	service := NewCreditCardService(&mockCreditCardRepository{creditCardToReturn: card}, &mockTransactionRepository{}, &mockTransactionIDGenerator{}, &mockTransactionLogger{})
 
-	err := service.UpdateCreditCard(context.Background(), validCreditCardServiceUserID, validCreditCardServiceCreditCardID, "Oro", "BBVA", "1234", 15, 5, 5000000, "from-blue-500 to-sky-400")
+	err := service.UpdateCreditCard(context.Background(), validCreditCardServiceUserID, validCreditCardServiceCreditCardID, "Oro", "BBVA", "1234", 15, 5, 5000000, "from-blue-500 to-sky-400", domain.CreditCardNetworkVisa)
 
 	if !errors.Is(err, ports.ErrCreditCardNotFound) {
 		t.Errorf("expected error %v, got %v", ports.ErrCreditCardNotFound, err)
@@ -208,7 +208,7 @@ func TestDeleteCreditCard_OwnedCreditCard_DeletesCreditCard(t *testing.T) {
 func createCreditCardServiceCard(t *testing.T, userID string, cutoffDay int) *domain.CreditCard {
 	t.Helper()
 
-	card, err := domain.NewCreditCard(validCreditCardServiceCreditCardID, userID, "Clasica", "BBVA", "1234", cutoffDay, 5, 5000000, "from-blue-500 to-sky-400")
+	card, err := domain.NewCreditCard(validCreditCardServiceCreditCardID, userID, "Clasica", "BBVA", "1234", cutoffDay, 5, 5000000, "from-blue-500 to-sky-400", domain.CreditCardNetworkVisa)
 	if err != nil {
 		t.Fatalf("expected credit card to be valid, got: %v", err)
 	}

@@ -66,7 +66,7 @@ type TransactionRepository interface {
 
 // TransactionUseCase defines user-scoped application operations for financial transactions.
 type TransactionUseCase interface {
-	CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int, paymentAccountID *string) (*domain.Transaction, error)
+	CreateTransaction(ctx context.Context, userID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int, paymentAccountID *string, paidInstallments ...int) (*domain.Transaction, error)
 	GetTransaction(ctx context.Context, userID, transactionID string) (*domain.Transaction, error)
 	GetUserTransactions(ctx context.Context, userID string, filter TransactionDateFilter) ([]*domain.Transaction, error)
 	UpdateTransaction(ctx context.Context, userID, transactionID string, transactionType domain.TransactionType, concept, category string, amountCents int64, date time.Time, status domain.TransactionStatus, msi *int, creditCardID *string, recurrence domain.TransactionRecurrence, recurrenceLimit *int) error

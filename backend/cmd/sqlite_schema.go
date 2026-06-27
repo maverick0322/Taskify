@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
     payment_day INTEGER NOT NULL,
     limit_cents INTEGER NOT NULL,
     color TEXT NOT NULL,
+    network TEXT NOT NULL DEFAULT 'Visa',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
@@ -106,6 +107,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
     CONSTRAINT chk_credit_cards_payment_day CHECK (payment_day BETWEEN 1 AND 31),
     CONSTRAINT chk_credit_cards_limit_positive CHECK (limit_cents > 0),
     CONSTRAINT chk_credit_cards_color_not_empty CHECK (length(trim(color)) > 0),
+    CONSTRAINT chk_credit_cards_network CHECK (network IN ('Visa', 'Mastercard', 'American Express')),
     CONSTRAINT chk_credit_cards_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
     CONSTRAINT chk_credit_cards_updated_at_not_zero CHECK (updated_at > '0001-01-01 00:00:00+00:00')
 );
@@ -125,6 +127,7 @@ CREATE TABLE IF NOT EXISTS financial_accounts (
     cutoff_day INTEGER NULL,
     payment_day INTEGER NULL,
     color TEXT NOT NULL DEFAULT 'from-zinc-700 to-zinc-950',
+    network TEXT NOT NULL DEFAULT 'Visa',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
@@ -133,13 +136,14 @@ CREATE TABLE IF NOT EXISTS financial_accounts (
     CONSTRAINT chk_financial_accounts_cash_balance CHECK (type = 'CREDIT_CARD' OR current_balance_cents >= 0),
     CONSTRAINT chk_financial_accounts_credit_limit CHECK (type != 'CREDIT_CARD' OR credit_limit_cents > 0),
     CONSTRAINT chk_financial_accounts_cutoff_day CHECK (cutoff_day IS NULL OR cutoff_day BETWEEN 1 AND 31),
-    CONSTRAINT chk_financial_accounts_payment_day CHECK (payment_day IS NULL OR payment_day BETWEEN 1 AND 31)
+    CONSTRAINT chk_financial_accounts_payment_day CHECK (payment_day IS NULL OR payment_day BETWEEN 1 AND 31),
+    CONSTRAINT chk_financial_accounts_network CHECK (type = 'CASH' OR network IN ('Visa', 'Mastercard', 'American Express'))
 );
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id ON financial_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id_type ON financial_accounts(user_id, type);
 
-INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at)
-SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at
+INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at)
+SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at
 FROM credit_cards
 WHERE deleted_at IS NULL
 ON CONFLICT(id) DO UPDATE SET
@@ -150,6 +154,7 @@ ON CONFLICT(id) DO UPDATE SET
     cutoff_day = excluded.cutoff_day,
     payment_day = excluded.payment_day,
     color = excluded.color,
+    network = excluded.network,
     updated_at = excluded.updated_at;
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -167,6 +172,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     msi INTEGER NULL,
     installment_number INTEGER NULL,
     installment_count INTEGER NULL,
+    is_historical BOOLEAN NOT NULL DEFAULT 0,
     recurrence TEXT NOT NULL DEFAULT 'once',
     recurrence_limit INTEGER NULL,
     last_paid_at DATETIME NULL,

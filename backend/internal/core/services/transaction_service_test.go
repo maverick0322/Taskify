@@ -563,6 +563,7 @@ func createTransactionServiceFinancialAccount(t *testing.T, accountType domain.F
 		&cutoffDay,
 		&paymentDay,
 		"from-blue-700 to-blue-900",
+		domain.CreditCardNetworkVisa,
 	)
 	if err != nil {
 		t.Fatalf("expected financial account to be valid, got: %v", err)

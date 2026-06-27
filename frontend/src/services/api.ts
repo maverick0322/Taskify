@@ -1,5 +1,10 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { isTauriRuntime } from "@/lib/runtime";
+import {
+  clearStoredSession,
+  loadStoredSession,
+  persistSession,
+} from "@/services/secureSession";
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
@@ -52,7 +57,7 @@ async function requestWithAuth<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const accessToken = localStorage.getItem("accessToken");
+  const accessToken = useAuthStore.getState().accessToken;
   if (accessToken && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -116,7 +121,8 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 async function performRefresh(): Promise<string> {
-  const refreshToken = localStorage.getItem("refreshToken");
+  const storedSession = await loadStoredSession();
+  const refreshToken = storedSession?.refreshToken;
 
   if (!refreshToken) {
     throw new ApiError(
@@ -153,15 +159,20 @@ async function performRefresh(): Promise<string> {
     );
   }
 
-  localStorage.setItem("refreshToken", tokenPair.refreshToken);
-
+  await persistSession({
+    accessToken: tokenPair.accessToken,
+    refreshToken: tokenPair.refreshToken,
+  });
   useAuthStore.getState().login(tokenPair.accessToken);
 
   return tokenPair.accessToken;
 }
 
-function useAuthStoreLogout() {
-  useAuthStore.getState().logout();
+async function useAuthStoreLogout() {
+  await clearStoredSession().catch(() => undefined);
+  useAuthStore
+    .getState()
+    .logout({ skipStorageClear: true, purgeDesktopData: true });
 }
 
 export function getFriendlyErrorMessage(
@@ -216,7 +227,10 @@ function networkApiError(error: unknown): ApiError {
   );
 }
 
-function apiErrorFromResponse(status: number, backendMessage: string): ApiError {
+function apiErrorFromResponse(
+  status: number,
+  backendMessage: string,
+): ApiError {
   return new ApiError(
     status,
     friendlyMessageFromStatus(status, backendMessage),
@@ -280,7 +294,8 @@ function isNetworkError(error: unknown): boolean {
 }
 
 const translatedBackendMessages: Record<string, string> = {
-  "invalid credentials": "Credenciales invalidas. Revisa tu correo y contrasena.",
+  "invalid credentials":
+    "Credenciales invalidas. Revisa tu correo y contrasena.",
   unauthorized: "Tu sesion expiro. Inicia sesion nuevamente.",
   "invalid refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
   "missing refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
@@ -291,9 +306,11 @@ const translatedBackendMessages: Record<string, string> = {
   "invalid due date": "La fecha de entrega no es valida.",
   "invalid user data": "Revisa tu informacion personal e intentalo de nuevo.",
   "name is required": "El nombre es obligatorio.",
-  "cloud sync is not configured": "La sincronizacion en la nube no esta configurada.",
+  "cloud sync is not configured":
+    "La sincronizacion en la nube no esta configurada.",
   "sync failed": "No pudimos completar la sincronizacion.",
-  "sqlite checkpoint failed": "No pudimos preparar la base de datos para el respaldo.",
+  "sqlite checkpoint failed":
+    "No pudimos preparar la base de datos para el respaldo.",
   "user already exists": "Ya existe una cuenta con ese correo.",
   "invalid board data": "Revisa los datos del tablero e intentalo de nuevo.",
   "board not found": "No encontramos ese tablero.",
@@ -308,7 +325,8 @@ const translatedBackendMessages: Record<string, string> = {
   "invalid financial account data":
     "Revisa los datos de la cuenta financiera e intentalo de nuevo.",
   "insufficient funds": "El saldo disponible no alcanza para este egreso.",
-  "credit limit exceeded": "La compra supera el limite disponible de la tarjeta.",
+  "credit limit exceeded":
+    "La compra supera el limite disponible de la tarjeta.",
   "invalid credit card data":
     "Revisa los datos de la tarjeta e intentalo de nuevo.",
   "credit card not found": "No encontramos esa tarjeta.",

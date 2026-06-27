@@ -12,23 +12,23 @@ import (
 
 const (
 	sqliteCreateCreditCardQuery = `
-		INSERT INTO credit_cards (id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO credit_cards (id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	sqliteCreateCreditCardFinancialAccountQuery = `
-		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at)
-		VALUES (?, ?, 'CREDIT_CARD', ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name, institution = excluded.institution, last4 = excluded.last4, credit_limit_cents = excluded.credit_limit_cents, cutoff_day = excluded.cutoff_day, payment_day = excluded.payment_day, color = excluded.color, updated_at = excluded.updated_at
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at)
+		VALUES (?, ?, 'CREDIT_CARD', ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, institution = excluded.institution, last4 = excluded.last4, credit_limit_cents = excluded.credit_limit_cents, cutoff_day = excluded.cutoff_day, payment_day = excluded.payment_day, color = excluded.color, network = excluded.network, updated_at = excluded.updated_at
 	`
 
 	sqliteGetCreditCardByIDQuery = `
-		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
+		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at
 		FROM credit_cards
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetCreditCardsByUserIDQuery = `
-		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, created_at, updated_at
+		SELECT id, user_id, name, bank, last4, cutoff_day, payment_day, limit_cents, color, network, created_at, updated_at
 		FROM credit_cards
 		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -43,12 +43,13 @@ const (
 			payment_day = ?,
 			limit_cents = ?,
 			color = ?,
+			network = ?,
 			updated_at = ?
 		WHERE id = ?
 	`
 	sqliteUpdateCreditCardFinancialAccountQuery = `
 		UPDATE financial_accounts
-		SET name = ?, institution = ?, last4 = ?, credit_limit_cents = ?, cutoff_day = ?, payment_day = ?, color = ?, updated_at = ?
+		SET name = ?, institution = ?, last4 = ?, credit_limit_cents = ?, cutoff_day = ?, payment_day = ?, color = ?, network = ?, updated_at = ?
 		WHERE id = ?
 	`
 
@@ -103,13 +104,14 @@ func (repository *SQLiteCreditCardRepository) Create(ctx context.Context, credit
 		creditCard.PaymentDay(),
 		creditCard.LimitCents(),
 		creditCard.Color(),
+		creditCard.Network(),
 		timeValue(creditCard.CreatedAt()),
 		timeValue(creditCard.UpdatedAt()),
 	)
 	if err != nil {
 		return repository.mapWriteError(err, "failed to create credit card", "userID", creditCard.UserID(), "creditCardID", creditCard.ID())
 	}
-	if _, err := tx.ExecContext(ctx, sqliteCreateCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.UserID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), timeValue(creditCard.CreatedAt()), timeValue(creditCard.UpdatedAt())); err != nil {
+	if _, err := tx.ExecContext(ctx, sqliteCreateCreditCardFinancialAccountQuery, creditCard.ID(), creditCard.UserID(), creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.Network(), timeValue(creditCard.CreatedAt()), timeValue(creditCard.UpdatedAt())); err != nil {
 		return repository.mapWriteError(err, "failed to create credit card financial account", "userID", creditCard.UserID(), "creditCardID", creditCard.ID())
 	}
 	if err := tx.Commit(); err != nil {
@@ -173,13 +175,14 @@ func (repository *SQLiteCreditCardRepository) Update(ctx context.Context, credit
 		creditCard.PaymentDay(),
 		creditCard.LimitCents(),
 		creditCard.Color(),
+		creditCard.Network(),
 		timeValue(creditCard.UpdatedAt()),
 		creditCard.ID(),
 	); err != nil {
 		repository.logger.Error("failed to update credit card", "userID", creditCard.UserID(), "creditCardID", creditCard.ID(), "error", err)
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
-	if _, err := tx.ExecContext(ctx, sqliteUpdateCreditCardFinancialAccountQuery, creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), timeValue(creditCard.UpdatedAt()), creditCard.ID()); err != nil {
+	if _, err := tx.ExecContext(ctx, sqliteUpdateCreditCardFinancialAccountQuery, creditCard.Name(), creditCard.Bank(), creditCard.Last4(), creditCard.LimitCents(), creditCard.CutoffDay(), creditCard.PaymentDay(), creditCard.Color(), creditCard.Network(), timeValue(creditCard.UpdatedAt()), creditCard.ID()); err != nil {
 		return ports.ErrCreditCardRepositoryUnavailable
 	}
 	if err := tx.Commit(); err != nil {
@@ -231,6 +234,7 @@ func (repository *SQLiteCreditCardRepository) scanCreditCard(row interface {
 		&storedCreditCard.paymentDay,
 		&storedCreditCard.limitCents,
 		&storedCreditCard.color,
+		&storedCreditCard.network,
 		&storedCreditCard.createdAt,
 		&storedCreditCard.updatedAt,
 	); err != nil {
@@ -247,6 +251,7 @@ func (repository *SQLiteCreditCardRepository) scanCreditCard(row interface {
 		storedCreditCard.paymentDay,
 		storedCreditCard.limitCents,
 		storedCreditCard.color,
+		storedCreditCard.network,
 		storedCreditCard.createdAt,
 		storedCreditCard.updatedAt,
 	)

@@ -15,6 +15,7 @@ func TestRun_MissingConfiguration_ReturnsErrMissingEnvironmentVariable(t *testin
 	// Arrange
 	changeWorkingDirectory(t, t.TempDir())
 	t.Setenv(jwtSecretEnvKey, "")
+	t.Setenv(environmentEnvKey, "production")
 	t.Setenv(accessTokenTTLEnvKey, "")
 	t.Setenv(refreshTokenTTLEnvKey, "")
 	t.Setenv(portEnvKey, "")

@@ -27,6 +27,8 @@ import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { login, register } from "@/services/authService";
+import { persistSession } from "@/services/secureSession";
+import { connectDesktopSyncSession } from "@/services/systemService";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export function AuthScreen() {
@@ -66,8 +68,16 @@ export function AuthScreen() {
       }
 
       const tokenPair = await login({ email, password });
-      localStorage.setItem("refreshToken", tokenPair.refreshToken);
+      await persistSession({
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+      });
       setAuthenticatedSession(tokenPair.accessToken);
+      try {
+        await connectDesktopSyncSession({ email, password });
+      } catch (error) {
+        console.warn("desktop sync session login failed", error);
+      }
     } catch (error) {
       setErrorMessage(
         getFriendlyErrorMessage(
@@ -135,7 +145,10 @@ export function AuthScreen() {
                 <div className="flex flex-col gap-4 pb-1 pt-0.5">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="firstName" className="text-sm font-medium">
+                      <Label
+                        htmlFor="firstName"
+                        className="text-sm font-medium"
+                      >
                         Nombre
                       </Label>
                       <div className="relative">
@@ -236,7 +249,9 @@ export function AuthScreen() {
                     showPassword ? "Ocultar contrasena" : "Mostrar contrasena"
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setShowPassword((currentValue) => !currentValue)}
+                  onClick={() =>
+                    setShowPassword((currentValue) => !currentValue)
+                  }
                   tabIndex={-1}
                 >
                   {showPassword ? (

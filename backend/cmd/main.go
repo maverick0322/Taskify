@@ -98,35 +98,23 @@ func run() error {
 			return err
 		}
 		defer sqliteDatabase.Close()
-
-		if config.remoteDatabaseURL != "" {
-			applicationLogger.Info("[SYNC] Intentando conectar a DB Remota")
-			remoteDatabase, err = openRemotePostgresDatabase(startupContext, config.remoteDatabaseURL)
-			if err != nil {
-				applicationLogger.Error("[SYNC] Error conectando a DB Remota; sync remoto desactivado", "error", err)
-			} else {
-				applicationLogger.Info("[SYNC] Conectado a DB Remota exitosamente")
-				if err := logRemoteSyncDiagnostics(startupContext, sqliteDatabase, remoteDatabase, applicationLogger); err != nil {
-					applicationLogger.Error("[SYNC] Diagnóstico remoto falló; sync remoto desactivado para evitar watermark incorrecto", "error", err)
-					remoteDatabase.Close()
-					remoteDatabase = nil
-				}
-				if remoteDatabase != nil {
-					defer remoteDatabase.Close()
-				}
-			}
-		} else {
-			applicationLogger.Warn("[SYNC] REMOTE_DB_URL vacío: sync remoto desactivado")
-		}
 	}
 	passwordHasher, err := auth.NewBcryptHasher(config.bcryptCost)
 	if err != nil {
 		return fmt.Errorf("failed to initialize password hasher: %w", err)
 	}
 
-	tokenGenerator, err := auth.NewJWTTokenGenerator(config.jwtSecret, config.accessTokenTTL, config.refreshTokenTTL)
-	if err != nil {
-		return fmt.Errorf("failed to initialize token generator: %w", err)
+	var tokenGenerator ports.TokenGenerator
+	if isProduction {
+		tokenGenerator, err = auth.NewJWTTokenGenerator(config.jwtSecret, config.accessTokenTTL, config.refreshTokenTTL)
+		if err != nil {
+			return fmt.Errorf("failed to initialize token generator: %w", err)
+		}
+	} else {
+		tokenGenerator, err = auth.NewLocalTokenGenerator(config.accessTokenTTL, config.refreshTokenTTL)
+		if err != nil {
+			return fmt.Errorf("failed to initialize local token generator: %w", err)
+		}
 	}
 	tokenValidator, ok := tokenGenerator.(ports.TokenValidator)
 	if !ok {
@@ -172,13 +160,30 @@ func run() error {
 	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
 	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
 	notificationUseCase := services.NewNotificationService(notificationRepository, applicationLogger)
-	var syncService *services.SyncService
+	var syncService interface {
+		SyncOnce(ctx context.Context) error
+		ForceFullPull(ctx context.Context) error
+		NeedsBootstrapPull(ctx context.Context) (bool, error)
+		EventHub() *services.SyncEventHub
+	}
+	var remoteSyncService *services.RemoteSyncService
 	var syncSignalBus *services.SyncSignalBus
-	if !isProduction && remoteDatabase != nil {
-		syncService = services.NewSyncService(sqliteDatabase, remoteDatabase, services.SyncDialectPostgres, applicationLogger)
-		syncService.SetEventHub(services.NewSyncEventHub())
+	var sessionSyncService interface {
+		LoginRemoteSession(ctx context.Context, email, password string) error
+		ClearSession()
+	}
+	if isProduction {
+		remoteSyncService = services.NewRemoteSyncService(remoteDatabase, services.SyncDialectPostgres, applicationLogger)
+	}
+	if !isProduction && config.remoteAPIURL != "" {
+		httpSyncService := services.NewHTTPRemoteSyncService(sqliteDatabase, config.remoteAPIURL, applicationLogger)
+		syncService = httpSyncService
+		sessionSyncService = httpSyncService
+		httpSyncService.SetEventHub(services.NewSyncEventHub())
 		syncSignalBus = services.NewSyncSignalBus()
-		applicationLogger.Info("[SYNC] Servicio de sincronización inicializado")
+		applicationLogger.Info("[SYNC] Servicio de sincronización HTTP inicializado", "remoteAPIURL", config.remoteAPIURL)
+	} else if !isProduction {
+		applicationLogger.Warn("[SYNC] REMOTE_API_URL vacío: sync remoto desactivado")
 	}
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)
@@ -187,13 +192,14 @@ func run() error {
 	creditCardHandler := handlers.NewCreditCardHandler(creditCardUseCase, applicationLogger)
 	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
 	notificationHandler := handlers.NewNotificationHandler(notificationUseCase, applicationLogger)
-	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, tokenValidator, applicationLogger)
+	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, remoteSyncService, sessionSyncService, tokenValidator, applicationLogger)
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
 	router.Use(withCORS(config.corsAllowedOrigins))
 	router.Get("/swagger/*", httpSwagger.WrapHandler)
 	userHandler.RegisterRoutes(router)
+	systemHandler.RegisterPublicRoutes(router)
 	systemHandler.RegisterEventRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
@@ -219,12 +225,13 @@ func run() error {
 	shutdownContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
-	if !isProduction && remoteDatabase != nil {
+	if !isProduction && syncSignalBus != nil && syncService != nil {
 		go startSyncWorker(shutdownContext, syncService, syncSignalBus, applicationLogger)
-		go startRemoteChangeListener(shutdownContext, config.remoteDatabaseURL, syncSignalBus, applicationLogger)
 	}
-	if !isProduction {
+	if !isProduction && config.remoteAPIURL == "" {
 		go startAvatarStorageWorker(shutdownContext, sqliteDatabase, config.supabaseURL, config.supabaseServiceKey, applicationLogger)
+	} else if !isProduction {
+		applicationLogger.Info("avatar storage sync disabled in desktop mode")
 	}
 	go startNotificationWorker(shutdownContext, notificationUseCase, applicationLogger)
 

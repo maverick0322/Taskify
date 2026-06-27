@@ -1,6 +1,9 @@
 import { jwtDecode } from "jwt-decode";
 import { create } from "zustand";
 
+import { isTauriRuntime } from "@/lib/runtime";
+import { clearStoredSession } from "@/services/secureSession";
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -25,7 +28,10 @@ interface AuthState {
   user: AuthUser | null;
   login: (token: string) => void;
   updateUserProfile: (profile: Partial<AuthUser>) => void;
-  logout: () => void;
+  logout: (options?: {
+    skipStorageClear?: boolean;
+    purgeDesktopData?: boolean;
+  }) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -46,7 +52,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const email = claims.email?.trim() ?? "";
       const fullName = [firstName, lastName].filter(Boolean).join(" ");
 
-      localStorage.setItem("accessToken", token);
       set({
         accessToken: token,
         user: {
@@ -83,13 +88,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         lastName,
         email,
         fullName,
-        initials: profile.initials ?? initialsFromName(firstName, lastName, email),
+        initials:
+          profile.initials ?? initialsFromName(firstName, lastName, email),
       },
     });
   },
-  logout: () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
+  logout: (options) => {
+    if (!options?.skipStorageClear) {
+      void clearStoredSession().catch(() => undefined);
+    }
+    if (isTauriRuntime()) {
+      void fetch("http://localhost:8080/sync/session/logout", {
+        method: "POST",
+      }).catch(() => undefined);
+      if (options?.purgeDesktopData) {
+        void fetch("http://localhost:8080/system/sqlite/purge", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${get().accessToken ?? ""}`,
+          },
+        }).catch(() => undefined);
+      }
+    }
     set({ accessToken: null, user: null });
   },
 }));

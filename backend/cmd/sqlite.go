@@ -93,8 +93,8 @@ func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
 
 func backfillSQLiteCreditCardFinancialAccounts(ctx context.Context, database *sql.DB) error {
 	_, err := database.ExecContext(ctx, `
-		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at)
-		SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, created_at, updated_at, deleted_at
+		INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at)
+		SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at
 		FROM credit_cards
 		WHERE deleted_at IS NULL
 		ON CONFLICT(id) DO UPDATE SET
@@ -105,6 +105,7 @@ func backfillSQLiteCreditCardFinancialAccounts(ctx context.Context, database *sq
 			cutoff_day = excluded.cutoff_day,
 			payment_day = excluded.payment_day,
 			color = excluded.color,
+			network = excluded.network,
 			updated_at = excluded.updated_at
 	`)
 	if err != nil {
@@ -140,6 +141,7 @@ func ensureSQLiteTransactionsCompletedStatus(ctx context.Context, database *sql.
 			msi INTEGER NULL,
 			installment_number INTEGER NULL,
 			installment_count INTEGER NULL,
+			is_historical BOOLEAN NOT NULL DEFAULT 0,
 			recurrence TEXT NOT NULL DEFAULT 'once',
 			recurrence_limit INTEGER NULL,
 			last_paid_at DATETIME NULL,
@@ -160,8 +162,8 @@ func ensureSQLiteTransactionsCompletedStatus(ctx context.Context, database *sql.
 			CONSTRAINT chk_transactions_created_at_not_zero CHECK (created_at > '0001-01-01 00:00:00+00:00'),
 			CONSTRAINT chk_transactions_updated_at_not_zero CHECK (updated_at > '0001-01-01 00:00:00+00:00')
 		)`,
-		`INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at)
-		 SELECT id, user_id, credit_card_id, NULL, NULL, type, concept, category, amount_cents, date, status, msi, NULL, NULL, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at
+		`INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at)
+		 SELECT id, user_id, credit_card_id, NULL, NULL, type, concept, category, amount_cents, date, status, msi, NULL, NULL, 0, recurrence, recurrence_limit, last_paid_at, created_at, updated_at, deleted_at
 		 FROM transactions_legacy`,
 		"DROP TABLE transactions_legacy",
 		"CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)",
@@ -203,6 +205,12 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 	if err := ensureSQLiteColumn(ctx, database, "columns", "color", "TEXT NOT NULL DEFAULT 'slate'"); err != nil {
 		return err
 	}
+	if err := ensureSQLiteColumn(ctx, database, "credit_cards", "network", "TEXT NOT NULL DEFAULT 'Visa'"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "financial_accounts", "network", "TEXT NOT NULL DEFAULT 'Visa'"); err != nil {
+		return err
+	}
 	if err := ensureSQLiteColumn(ctx, database, "tasks", "column_id", "TEXT REFERENCES columns(id) ON DELETE SET NULL"); err != nil {
 		return err
 	}
@@ -234,6 +242,9 @@ func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
 		return err
 	}
 	if err := ensureSQLiteColumn(ctx, database, "transactions", "installment_count", "INTEGER NULL"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(ctx, database, "transactions", "is_historical", "BOOLEAN NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 

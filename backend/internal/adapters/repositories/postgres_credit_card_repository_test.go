@@ -110,8 +110,8 @@ func TestPostgresCreditCardRepository_CreateValidCreditCard_ReturnsNil(t *testin
 	if database.receivedSQL != createCreditCardFinancialAccountQuery {
 		t.Errorf("expected create financial account mirror query to be used")
 	}
-	if len(database.receivedArguments) != 11 {
-		t.Errorf("expected eleven mirror arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 12 {
+		t.Errorf("expected twelve mirror arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -261,8 +261,8 @@ func TestPostgresCreditCardRepository_UpdateValidCreditCard_ReturnsNil(t *testin
 	if database.receivedSQL != updateCreditCardFinancialAccountQuery {
 		t.Errorf("expected update financial account mirror query to be used")
 	}
-	if len(database.receivedArguments) != 9 {
-		t.Errorf("expected nine mirror arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 10 {
+		t.Errorf("expected ten mirror arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -338,6 +338,7 @@ func validStoredCreditCardValues() []interface{} {
 		5,
 		int64(5000000),
 		"from-blue-500 to-sky-400",
+		domain.CreditCardNetworkVisa,
 		time.Now().Add(-2 * time.Hour),
 		time.Now().Add(-time.Hour),
 	}
@@ -356,6 +357,7 @@ func createRepositoryCreditCard(t *testing.T) *domain.CreditCard {
 		5,
 		5000000,
 		"from-blue-500 to-sky-400",
+		domain.CreditCardNetworkVisa,
 	)
 	if err != nil {
 		t.Fatalf("expected credit card to be valid, got: %v", err)

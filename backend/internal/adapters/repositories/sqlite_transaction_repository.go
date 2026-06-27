@@ -12,95 +12,95 @@ import (
 
 const (
 	sqliteCreateTransactionQuery = `
-		INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO transactions (id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	sqliteGetTransactionByIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
 	sqliteGetTransactionsByUserIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND date >= ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND credit_card_id = ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND credit_card_id = ? AND date >= ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND credit_card_id = ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndCreditCardIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND credit_card_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndPaymentAccountIDQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND payment_account_id = ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndPaymentAccountIDFromQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND payment_account_id = ? AND date >= ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndPaymentAccountIDToQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND payment_account_id = ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
 	`
 
 	sqliteGetTransactionsByUserIDAndPaymentAccountIDRangeQuery = `
-		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
+		SELECT id, user_id, credit_card_id, payment_account_id, destination_account_id, type, concept, category, amount_cents, date, status, msi, installment_number, installment_count, is_historical, recurrence, recurrence_limit, last_paid_at, created_at, updated_at
 		FROM transactions
 		WHERE user_id = ? AND payment_account_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
 		ORDER BY date DESC
@@ -120,6 +120,7 @@ const (
 			destination_account_id = ?,
 			installment_number = ?,
 			installment_count = ?,
+			is_historical = ?,
 			recurrence = ?,
 			recurrence_limit = ?,
 			last_paid_at = ?,
@@ -389,12 +390,12 @@ func (repository *SQLiteTransactionRepository) Delete(ctx context.Context, id st
 }
 
 func execSQLiteCreateTransaction(ctx context.Context, executor sqliteTransactionExecutor, transaction *domain.Transaction) (sql.Result, error) {
-	return executor.ExecContext(ctx, sqliteCreateTransactionQuery, transaction.ID(), transaction.UserID(), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), timeValue(transaction.CreatedAt()), timeValue(transaction.UpdatedAt()))
+	return executor.ExecContext(ctx, sqliteCreateTransactionQuery, transaction.ID(), transaction.UserID(), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), transaction.IsHistorical(), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), timeValue(transaction.CreatedAt()), timeValue(transaction.UpdatedAt()))
 }
 
 func execSQLiteUpdateTransaction(ctx context.Context, executor sqliteTransactionExecutor, transaction *domain.Transaction) (sql.Result, error) {
 	updatedAt := timeValue(transaction.UpdatedAt())
-	return executor.ExecContext(ctx, sqliteUpdateTransactionQuery, string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), updatedAt, transaction.ID(), updatedAt)
+	return executor.ExecContext(ctx, sqliteUpdateTransactionQuery, string(transaction.Type()), transaction.Concept(), transaction.Category(), transaction.AmountCents(), timeValue(transaction.Date()), string(transaction.Status()), nullableInt(transaction.MSI()), nullableString(transaction.CreditCardID()), nullableString(transaction.PaymentAccountID()), nullableString(transaction.DestinationAccountID()), nullableInt(transaction.InstallmentNumber()), nullableInt(transaction.InstallmentCount()), transaction.IsHistorical(), string(transaction.Recurrence()), nullableInt(transaction.RecurrenceLimit()), nullableTimePtr(transaction.LastPaidAt()), updatedAt, transaction.ID(), updatedAt)
 }
 
 func (repository *SQLiteTransactionRepository) queryTransactions(ctx context.Context, query string, arguments []interface{}, message string, keysAndValues ...interface{}) ([]*domain.Transaction, error) {
@@ -442,6 +443,7 @@ func (repository *SQLiteTransactionRepository) scanTransaction(row interface {
 		&storedTransaction.msi,
 		&storedTransaction.installmentNumber,
 		&storedTransaction.installmentCount,
+		&storedTransaction.isHistorical,
 		&storedTransaction.recurrence,
 		&storedTransaction.recurrenceLimit,
 		&storedTransaction.lastPaidAt,
@@ -467,6 +469,7 @@ func (repository *SQLiteTransactionRepository) scanTransaction(row interface {
 		scanNullableTimePtr(storedTransaction.lastPaidAt),
 		storedTransaction.createdAt,
 		storedTransaction.updatedAt,
+		storedTransaction.isHistorical,
 	)
 	if err != nil {
 		return nil, err
@@ -553,6 +556,7 @@ type sqliteStoredTransaction struct {
 	msi                  sql.NullInt64
 	installmentNumber    sql.NullInt64
 	installmentCount     sql.NullInt64
+	isHistorical         bool
 	recurrence           string
 	recurrenceLimit      sql.NullInt64
 	lastPaidAt           sql.NullTime

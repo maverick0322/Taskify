@@ -55,6 +55,7 @@ func (handler *CreditCardHandler) CreateCreditCard(response http.ResponseWriter,
 		createRequest.PaymentDay,
 		createRequest.LimitCents,
 		createRequest.Color,
+		createRequest.Network,
 	)
 	if err != nil {
 		handler.handleCreditCardError(response, err)
@@ -103,6 +104,7 @@ func (handler *CreditCardHandler) UpdateCreditCard(response http.ResponseWriter,
 		updateRequest.PaymentDay,
 		updateRequest.LimitCents,
 		updateRequest.Color,
+		updateRequest.Network,
 	)
 	if err != nil {
 		handler.handleCreditCardError(response, err)
@@ -195,6 +197,7 @@ func isCreditCardDomainValidationError(err error) bool {
 		errors.Is(err, domain.ErrInvalidCreditCardPaymentDay) ||
 		errors.Is(err, domain.ErrInvalidCreditCardLimit) ||
 		errors.Is(err, domain.ErrInvalidCreditCardColor) ||
+		errors.Is(err, domain.ErrInvalidCreditCardNetwork) ||
 		errors.Is(err, domain.ErrInvalidCreditCardCreatedAt) ||
 		errors.Is(err, domain.ErrInvalidCreditCardUpdatedAt)
 }
@@ -209,6 +212,7 @@ func creditCardResponseFromDomain(creditCard *domain.CreditCard, currentDebtCent
 		PaymentDay:       creditCard.PaymentDay(),
 		LimitCents:       creditCard.LimitCents(),
 		Color:            creditCard.Color(),
+		Network:          creditCard.Network(),
 		CurrentDebtCents: currentDebtCents,
 		CreatedAt:        creditCard.CreatedAt().Format(time.RFC3339),
 		UpdatedAt:        creditCard.UpdatedAt().Format(time.RFC3339),
@@ -235,6 +239,7 @@ type creditCardRequest struct {
 	PaymentDay int    `json:"paymentDay"`
 	LimitCents int64  `json:"limitCents"`
 	Color      string `json:"color"`
+	Network    string `json:"network"`
 }
 
 type payCreditCardDebtRequest struct {
@@ -251,6 +256,7 @@ type creditCardResponse struct {
 	PaymentDay       int    `json:"paymentDay"`
 	LimitCents       int64  `json:"limitCents"`
 	Color            string `json:"color"`
+	Network          string `json:"network"`
 	CurrentDebtCents int64  `json:"currentDebtCents"`
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`

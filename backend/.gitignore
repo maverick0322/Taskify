@@ -1,1 +1,4 @@
 "taskify-api.exe" 
+.env
+.env.*
+!.env.example

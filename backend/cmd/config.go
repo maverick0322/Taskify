@@ -16,9 +16,14 @@ const (
 	bcryptCostEnvKey         = "BCRYPT_COST"
 	environmentEnvKey        = "ENV"
 	remoteDBURLEnvKey        = "REMOTE_DB_URL"
+	remoteAPIURLEnvKey       = "REMOTE_API_URL"
 	supabaseURLEnvKey        = "SUPABASE_URL"
 	supabaseServiceKeyEnvKey = "SUPABASE_SERVICE_ROLE_KEY"
 	corsAllowedOriginsEnvKey = "CORS_ALLOWED_ORIGINS"
+	defaultAccessTokenTTL    = "15m"
+	defaultRefreshTokenTTL   = "24h"
+	defaultPort              = "8080"
+	defaultBcryptCost        = "10"
 )
 
 var (
@@ -36,6 +41,7 @@ type appConfig struct {
 	bcryptCost         int
 	environment        string
 	remoteDatabaseURL  string
+	remoteAPIURL       string
 	supabaseURL        string
 	supabaseServiceKey string
 	corsAllowedOrigins []string
@@ -44,30 +50,16 @@ type appConfig struct {
 type getenvFunc func(string) string
 
 func loadAppConfig(getenv getenvFunc) (appConfig, error) {
-	jwtSecret, err := requiredEnvironmentValue(getenv, jwtSecretEnvKey)
-	if err != nil {
-		return appConfig{}, err
+	environment := strings.ToLower(strings.TrimSpace(getenv(environmentEnvKey)))
+	jwtSecret := strings.TrimSpace(getenv(jwtSecretEnvKey))
+	if environment == "production" && jwtSecret == "" {
+		return appConfig{}, fmt.Errorf("%w: %s", ErrMissingEnvironmentVariable, jwtSecretEnvKey)
 	}
 
-	accessTokenTTLValue, err := requiredEnvironmentValue(getenv, accessTokenTTLEnvKey)
-	if err != nil {
-		return appConfig{}, err
-	}
-
-	refreshTokenTTLValue, err := requiredEnvironmentValue(getenv, refreshTokenTTLEnvKey)
-	if err != nil {
-		return appConfig{}, err
-	}
-
-	port, err := requiredEnvironmentValue(getenv, portEnvKey)
-	if err != nil {
-		return appConfig{}, err
-	}
-
-	bcryptCostValue, err := requiredEnvironmentValue(getenv, bcryptCostEnvKey)
-	if err != nil {
-		return appConfig{}, err
-	}
+	accessTokenTTLValue := environmentValueOrDefault(getenv, accessTokenTTLEnvKey, defaultAccessTokenTTL)
+	refreshTokenTTLValue := environmentValueOrDefault(getenv, refreshTokenTTLEnvKey, defaultRefreshTokenTTL)
+	port := environmentValueOrDefault(getenv, portEnvKey, defaultPort)
+	bcryptCostValue := environmentValueOrDefault(getenv, bcryptCostEnvKey, defaultBcryptCost)
 
 	accessTokenTTL, err := parsePositiveDuration(accessTokenTTLValue, ErrInvalidAccessTokenTTL)
 	if err != nil {
@@ -90,8 +82,9 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 		refreshTokenTTL:    refreshTokenTTL,
 		port:               port,
 		bcryptCost:         bcryptCost,
-		environment:        strings.ToLower(strings.TrimSpace(getenv(environmentEnvKey))),
+		environment:        environment,
 		remoteDatabaseURL:  strings.TrimSpace(getenv(remoteDBURLEnvKey)),
+		remoteAPIURL:       strings.TrimRight(strings.TrimSpace(getenv(remoteAPIURLEnvKey)), "/"),
 		supabaseURL:        strings.TrimRight(strings.TrimSpace(getenv(supabaseURLEnvKey)), "/"),
 		supabaseServiceKey: strings.TrimSpace(getenv(supabaseServiceKeyEnvKey)),
 		corsAllowedOrigins: parseCSV(getenv(corsAllowedOriginsEnvKey)),
@@ -109,6 +102,15 @@ func requiredEnvironmentValue(getenv getenvFunc, key string) (string, error) {
 	}
 
 	return value, nil
+}
+
+func environmentValueOrDefault(getenv getenvFunc, key, defaultValue string) string {
+	value := strings.TrimSpace(getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
 }
 
 func parseBcryptCost(rawValue string) (int, error) {

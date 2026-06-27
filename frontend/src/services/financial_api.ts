@@ -2,6 +2,7 @@ import { apiRequest } from "@/services/api";
 
 export type FinancialTransactionType = "INCOME" | "EXPENSE" | "DEBT_PAYMENT" | "TRANSFER";
 export type FinancialAccountType = "CASH" | "DEBIT_CARD" | "CREDIT_CARD";
+export type FinancialCardNetwork = "Visa" | "Mastercard" | "American Express";
 export type FinancialTransactionStatus = "PAID" | "PENDING" | "COMPLETED";
 export type FinancialTransactionRecurrence =
   | "once"
@@ -23,6 +24,7 @@ export interface FinancialTransaction {
   destinationAccountId?: string | null;
   installmentNumber?: number | null;
   installmentCount?: number | null;
+  isHistorical?: boolean;
   recurrence: FinancialTransactionRecurrence;
   recurrenceLimit?: number | null;
   lastPaidAt?: string | null;
@@ -62,6 +64,7 @@ export interface CreditCardSummary {
   paymentDay: number;
   limitCents: number;
   color: string;
+  network: FinancialCardNetwork;
   currentDebtCents: number;
   createdAt: string;
   updatedAt: string;
@@ -79,6 +82,7 @@ export interface FinancialAccount {
   cutoffDay?: number | null;
   paymentDay?: number | null;
   color: string;
+  network: FinancialCardNetwork;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +106,7 @@ export interface CreateTransactionInput {
   status: FinancialTransactionStatus;
   msi?: number | null;
   paymentAccountId?: string | null;
+  paidInstallments?: number | null;
   recurrence?: FinancialTransactionRecurrence;
   recurrenceLimit?: number | null;
 }
@@ -116,6 +121,7 @@ export interface CreateCreditCardInput {
   paymentDay: number;
   limitCents: number;
   color: string;
+  network: FinancialCardNetwork;
 }
 
 export interface PayCreditCardDebtInput {

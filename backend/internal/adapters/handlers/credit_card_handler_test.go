@@ -27,7 +27,7 @@ type mockCreditCardUseCase struct {
 	paidAmountCents    int64
 }
 
-func (useCase *mockCreditCardUseCase) CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) (*domain.CreditCard, error) {
+func (useCase *mockCreditCardUseCase) CreateCreditCard(ctx context.Context, userID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) (*domain.CreditCard, error) {
 	useCase.requestedUserID = userID
 	useCase.createdLimitCents = limitCents
 	return useCase.creditCardToReturn, useCase.errToReturn
@@ -38,7 +38,7 @@ func (useCase *mockCreditCardUseCase) GetCardsWithSummary(ctx context.Context, u
 	return useCase.summariesToReturn, useCase.errToReturn
 }
 
-func (useCase *mockCreditCardUseCase) UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color string) error {
+func (useCase *mockCreditCardUseCase) UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) error {
 	useCase.requestedUserID = userID
 	useCase.requestedID = creditCardID
 	useCase.updatedLimitCents = limitCents
@@ -268,6 +268,7 @@ func createHandlerCreditCard(t *testing.T) *domain.CreditCard {
 		5,
 		5000000,
 		"from-blue-500 to-sky-400",
+		domain.CreditCardNetworkVisa,
 		time.Now().Add(-2*time.Hour),
 		time.Now().Add(-time.Hour),
 	)
@@ -279,5 +280,5 @@ func createHandlerCreditCard(t *testing.T) *domain.CreditCard {
 }
 
 func validCreateCreditCardJSON() string {
-	return `{"name":"Clasica","bank":"BBVA","last4":"1234","cutoffDay":15,"paymentDay":5,"limitCents":5000000,"color":"from-blue-500 to-sky-400"}`
+	return `{"name":"Clasica","bank":"BBVA","last4":"1234","cutoffDay":15,"paymentDay":5,"limitCents":5000000,"color":"from-blue-500 to-sky-400","network":"Visa"}`
 }

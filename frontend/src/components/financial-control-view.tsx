@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ElementType } from "react"
+import { useEffect, useMemo, useState, type CSSProperties, type ElementType } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -88,6 +88,7 @@ import {
   type CreateTransactionInput,
   type CreditCardSummary,
   type FinancialAccount,
+  type FinancialCardNetwork,
   type FinancialAccountSummary,
   type FinancialAccountType,
   type FinancialTransaction,
@@ -114,6 +115,7 @@ interface Transaction {
   type: TransactionType
   amount: number
   msi?: string
+  isHistorical?: boolean
   paymentAccountId?: string | null
   paymentMethod?: string
 }
@@ -166,14 +168,36 @@ const SERVICES_ICONS = [
   { label: "Otro", value: "other" },
 ]
 
-const CARD_GRADIENTS = [
-  { label: "Azul marino", gradient: "from-blue-700 to-blue-900", border: "border-blue-600" },
-  { label: "Pizarra", gradient: "from-slate-700 to-slate-900", border: "border-slate-600" },
-  { label: "Negro", gradient: "from-zinc-800 to-zinc-950", border: "border-zinc-700" },
-  { label: "Rojo", gradient: "from-red-800 to-red-950", border: "border-red-700" },
-  { label: "Verde", gradient: "from-emerald-700 to-emerald-900", border: "border-emerald-600" },
-  { label: "Dorado", gradient: "from-amber-600 to-amber-800", border: "border-amber-500" },
+const CARD_NETWORKS: FinancialCardNetwork[] = [
+  "Visa",
+  "Mastercard",
+  "American Express",
 ]
+
+const CARD_COLORS = [
+  { label: "Azul marino", value: "#1D4ED8", border: "border-blue-600" },
+  { label: "Pizarra", value: "#334155", border: "border-slate-600" },
+  { label: "Negro", value: "#18181B", border: "border-zinc-700" },
+  { label: "Rojo", value: "#991B1B", border: "border-red-700" },
+  { label: "Verde", value: "#047857", border: "border-emerald-600" },
+  { label: "Dorado", value: "#B45309", border: "border-amber-500" },
+  { label: "Morado", value: "#8A05BE", border: "border-purple-600" },
+  { label: "Plateado", value: "#C0C0C0", border: "border-slate-300" },
+  { label: "Amarillo", value: "#FFF159", border: "border-yellow-300" },
+  { label: "Cian", value: "#00B4D8", border: "border-cyan-400" },
+]
+
+const LEGACY_CARD_COLORS: Record<string, string> = {
+  "from-blue-700 to-blue-900": "#1D4ED8",
+  "from-blue-600 to-sky-500": "#2563EB",
+  "from-blue-500 to-sky-400": "#3B82F6",
+  "from-slate-700 to-slate-900": "#334155",
+  "from-zinc-800 to-zinc-950": "#18181B",
+  "from-zinc-700 to-zinc-950": "#3F3F46",
+  "from-red-800 to-red-950": "#991B1B",
+  "from-emerald-700 to-emerald-900": "#047857",
+  "from-amber-600 to-amber-800": "#B45309",
+}
 
 const BANKS = [
   "BBVA Bancomer",
@@ -183,6 +207,14 @@ const BANKS = [
   "Banorte",
   "Scotiabank",
   "Inbursa",
+  "Nu",
+  "Klar",
+  "Revolut",
+  "Plata Card",
+  "Hey Banco",
+  "Mercado Pago",
+  "Ualá",
+  "Spin",
   "Otro",
 ]
 
@@ -352,6 +384,7 @@ function financialAccountFromCreditCard(
       cutoffDay: card.cutoffDay,
       paymentDay: card.paymentDay,
       color: card.color,
+      network: card.network,
       createdAt: card.createdAt,
       updatedAt: card.updatedAt,
     }
@@ -373,6 +406,7 @@ function mapTransaction(
     type: transaction.type === "INCOME" ? "income" : "expense",
     amount: centsToAmount(transaction.amountCents),
     msi: transaction.msi ? `${transaction.msi} MSI` : undefined,
+    isHistorical: transaction.isHistorical,
     paymentAccountId: transaction.paymentAccountId,
     paymentMethod: paymentAccountLabel(account),
   }
@@ -539,9 +573,42 @@ function financialQueryKeys(startDate: string, endDate: string) {
 }
 
 function cardVisualForColor(color: string) {
+  const value = LEGACY_CARD_COLORS[color] ?? color
+  return CARD_COLORS.find((cardColor) => cardColor.value === value) ?? {
+    label: "Personalizado",
+    value,
+    border: "border-white/20",
+  }
+}
+
+function cardBackgroundStyle(color: string): CSSProperties {
+  return {
+    "--card-bg": cardVisualForColor(color).value,
+  } as CSSProperties
+}
+
+function CardNetworkMark({ network }: { network?: FinancialCardNetwork }) {
+  if (network === "Mastercard") {
+    return (
+      <div className="flex items-center" aria-label="Mastercard">
+        <span className="block size-6 rounded-full bg-red-500 mix-blend-multiply" />
+        <span className="-ml-2 block size-6 rounded-full bg-orange-400 mix-blend-multiply" />
+      </div>
+    )
+  }
+
+  if (network === "American Express") {
+    return (
+      <span className="rounded-sm border border-white/70 px-1.5 py-0.5 text-xs font-black tracking-tight">
+        AMEX
+      </span>
+    )
+  }
+
   return (
-    CARD_GRADIENTS.find((gradient) => gradient.gradient === color) ??
-    CARD_GRADIENTS[0]
+    <span className="text-sm font-black italic uppercase tracking-wider">
+      VISA
+    </span>
   )
 }
 
@@ -584,6 +651,7 @@ function NewMovementDialog({
   const [fecha, setFecha] = useState(formatDateInput(new Date()))
   const [paymentAccountId, setPaymentAccountId] = useState("")
   const [msi, setMsi] = useState("1")
+  const [paidInstallments, setPaidInstallments] = useState("0")
   const [errorMessage, setErrorMessage] = useState("")
   const isEditing = Boolean(transaction?.id)
   const selectedPaymentAccount = paymentAccounts.find(
@@ -602,6 +670,7 @@ function NewMovementDialog({
     setFecha(transaction?.date ?? formatDateInput(new Date()))
     setPaymentAccountId(transaction?.paymentAccountId ?? paymentAccounts[0]?.id ?? "")
     setMsi(transaction?.msi ? String(transaction.msi) : "1")
+    setPaidInstallments("0")
     setErrorMessage("")
   }, [open, paymentAccounts, transaction])
 
@@ -618,6 +687,16 @@ function NewMovementDialog({
       setErrorMessage("Los MSI deben ser un numero entero mayor a cero.")
       return
     }
+    const paidInstallmentsValue =
+      msiValue !== null && msiValue > 1 ? Number(paidInstallments || "0") : 0
+    if (
+      !Number.isInteger(paidInstallmentsValue) ||
+      paidInstallmentsValue < 0 ||
+      (msiValue !== null && paidInstallmentsValue > msiValue)
+    ) {
+      setErrorMessage("Las mensualidades pagadas deben estar entre 0 y el total de MSI.")
+      return
+    }
 
     onSubmit({
       type: tipo === "income" ? "INCOME" : "EXPENSE",
@@ -628,6 +707,7 @@ function NewMovementDialog({
       status: "PAID",
       msi: msiValue,
       paymentAccountId,
+      paidInstallments: paidInstallmentsValue,
     })
   }
 
@@ -731,6 +811,21 @@ function NewMovementDialog({
                 min={1}
                 value={msi}
                 onChange={(event) => setMsi(event.target.value)}
+              />
+            </div>
+          ) : null}
+
+          {selectedPaymentAccount?.type === "CREDIT_CARD" &&
+          tipo === "expense" &&
+          Number(msi) > 1 ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="paid-installments">Mensualidades ya pagadas</Label>
+              <Input
+                id="paid-installments"
+                type="number"
+                min={0}
+                value={paidInstallments}
+                onChange={(event) => setPaidInstallments(event.target.value)}
               />
             </div>
           ) : null}
@@ -976,7 +1071,8 @@ function AddCardDialog({
   const [paymentDay, setPaymentDay] = useState("")
   const [limit, setLimit] = useState("")
   const [openingBalance, setOpeningBalance] = useState("")
-  const [selectedGradient, setSelectedGradient] = useState(CARD_GRADIENTS[0])
+  const [network, setNetwork] = useState<FinancialCardNetwork>("Visa")
+  const [selectedColor, setSelectedColor] = useState(CARD_COLORS[0])
   const [errorMessage, setErrorMessage] = useState("")
   const isEditing = Boolean(card?.id || debitCard?.id)
 
@@ -991,16 +1087,17 @@ function AddCardDialog({
     setLast4(card?.last4 ?? debitCard?.last4 ?? "")
     setCutoffDay(card ? String(card.cutoffDay) : "")
     setPaymentDay(card ? String(card.paymentDay) : "")
+    setNetwork(card?.network ?? debitCard?.network ?? "Visa")
     setLimit(card ? String(centsToAmount(card.limitCents)) : "")
     setOpeningBalance(
       debitCard ? String(centsToAmount(debitCard.openingBalanceCents)) : "",
     )
-    setSelectedGradient(
+    setSelectedColor(
       card
         ? cardVisualForColor(card.color)
         : debitCard
         ? cardVisualForColor(debitCard.color)
-        : CARD_GRADIENTS[0],
+        : CARD_COLORS[0],
     )
     setErrorMessage("")
   }, [card, debitCard, open])
@@ -1026,7 +1123,8 @@ function AddCardDialog({
         creditLimitCents: null,
         cutoffDay: null,
         paymentDay: null,
-        color: selectedGradient.gradient,
+        color: selectedColor.value,
+        network,
       })
       return
     }
@@ -1053,7 +1151,8 @@ function AddCardDialog({
       creditLimitCents,
       cutoffDay: parsedCutoffDay,
       paymentDay: parsedPaymentDay,
-      color: selectedGradient.gradient,
+      color: selectedColor.value,
+      network,
     })
   }
 
@@ -1139,6 +1238,27 @@ function AddCardDialog({
             </Select>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label>Red</Label>
+            <Select
+              value={network}
+              onValueChange={(value) => setNetwork(value as FinancialCardNetwork)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona red" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {CARD_NETWORKS.map((cardNetwork) => (
+                    <SelectItem key={cardNetwork} value={cardNetwork}>
+                      {cardNetwork}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="last-four">Ultimos 4 digitos</Label>
@@ -1206,16 +1326,17 @@ function AddCardDialog({
           <div className="flex flex-col gap-2">
             <Label>Color del plastico</Label>
             <div className="flex flex-wrap gap-2">
-              {CARD_GRADIENTS.map((gradient) => (
+              {CARD_COLORS.map((cardColor) => (
                 <button
-                  key={gradient.gradient}
+                  key={cardColor.value}
                   type="button"
-                  title={gradient.label}
-                  onClick={() => setSelectedGradient(gradient)}
+                  title={cardColor.label}
+                  onClick={() => setSelectedColor(cardColor)}
+                  style={{ backgroundColor: cardColor.value }}
                   className={cn(
-                    "size-8 cursor-pointer rounded-full bg-gradient-to-br ring-2 ring-offset-2 transition-all",
-                    gradient.gradient,
-                    selectedGradient.gradient === gradient.gradient
+                    "size-8 cursor-pointer rounded-full border ring-2 ring-offset-2 transition-all",
+                    cardColor.border,
+                    selectedColor.value === cardColor.value
                       ? "ring-primary"
                       : "ring-transparent hover:ring-border",
                   )}
@@ -1469,7 +1590,10 @@ function AccountDetailModal({
                   </TableRow>
                 ) : (
                   transactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
+                    <TableRow
+                      key={transaction.id}
+                      className={cn(transaction.isHistorical && "opacity-60")}
+                    >
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                         {formatDisplayDate(transaction.date)}
                       </TableCell>
@@ -1490,6 +1614,11 @@ function AccountDetailModal({
                             className="ml-2 text-xs font-normal"
                           >
                             {transaction.msi} MSI
+                          </Badge>
+                        ) : null}
+                        {transaction.isHistorical ? (
+                          <Badge variant="outline" className="ml-2 text-xs font-normal">
+                            Histórico
                           </Badge>
                         ) : null}
                       </TableCell>
@@ -1865,6 +1994,7 @@ export function FinancialControlView() {
           paymentDay: data.paymentDay,
           limitCents: data.creditLimitCents,
           color: data.color,
+          network: data.network,
         })
       }
       return createFinancialAccount(data)
@@ -1897,6 +2027,7 @@ export function FinancialControlView() {
         paymentDay: data.paymentDay,
         limitCents: data.creditLimitCents,
         color: data.color,
+        network: data.network,
       })
     },
     onSuccess: async () => {
@@ -2250,7 +2381,10 @@ export function FinancialControlView() {
                             </TableRow>
                           ))
                         : transactions.map((transaction) => (
-                            <TableRow key={transaction.id}>
+                            <TableRow
+                              key={transaction.id}
+                              className={cn(transaction.isHistorical && "opacity-60")}
+                            >
                               <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                                 {transaction.date}
                               </TableCell>
@@ -2259,6 +2393,11 @@ export function FinancialControlView() {
                                 {transaction.msi ? (
                                   <Badge className="ml-2 border-0 bg-blue-100 text-xs text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400">
                                     {transaction.msi}
+                                  </Badge>
+                                ) : null}
+                                {transaction.isHistorical ? (
+                                  <Badge variant="outline" className="ml-2 text-xs font-normal">
+                                    Histórico
                                   </Badge>
                                 ) : null}
                               </TableCell>
@@ -2415,10 +2554,10 @@ export function FinancialControlView() {
                             <div
                               key={card.id}
                               className={cn(
-                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
-                                visual.gradient,
+                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-[var(--card-bg)] p-6 text-white shadow-lg",
                                 visual.border,
                               )}
+                              style={cardBackgroundStyle(card.color)}
                             >
                               <div
                                 className="pointer-events-none absolute inset-0 z-10 bg-black/0 transition-colors duration-150 group-hover:bg-black/35"
@@ -2468,12 +2607,10 @@ export function FinancialControlView() {
                                 <div className="flex flex-col gap-0.5">
                                   <CreditCard className="size-8 opacity-90" />
                                   <span className="mt-2 text-xs font-medium opacity-70">
-                                    {card.bank}
+                                    {card.bank || "Banco emisor"}
                                   </span>
                                 </div>
-                                <span className="text-xs font-bold uppercase tracking-widest opacity-60">
-                                  VISA
-                                </span>
+                                <CardNetworkMark network={card.network} />
                               </div>
 
                               <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">
@@ -2516,10 +2653,10 @@ export function FinancialControlView() {
                             <div
                               key={card.id}
                               className={cn(
-                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-gradient-to-br p-6 text-white shadow-lg",
-                                visual.gradient,
+                                "group relative flex aspect-[1.586/1] w-full flex-col justify-between overflow-hidden rounded-xl border bg-[var(--card-bg)] p-6 text-white shadow-lg",
                                 visual.border,
                               )}
+                              style={cardBackgroundStyle(card.color)}
                             >
                               <div
                                 className="pointer-events-none absolute inset-0 z-10 bg-black/0 transition-colors duration-150 group-hover:bg-black/35"
@@ -2570,12 +2707,10 @@ export function FinancialControlView() {
                                 <div className="flex flex-col gap-0.5">
                                   <CreditCard className="size-8 opacity-90" />
                                   <span className="mt-2 text-xs font-medium opacity-70">
-                                    {card.institution || "Debito"}
+                                    {card.institution || "Banco emisor"}
                                   </span>
                                 </div>
-                                <span className="text-xs font-bold uppercase tracking-widest opacity-60">
-                                  DEBITO
-                                </span>
+                                <CardNetworkMark network={card.network} />
                               </div>
 
                               <div className="font-mono text-lg font-semibold tracking-[0.3em] opacity-90">

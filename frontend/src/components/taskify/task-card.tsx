@@ -2,15 +2,15 @@
 
 import { Draggable } from "@hello-pangea/dnd"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState, type CSSProperties, type MouseEvent } from "react"
+import { useState, type CSSProperties, type KeyboardEvent } from "react"
 
 import { cn } from "@/lib/utils"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { invalidateTaskCaches } from "@/components/taskify/task-cache"
+import { TaskDetailsModal } from "@/components/taskify/task-details-modal"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Clock, Paperclip, MessageSquare, Pencil, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Clock, Paperclip, MessageSquare } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -85,6 +85,7 @@ export function TaskCard({
 }: TaskCardProps) {
   const { label, className } = priorityConfig[priority]
   const queryClient = useQueryClient()
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const deleteMutation = useMutation({
     mutationFn: deleteTask,
@@ -94,13 +95,26 @@ export function TaskCard({
     },
   })
 
-  function handleEdit(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation()
+  function handleOpenDetails() {
+    setDetailsOpen(true)
+  }
+
+  function handleCardKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return
+    }
+
+    event.preventDefault()
+    setDetailsOpen(true)
+  }
+
+  function handleEdit() {
+    setDetailsOpen(false)
     onEditTask(task)
   }
 
-  function handleDeleteClick(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation()
+  function handleDeleteClick() {
+    setDetailsOpen(false)
     setDeleteDialogOpen(true)
   }
 
@@ -128,7 +142,11 @@ export function TaskCard({
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           style={draggableStyle}
-          className="group relative rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 hover:border-primary/30 cursor-grab active:cursor-grabbing"
+          role="button"
+          tabIndex={0}
+          className="group relative cursor-pointer rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md active:cursor-grabbing"
+          onClick={handleOpenDetails}
+          onKeyDown={handleCardKeyDown}
         >
           {/* Header row */}
           <div className="mb-3 flex items-start justify-between gap-2">
@@ -150,6 +168,8 @@ export function TaskCard({
             </div>
             <div
               className="-mr-1 -mt-0.5 flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Select
@@ -159,7 +179,7 @@ export function TaskCard({
               >
                 <SelectTrigger
                   size="sm"
-                  className="h-6 w-[7.75rem] rounded-md px-2 text-[11px] text-muted-foreground"
+                  className="h-6 w-[7.75rem] rounded-full px-2 text-[11px] text-muted-foreground"
                   aria-label="Mover tarea a otra columna"
                 >
                   <SelectValue />
@@ -172,25 +192,6 @@ export function TaskCard({
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground"
-                aria-label="Editar tarea"
-                onClick={handleEdit}
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 text-muted-foreground hover:text-red-600"
-                aria-label="Eliminar tarea"
-                disabled={deleteMutation.isPending}
-                onClick={handleDeleteClick}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
             </div>
           </div>
 
@@ -251,6 +252,22 @@ export function TaskCard({
           )
         }}
       </Draggable>
+      <TaskDetailsModal
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        title={title}
+        description={description}
+        priorityLabel={label}
+        priorityClassName={className}
+        dueDate={dueDate}
+        tag={tag}
+        assignees={assignees}
+        comments={comments}
+        attachments={attachments}
+        deletePending={deleteMutation.isPending}
+        onEdit={handleEdit}
+        onDelete={handleDeleteClick}
+      />
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}

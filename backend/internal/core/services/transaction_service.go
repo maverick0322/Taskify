@@ -49,7 +49,12 @@ func (service *transactionService) CreateTransaction(
 	recurrence domain.TransactionRecurrence,
 	recurrenceLimit *int,
 	paymentAccountID *string,
+	paidInstallments ...int,
 ) (*domain.Transaction, error) {
+	historicalInstallments, err := normalizePaidInstallments(msi, paidInstallments...)
+	if err != nil {
+		return nil, err
+	}
 	if paymentAccountID == nil {
 		paymentAccountID = creditCardID
 	}
@@ -61,7 +66,7 @@ func (service *transactionService) CreateTransaction(
 	transaction.SetAccountingDetails(paymentAccountID, nil, nil, nil)
 
 	if paymentAccountID != nil && service.accountRepository != nil {
-		createdTransactions, deltas, ledgerEntries, err := service.prepareAccountedTransactions(ctx, userID, transaction, msi)
+		createdTransactions, deltas, ledgerEntries, err := service.prepareAccountedTransactions(ctx, userID, transaction, msi, historicalInstallments)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +85,7 @@ func (service *transactionService) CreateTransaction(
 	return transaction, nil
 }
 
-func (service *transactionService) prepareAccountedTransactions(ctx context.Context, userID string, transaction *domain.Transaction, msi *int) ([]*domain.Transaction, []ports.AccountBalanceDelta, []ports.LedgerEntry, error) {
+func (service *transactionService) prepareAccountedTransactions(ctx context.Context, userID string, transaction *domain.Transaction, msi *int, paidInstallments int) ([]*domain.Transaction, []ports.AccountBalanceDelta, []ports.LedgerEntry, error) {
 	accountID := transaction.PaymentAccountID()
 	if accountID == nil {
 		return []*domain.Transaction{transaction}, nil, nil, nil
@@ -96,19 +101,28 @@ func (service *transactionService) prepareAccountedTransactions(ctx context.Cont
 		transaction.SetCreditCardID(accountID)
 	}
 
-	delta := transactionDeltaForAccount(transaction.Type(), account.Type(), transaction.AmountCents())
-	if err := account.ApplyDelta(delta); err != nil {
-		return nil, nil, nil, err
-	}
-
 	transactions := []*domain.Transaction{transaction}
 	if transaction.Type() == domain.TransactionTypeExpense && account.Type() == domain.FinancialAccountTypeCreditCard && msi != nil && *msi > 1 {
-		transactions = service.projectMSITransactions(userID, transaction, account, *msi)
+		transactions = service.projectMSITransactions(userID, transaction, *msi, paidInstallments)
+	}
+
+	delta := int64(0)
+	for _, currentTransaction := range transactions {
+		if currentTransaction.IsHistorical() {
+			continue
+		}
+		delta += transactionDeltaForAccount(currentTransaction.Type(), account.Type(), currentTransaction.AmountCents())
+	}
+	if err := account.ApplyDelta(delta); err != nil {
+		return nil, nil, nil, err
 	}
 
 	deltas := []ports.AccountBalanceDelta{{AccountID: *accountID, DeltaCents: delta}}
 	entries := make([]ports.LedgerEntry, 0, len(transactions))
 	for _, currentTransaction := range transactions {
+		if currentTransaction.IsHistorical() {
+			continue
+		}
 		now := time.Now()
 		entries = append(entries, ports.LedgerEntry{
 			ID:            service.idGenerator.Generate(),
@@ -124,10 +138,11 @@ func (service *transactionService) prepareAccountedTransactions(ctx context.Cont
 	return transactions, deltas, entries, nil
 }
 
-func (service *transactionService) projectMSITransactions(userID string, original *domain.Transaction, account *domain.FinancialAccount, months int) []*domain.Transaction {
+func (service *transactionService) projectMSITransactions(userID string, original *domain.Transaction, months, paidInstallments int) []*domain.Transaction {
 	installments := make([]*domain.Transaction, 0, months)
 	baseAmount := original.AmountCents() / int64(months)
 	remainder := original.AmountCents() % int64(months)
+	originalDate := original.Date().AddDate(0, -paidInstallments, 0)
 	for index := 1; index <= months; index++ {
 		amount := baseAmount
 		if index == 1 {
@@ -137,15 +152,36 @@ func (service *transactionService) projectMSITransactions(userID string, origina
 		if index > 1 {
 			transactionID = service.idGenerator.Generate()
 		}
-		installmentDate := original.Date()
-		if index > 1 {
-			installmentDate = accountCycleDate(original.Date(), account.CutoffDay(), index-1)
+		installmentDate := originalDate.AddDate(0, index-1, 0)
+		status := domain.TransactionStatusPending
+		isHistorical := false
+		if index <= paidInstallments {
+			status = domain.TransactionStatusPaid
+			isHistorical = true
 		}
-		installment, _ := domain.NewTransaction(transactionID, userID, domain.TransactionTypeExpense, fmt.Sprintf("%s %d/%d", original.Concept(), index, months), original.Category(), amount, installmentDate, original.Status(), &months, original.CreditCardID(), domain.TransactionRecurrenceOnce, nil)
+		installment, _ := domain.NewTransaction(transactionID, userID, domain.TransactionTypeExpense, fmt.Sprintf("%s %d/%d", original.Concept(), index, months), original.Category(), amount, installmentDate, status, &months, original.CreditCardID(), domain.TransactionRecurrenceOnce, nil)
 		installment.SetAccountingDetails(original.PaymentAccountID(), nil, &index, &months)
+		installment.SetHistorical(isHistorical)
 		installments = append(installments, installment)
 	}
 	return installments
+}
+
+func normalizePaidInstallments(msi *int, paidInstallments ...int) (int, error) {
+	if len(paidInstallments) == 0 {
+		return 0, nil
+	}
+	paid := paidInstallments[0]
+	if paid < 0 {
+		return 0, domain.ErrInvalidTransactionMSI
+	}
+	if msi == nil || *msi <= 1 {
+		return 0, nil
+	}
+	if paid > *msi {
+		return 0, domain.ErrInvalidTransactionMSI
+	}
+	return paid, nil
 }
 
 func transactionDeltaForAccount(transactionType domain.TransactionType, accountType domain.FinancialAccountType, amountCents int64) int64 {
@@ -400,6 +436,7 @@ func calculateFinancialSummary(transactions []*domain.Transaction) ports.Financi
 	var summary ports.FinancialSummary
 	for _, transaction := range transactions {
 		if transaction == nil ||
+			transaction.IsHistorical() ||
 			(transaction.Status() != domain.TransactionStatusPaid &&
 				transaction.Status() != domain.TransactionStatusCompleted) ||
 			isCompletedAccountPayable(transaction) {

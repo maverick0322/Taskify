@@ -17,11 +17,11 @@ type FinancialAccountRepository interface {
 }
 
 type FinancialAccountUseCase interface {
-	CreateAccount(ctx context.Context, userID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string) (*domain.FinancialAccount, error)
+	CreateAccount(ctx context.Context, userID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string) (*domain.FinancialAccount, error)
 	GetAccounts(ctx context.Context, userID string) ([]*domain.FinancialAccount, error)
 	GetAccountSummary(ctx context.Context, userID, accountID string) (FinancialAccountSummary, error)
 	GetAccountTransactions(ctx context.Context, userID, accountID string, filter TransactionDateFilter) ([]*domain.Transaction, error)
-	UpdateAccount(ctx context.Context, userID, accountID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color string) error
+	UpdateAccount(ctx context.Context, userID, accountID string, accountType domain.FinancialAccountType, name, institution string, last4 *string, openingBalanceCents int64, creditLimitCents *int64, cutoffDay, paymentDay *int, color, network string) error
 	DeleteAccount(ctx context.Context, userID, accountID string) error
 }
 

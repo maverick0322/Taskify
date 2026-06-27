@@ -5,6 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/maverick0322/taskify/backend/internal/adapters/auth"
+	"github.com/maverick0322/taskify/backend/internal/core/ports"
 )
 
 type mockTokenValidator struct {
@@ -112,6 +116,44 @@ func TestUserIDFromContext_MissingUserID_ReturnsFalse(t *testing.T) {
 	}
 	if userID != "" {
 		t.Errorf("expected empty user ID, got %s", userID)
+	}
+}
+
+func TestAuthMiddleware_LocalTokenValidatorAcceptsTrustedDesktopToken(t *testing.T) {
+	tokenGenerator, err := auth.NewLocalTokenGenerator(5*time.Minute, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	tokenPair, err := tokenGenerator.GenerateTokenPair(ports.TokenSubject{
+		UserID:    "user-123",
+		Email:     "user@example.com",
+		FirstName: "Jane",
+		LastName:  "Doe",
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	validator := tokenGenerator.(ports.TokenValidator)
+	middleware := NewAuthMiddleware(validator, &mockMiddlewareLogger{})
+	request := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	request.Header.Set(authorizationHeader, "Bearer "+tokenPair.AccessToken)
+	response := httptest.NewRecorder()
+	var retrievedUserID string
+
+	nextHandler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		retrievedUserID, _ = UserIDFromContext(request.Context())
+		response.WriteHeader(http.StatusNoContent)
+	})
+
+	middleware.RequireAuthentication(nextHandler).ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if retrievedUserID != "user-123" {
+		t.Fatalf("expected user ID user-123, got %s", retrievedUserID)
 	}
 }
 
