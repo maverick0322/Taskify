@@ -164,19 +164,22 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
 		return
 	}
+	handler.logger.Info("[SYNC][SESSION] Solicitud de login remoto recibida", "email", strings.TrimSpace(payload.Email))
 
 	tokenPair, err := handler.sessionSync.AuthenticateRemoteSession(request.Context(), payload.Email, payload.Password)
 	if err != nil {
-		handler.logger.Warn("remote sync session login failed", "error", err)
+		handler.logger.Warn("[SYNC][SESSION] Login remoto del sidecar falló", "email", strings.TrimSpace(payload.Email), "error", err)
 		writeJSON(response, http.StatusBadGateway, errorResponse{Error: "remote sync login failed"})
 		return
 	}
+	handler.logger.Info("[SYNC][SESSION] Login remoto del sidecar exitoso; iniciando sync inicial", "email", strings.TrimSpace(payload.Email))
 
 	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
-		handler.logger.Error("initial sync failed after remote login", "error", err)
+		handler.logger.Error("[SYNC][SESSION] Sync inicial falló después del login remoto", "email", strings.TrimSpace(payload.Email), "error", err)
 		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
 		return
 	}
+	handler.logger.Info("[SYNC][SESSION] Login remoto completo con sync inicial aplicado", "email", strings.TrimSpace(payload.Email))
 
 	writeJSON(response, http.StatusOK, map[string]interface{}{
 		"connected":            true,
@@ -202,12 +205,14 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 		return
 	}
 
+	handler.logger.Info("[SYNC][SESSION] Restaurando sesión remota persistida")
 	handler.sessionSync.RestoreRemoteSession(payload.AccessToken, payload.RefreshToken)
 	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
-		handler.logger.Error("initial sync failed after remote session restore", "error", err)
+		handler.logger.Error("[SYNC][SESSION] Sync inicial falló después de restaurar la sesión remota", "error", err)
 		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
 		return
 	}
+	handler.logger.Info("[SYNC][SESSION] Sesión remota restaurada con sync inicial aplicado")
 
 	writeJSON(response, http.StatusOK, map[string]interface{}{
 		"restored":             true,
@@ -217,17 +222,31 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 
 func (handler *SystemHandler) runInitialDesktopSync(ctx context.Context) error {
 	if handler.syncService == nil {
+		handler.logger.Info("[SYNC][SESSION] Sync inicial omitido porque syncService es nil")
 		return nil
 	}
 
 	needsBootstrap, err := handler.syncService.NeedsBootstrapPull(ctx)
 	if err != nil {
+		handler.logger.Error("[SYNC][SESSION] No se pudo decidir el modo de sync inicial", "error", err)
 		return err
 	}
 	if needsBootstrap {
-		return handler.syncService.ForceFullPull(ctx)
+		handler.logger.Info("[SYNC][SESSION] Ejecutando ForceFullPull inicial", "reason", "missing_remote_pull_watermark")
+		if err := handler.syncService.ForceFullPull(ctx); err != nil {
+			handler.logger.Error("[SYNC][SESSION] ForceFullPull inicial falló", "error", err)
+			return err
+		}
+		handler.logger.Info("[SYNC][SESSION] ForceFullPull inicial completado")
+		return nil
 	}
-	return handler.syncService.SyncOnce(ctx)
+	handler.logger.Info("[SYNC][SESSION] Ejecutando SyncOnce inicial", "reason", "remote_pull_watermark_present")
+	if err := handler.syncService.SyncOnce(ctx); err != nil {
+		handler.logger.Error("[SYNC][SESSION] SyncOnce inicial falló", "error", err)
+		return err
+	}
+	handler.logger.Info("[SYNC][SESSION] SyncOnce inicial completado")
+	return nil
 }
 
 func (handler *SystemHandler) LogoutRemoteSyncSession(response http.ResponseWriter, request *http.Request) {

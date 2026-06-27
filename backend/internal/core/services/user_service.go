@@ -150,29 +150,41 @@ func (s *userService) authenticateLocal(ctx context.Context, email, plainPasswor
 }
 
 func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassword string) (string, string, error) {
+	s.logger.Info("[AUTH][DESKTOP] Iniciando autenticación desktop", "email", email)
 	localUser, localErr := s.userRepo.GetByEmail(ctx, email)
 	if localErr != nil && !errors.Is(localErr, ports.ErrUserNotFound) {
 		s.logger.Error("failed to retrieve local user during desktop authentication", "error", localErr)
 		return "", "", ErrInternalProcessing
 	}
+	if localErr == nil && localUser != nil {
+		s.logger.Info("[AUTH][DESKTOP] Usuario local encontrado; se intentará validar contra remoto primero", "email", email, "userID", localUser.ID())
+	} else {
+		s.logger.Info("[AUTH][DESKTOP] Usuario local no encontrado; se intentará hidratación remota", "email", email)
+	}
 
 	remoteUser, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
 	if err == nil {
+		s.logger.Info("[AUTH][DESKTOP] Autenticación remota e hidratación local completadas", "email", email, "userID", remoteUser.ID())
 		return s.issueLocalSession(ctx, remoteUser)
 	}
 	if errors.Is(err, ErrInvalidCredentials) {
+		s.logger.Warn("[AUTH][DESKTOP] Login remoto rechazado por credenciales inválidas", "email", email)
 		return "", "", ErrInvalidCredentials
 	}
 	if localErr == nil && localUser != nil && errors.Is(err, ErrRemoteAuthUnavailable) {
 		s.logger.Warn("remote auth unavailable, falling back to local cached credentials", "email", email)
 		if compareErr := s.hasher.Compare(plainPassword, localUser.PasswordHash()); compareErr != nil {
+			s.logger.Warn("[AUTH][DESKTOP] Fallback local rechazado por hash local inválido", "email", email, "userID", localUser.ID())
 			return "", "", ErrInvalidCredentials
 		}
+		s.logger.Info("[AUTH][DESKTOP] Fallback local exitoso", "email", email, "userID", localUser.ID())
 		return s.issueLocalSession(ctx, localUser)
 	}
 	if errors.Is(err, ErrRemoteAuthUnavailable) {
+		s.logger.Warn("[AUTH][DESKTOP] Login desktop sin red o auth remota no disponible", "email", email)
 		return "", "", ErrRemoteAuthUnavailable
 	}
+	s.logger.Error("[AUTH][DESKTOP] Login desktop falló en hidratación o sesión local", "email", email, "error", err)
 	return "", "", ErrInternalProcessing
 }
 
@@ -190,24 +202,37 @@ func (s *userService) registerRemote(ctx context.Context, email, plainPassword, 
 }
 
 func (s *userService) authenticateAndHydrateRemoteUser(ctx context.Context, email, plainPassword string) (*domain.User, error) {
+	s.logger.Info("[AUTH][DESKTOP] Intentando autenticar contra Render", "email", email)
 	if _, err := s.remoteAuth.AuthenticateRemoteSession(ctx, email, plainPassword); err != nil {
+		s.logger.Warn("[AUTH][DESKTOP] Render rechazó o no pudo completar el login", "email", email, "error", err)
 		return nil, err
 	}
+	s.logger.Info("[AUTH][DESKTOP] Login remoto exitoso; solicitando perfil remoto", "email", email)
 
 	remoteProfile, err := s.remoteAuth.GetRemoteProfile(ctx)
 	if err != nil {
 		if errors.Is(err, ErrRemoteAuthUnavailable) {
+			s.logger.Warn("[AUTH][DESKTOP] No se pudo leer /users/me después del login remoto", "email", email, "error", err)
 			return nil, err
 		}
 		s.logger.Error("failed to fetch remote profile during desktop authentication", "error", err)
 		return nil, ErrInternalProcessing
 	}
+	s.logger.Info("[AUTH][DESKTOP] Perfil remoto recibido", "email", remoteProfile.Email, "remoteUserID", remoteProfile.ID)
 
 	localUser, localErr := s.userRepo.GetByEmail(ctx, remoteProfile.Email)
 	if localErr != nil && !errors.Is(localErr, ports.ErrUserNotFound) {
 		s.logger.Error("failed to resolve local user during remote hydration", "error", localErr)
 		return nil, ErrInternalProcessing
 	}
+	if localErr == nil && localUser != nil {
+		s.logger.Info("[AUTH][DESKTOP] Se actualizará usuario local existente con datos remotos", "email", remoteProfile.Email, "localUserID", localUser.ID())
+	} else {
+		s.logger.Info("[AUTH][DESKTOP] Se creará usuario local desde perfil remoto", "email", remoteProfile.Email, "remoteUserID", remoteProfile.ID)
+	}
+
+	normalizeRemoteProfile(remoteProfile, localUser, email)
+	s.logger.Info("[AUTH][DESKTOP] Perfil remoto normalizado para hidratación local", "email", remoteProfile.Email, "firstName", remoteProfile.FirstName, "lastName", remoteProfile.LastName, "birthDateZero", remoteProfile.BirthDate.IsZero())
 
 	hashedPassword, err := s.hasher.Hash(plainPassword)
 	if err != nil {
@@ -242,7 +267,59 @@ func (s *userService) authenticateAndHydrateRemoteUser(ctx context.Context, emai
 		return nil, ErrInternalProcessing
 	}
 
+	s.logger.Info("[AUTH][DESKTOP] Usuario local hidratado correctamente", "email", user.Email(), "userID", user.ID())
+
 	return user, nil
+}
+
+func normalizeRemoteProfile(remoteProfile *RemoteUserProfile, localUser *domain.User, email string) {
+	if remoteProfile == nil {
+		return
+	}
+
+	profileFirstName := strings.TrimSpace(remoteProfile.FirstName)
+	profileLastName := strings.TrimSpace(remoteProfile.LastName)
+	profileBirthDate := remoteProfile.BirthDate
+	profileAvatarLocalPath := strings.TrimSpace(remoteProfile.AvatarLocalPath)
+
+	if localUser != nil {
+		localProfile := localUser.Profile()
+		if profileFirstName == "" {
+			profileFirstName = localProfile.FirstName()
+		}
+		if profileLastName == "" {
+			profileLastName = localProfile.LastName()
+		}
+		if profileBirthDate.IsZero() {
+			profileBirthDate = localProfile.BirthDate()
+		}
+		if profileAvatarLocalPath == "" {
+			profileAvatarLocalPath = localUser.AvatarLocalPath()
+		}
+	}
+
+	if profileFirstName == "" {
+		profileFirstName = "Taskify"
+	}
+	if profileLastName == "" {
+		profileLastName = fallbackRemoteLastName(email)
+	}
+	if profileBirthDate.IsZero() {
+		profileBirthDate = time.Now().AddDate(-25, 0, 0).UTC()
+	}
+
+	remoteProfile.FirstName = profileFirstName
+	remoteProfile.LastName = profileLastName
+	remoteProfile.BirthDate = profileBirthDate
+	remoteProfile.AvatarLocalPath = profileAvatarLocalPath
+}
+
+func fallbackRemoteLastName(email string) string {
+	localPart := strings.TrimSpace(strings.Split(strings.TrimSpace(email), "@")[0])
+	if len(localPart) >= 2 {
+		return localPart
+	}
+	return "User"
 }
 
 func (s *userService) issueLocalSession(ctx context.Context, user *domain.User) (string, string, error) {

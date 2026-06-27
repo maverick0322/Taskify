@@ -84,6 +84,7 @@ func (service *HTTPRemoteSyncService) LoginRemoteSession(ctx context.Context, em
 }
 
 func (service *HTTPRemoteSyncService) AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error) {
+	service.logger.Info("[SYNC][AUTH] Iniciando login remoto", "email", strings.TrimSpace(email), "endpoint", "/users/login")
 	payload := map[string]string{
 		"email":    strings.TrimSpace(email),
 		"password": password,
@@ -91,6 +92,7 @@ func (service *HTTPRemoteSyncService) AuthenticateRemoteSession(ctx context.Cont
 
 	responseBody, statusCode, err := service.doJSONRequest(ctx, http.MethodPost, "/users/login", payload, false, true)
 	if err != nil {
+		service.logger.Warn("[SYNC][AUTH] Login remoto falló", "email", strings.TrimSpace(email), "statusCode", statusCode, "error", err)
 		if statusCode == http.StatusUnauthorized {
 			return ports.TokenPair{}, ErrInvalidCredentials
 		}
@@ -99,13 +101,16 @@ func (service *HTTPRemoteSyncService) AuthenticateRemoteSession(ctx context.Cont
 
 	var response tokenPairResponse
 	if err := json.Unmarshal(responseBody, &response); err != nil {
+		service.logger.Error("[SYNC][AUTH] No se pudo decodificar la respuesta de login remoto", "email", strings.TrimSpace(email), "error", err)
 		return ports.TokenPair{}, fmt.Errorf("sync: failed to decode remote login response: %w", err)
 	}
 	if strings.TrimSpace(response.AccessToken) == "" || strings.TrimSpace(response.RefreshToken) == "" {
+		service.logger.Error("[SYNC][AUTH] Login remoto respondió sin token completo", "email", strings.TrimSpace(email))
 		return ports.TokenPair{}, fmt.Errorf("sync: remote login did not return a token pair")
 	}
 
 	service.SetSession(response.AccessToken, response.RefreshToken)
+	service.logger.Info("[SYNC][AUTH] Login remoto exitoso; sesión remota almacenada", "email", strings.TrimSpace(email))
 	return ports.TokenPair{
 		AccessToken:  response.AccessToken,
 		RefreshToken: response.RefreshToken,
@@ -137,8 +142,10 @@ func (service *HTTPRemoteSyncService) RegisterRemoteUser(ctx context.Context, em
 }
 
 func (service *HTTPRemoteSyncService) GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error) {
+	service.logger.Info("[SYNC][AUTH] Solicitando perfil remoto autenticado", "endpoint", "/users/me")
 	responseBody, err := service.doJSON(ctx, http.MethodGet, "/users/me", nil, true)
 	if err != nil {
+		service.logger.Warn("[SYNC][AUTH] No se pudo obtener el perfil remoto", "error", err)
 		if errors.Is(err, ErrRemoteSyncSessionUnavailable) {
 			return nil, ErrRemoteAuthUnavailable
 		}
@@ -147,20 +154,43 @@ func (service *HTTPRemoteSyncService) GetRemoteProfile(ctx context.Context) (*Re
 
 	var response remoteUserProfileResponse
 	if err := json.Unmarshal(responseBody, &response); err != nil {
+		service.logger.Error("[SYNC][AUTH] No se pudo decodificar el perfil remoto", "error", err)
 		return nil, fmt.Errorf("sync: failed to decode remote profile response: %w", err)
 	}
 
-	birthDate, err := time.Parse("2006-01-02", strings.TrimSpace(response.BirthDate))
-	if err != nil {
-		return nil, fmt.Errorf("sync: invalid remote birth date: %w", err)
+	var birthDate time.Time
+	birthDateValue := strings.TrimSpace(response.BirthDate)
+	if birthDateValue != "" {
+		parsedBirthDate, err := time.Parse("2006-01-02", birthDateValue)
+		if err == nil {
+			birthDate = parsedBirthDate.UTC()
+		} else {
+			service.logger.Warn("[SYNC][AUTH] Perfil remoto con birthDate inválido; se aplicará fallback local", "birthDate", birthDateValue, "error", err)
+		}
 	}
+
+	missingFields := make([]string, 0, 3)
+	if strings.TrimSpace(response.FirstName) == "" {
+		missingFields = append(missingFields, "firstName")
+	}
+	if strings.TrimSpace(response.LastName) == "" {
+		missingFields = append(missingFields, "lastName")
+	}
+	if birthDate.IsZero() {
+		missingFields = append(missingFields, "birthDate")
+	}
+	if len(missingFields) > 0 {
+		service.logger.Warn("[SYNC][AUTH] Perfil remoto incompleto; la hidratación local aplicará fallbacks", "email", strings.TrimSpace(response.Email), "missingFields", strings.Join(missingFields, ","))
+	}
+
+	service.logger.Info("[SYNC][AUTH] Perfil remoto obtenido correctamente", "email", strings.TrimSpace(response.Email), "userID", strings.TrimSpace(response.ID))
 
 	return &RemoteUserProfile{
 		ID:              strings.TrimSpace(response.ID),
 		Email:           strings.TrimSpace(response.Email),
 		FirstName:       strings.TrimSpace(response.FirstName),
 		LastName:        strings.TrimSpace(response.LastName),
-		BirthDate:       birthDate.UTC(),
+		BirthDate:       birthDate,
 		AvatarLocalPath: strings.TrimSpace(response.AvatarLocalPath),
 		AvatarURL:       strings.TrimSpace(response.AvatarURL),
 	}, nil
@@ -605,6 +635,7 @@ func (service *HTTPRemoteSyncService) doJSONRequest(ctx context.Context, method,
 
 	response, err := service.client.Do(request)
 	if err != nil {
+		service.logger.Warn("[SYNC][HTTP] Solicitud remota falló antes de responder", "method", method, "path", path, "requiresAuth", requiresAuth, "error", err)
 		return nil, 0, fmt.Errorf("sync: remote request failed: %w", err)
 	}
 	defer response.Body.Close()
@@ -617,14 +648,17 @@ func (service *HTTPRemoteSyncService) doJSONRequest(ctx context.Context, method,
 		return responseBody, response.StatusCode, nil
 	}
 	if requiresAuth && response.StatusCode == http.StatusUnauthorized && !skipRefresh {
+		service.logger.Warn("[SYNC][HTTP] Solicitud remota no autorizada; se intentará refresh", "method", method, "path", path)
 		return nil, response.StatusCode, fmt.Errorf("sync: remote request unauthorized")
 	}
+	service.logger.Warn("[SYNC][HTTP] Solicitud remota respondió con error", "method", method, "path", path, "statusCode", response.StatusCode, "requiresAuth", requiresAuth, "skipRefresh", skipRefresh, "body", strings.TrimSpace(string(responseBody)))
 	return nil, response.StatusCode, fmt.Errorf("sync: remote request failed with status %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
 func (service *HTTPRemoteSyncService) refreshRemoteTokens(ctx context.Context) error {
 	_, refreshToken, ok := service.sessionSnapshot()
 	if !ok {
+		service.logger.Warn("[SYNC][AUTH] Refresh remoto omitido porque no hay sesión remota en memoria")
 		return ErrRemoteSyncSessionUnavailable
 	}
 
@@ -638,21 +672,26 @@ func (service *HTTPRemoteSyncService) refreshRemoteTokens(ctx context.Context) e
 	)
 	if err != nil {
 		if statusCode == http.StatusUnauthorized {
+			service.logger.Warn("[SYNC][AUTH] Refresh remoto rechazado; se limpiará la sesión remota", "statusCode", statusCode)
 			service.ClearSession()
 			return ErrRemoteSyncSessionUnavailable
 		}
+		service.logger.Warn("[SYNC][AUTH] Refresh remoto falló", "statusCode", statusCode, "error", err)
 		return err
 	}
 
 	var response tokenPairResponse
 	if err := json.Unmarshal(responseBody, &response); err != nil {
+		service.logger.Error("[SYNC][AUTH] No se pudo decodificar la respuesta de refresh remoto", "error", err)
 		return fmt.Errorf("sync: failed to decode remote refresh response: %w", err)
 	}
 	if strings.TrimSpace(response.AccessToken) == "" || strings.TrimSpace(response.RefreshToken) == "" {
+		service.logger.Error("[SYNC][AUTH] Refresh remoto respondió sin token completo")
 		return fmt.Errorf("sync: remote refresh did not return a token pair")
 	}
 
 	service.SetSession(response.AccessToken, response.RefreshToken)
+	service.logger.Info("[SYNC][AUTH] Refresh remoto exitoso; sesión remota actualizada")
 	return nil
 }
 

@@ -630,6 +630,66 @@ func TestRegister_DesktopRemoteFirstHydratesLocalUser(t *testing.T) {
 	}
 }
 
+func TestAuthenticate_DesktopRemoteProfileWithoutBirthDate_UsesFallbackAndHydrates(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockSessions := &mockSessionRepository{}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair: validServiceTokenPair(),
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "test@domain.com",
+			FirstName: "Jane",
+			LastName:  "Doe",
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	_, _, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if mockRepo.upsertedUser == nil {
+		t.Fatal("expected remote user to be upserted locally")
+	}
+	if mockRepo.upsertedUser.Profile().BirthDate().IsZero() {
+		t.Fatal("expected fallback birth date to be assigned")
+	}
+}
+
+func TestAuthenticate_DesktopRemoteProfileWithoutNames_UsesFallbacks(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockSessions := &mockSessionRepository{}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair: validServiceTokenPair(),
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "xy@example.com",
+			BirthDate: time.Now().AddDate(-25, 0, 0),
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	_, _, err := svc.Authenticate(context.Background(), "xy@example.com", "securePass123")
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if mockRepo.upsertedUser == nil {
+		t.Fatal("expected remote user to be upserted locally")
+	}
+	if mockRepo.upsertedUser.Profile().FirstName() != "Taskify" {
+		t.Fatalf("expected fallback first name Taskify, got %q", mockRepo.upsertedUser.Profile().FirstName())
+	}
+	if mockRepo.upsertedUser.Profile().LastName() != "xy" {
+		t.Fatalf("expected fallback last name xy, got %q", mockRepo.upsertedUser.Profile().LastName())
+	}
+}
+
 func createServiceTestUser(t *testing.T) *domain.User {
 	t.Helper()
 
