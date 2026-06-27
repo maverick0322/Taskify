@@ -142,21 +142,6 @@ CREATE TABLE IF NOT EXISTS financial_accounts (
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id ON financial_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_financial_accounts_user_id_type ON financial_accounts(user_id, type);
 
-INSERT INTO financial_accounts (id, user_id, type, name, institution, last4, opening_balance_cents, current_balance_cents, credit_limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at)
-SELECT id, user_id, 'CREDIT_CARD', name, bank, last4, 0, 0, limit_cents, cutoff_day, payment_day, color, network, created_at, updated_at, deleted_at
-FROM credit_cards
-WHERE deleted_at IS NULL
-ON CONFLICT(id) DO UPDATE SET
-    name = excluded.name,
-    institution = excluded.institution,
-    last4 = excluded.last4,
-    credit_limit_cents = excluded.credit_limit_cents,
-    cutoff_day = excluded.cutoff_day,
-    payment_day = excluded.payment_day,
-    color = excluded.color,
-    network = excluded.network,
-    updated_at = excluded.updated_at;
-
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

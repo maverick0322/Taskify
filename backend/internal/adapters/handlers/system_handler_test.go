@@ -340,6 +340,7 @@ CREATE TABLE financial_accounts (
 	cutoff_day INTEGER,
 	payment_day INTEGER,
 	color TEXT NOT NULL,
+	network TEXT NOT NULL,
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	deleted_at DATETIME

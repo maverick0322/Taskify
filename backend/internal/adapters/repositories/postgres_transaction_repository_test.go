@@ -111,8 +111,8 @@ func TestPostgresTransactionRepository_CreateValidTransaction_ReturnsNil(t *test
 	if database.receivedSQL != createTransactionQuery {
 		t.Errorf("expected create transaction query to be used")
 	}
-	if len(database.receivedArguments) != 19 {
-		t.Errorf("expected nineteen arguments, got %d", len(database.receivedArguments))
+	if len(database.receivedArguments) != 20 {
+		t.Errorf("expected twenty arguments, got %d", len(database.receivedArguments))
 	}
 }
 
@@ -439,6 +439,8 @@ func assignTransactionScanValues(destinations []interface{}, values []interface{
 			*destination = value.(string)
 		case *int64:
 			*destination = value.(int64)
+		case *bool:
+			*destination = value.(bool)
 		case **string:
 			if value == nil {
 				*destination = nil
@@ -452,6 +454,13 @@ func assignTransactionScanValues(destinations []interface{}, values []interface{
 				continue
 			}
 			storedValue := value.(int)
+			*destination = &storedValue
+		case **time.Time:
+			if value == nil {
+				*destination = nil
+				continue
+			}
+			storedValue := value.(time.Time)
 			*destination = &storedValue
 		case *time.Time:
 			*destination = value.(time.Time)
@@ -482,6 +491,7 @@ func validStoredTransactionValues(msi *int) []interface{} {
 		storedMSI,
 		nil,
 		nil,
+		false,
 		string(domain.TransactionRecurrenceOnce),
 		nil,
 		nil,
