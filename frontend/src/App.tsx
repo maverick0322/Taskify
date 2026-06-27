@@ -27,9 +27,6 @@ function App() {
         return;
       }
 
-      if (storedSession?.accessToken) {
-        login(storedSession.accessToken);
-      }
       if (
         storedSession?.remoteAccessToken &&
         storedSession.remoteRefreshToken
@@ -38,6 +35,9 @@ function App() {
           accessToken: storedSession.remoteAccessToken,
           refreshToken: storedSession.remoteRefreshToken,
         }).catch(() => undefined);
+      }
+      if (storedSession?.accessToken) {
+        login(storedSession.accessToken);
       }
       setIsBootstrappingSession(false);
     })();

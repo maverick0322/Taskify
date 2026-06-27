@@ -24,6 +24,7 @@ const (
 	defaultRefreshTokenTTL   = "24h"
 	defaultPort              = "8080"
 	defaultBcryptCost        = "10"
+	defaultRemoteAPIURL      = "https://taskify-7n1b.onrender.com"
 )
 
 var (
@@ -84,7 +85,7 @@ func loadAppConfig(getenv getenvFunc) (appConfig, error) {
 		bcryptCost:         bcryptCost,
 		environment:        environment,
 		remoteDatabaseURL:  strings.TrimSpace(getenv(remoteDBURLEnvKey)),
-		remoteAPIURL:       strings.TrimRight(strings.TrimSpace(getenv(remoteAPIURLEnvKey)), "/"),
+		remoteAPIURL:       strings.TrimRight(environmentValueOrDefault(getenv, remoteAPIURLEnvKey, defaultRemoteAPIURL), "/"),
 		supabaseURL:        strings.TrimRight(strings.TrimSpace(getenv(supabaseURLEnvKey)), "/"),
 		supabaseServiceKey: strings.TrimSpace(getenv(supabaseServiceKeyEnvKey)),
 		corsAllowedOrigins: parseCSV(getenv(corsAllowedOriginsEnvKey)),

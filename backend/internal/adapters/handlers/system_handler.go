@@ -20,6 +20,7 @@ const syncEventsHeartbeatInterval = 25 * time.Second
 type localSyncService interface {
 	SyncOnce(ctx context.Context) error
 	ForceFullPull(ctx context.Context) error
+	NeedsBootstrapPull(ctx context.Context) (bool, error)
 	EventHub() *services.SyncEventHub
 }
 
@@ -171,14 +172,17 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 		return
 	}
 
-	if handler.syncService != nil {
-		go handler.syncService.SyncOnce(context.Background())
+	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
+		handler.logger.Error("initial sync failed after remote login", "error", err)
+		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
+		return
 	}
 
 	writeJSON(response, http.StatusOK, map[string]interface{}{
-		"connected":    true,
-		"accessToken":  tokenPair.AccessToken,
-		"refreshToken": tokenPair.RefreshToken,
+		"connected":            true,
+		"accessToken":          tokenPair.AccessToken,
+		"refreshToken":         tokenPair.RefreshToken,
+		"initialSyncCompleted": true,
 	})
 }
 
@@ -199,11 +203,31 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 	}
 
 	handler.sessionSync.RestoreRemoteSession(payload.AccessToken, payload.RefreshToken)
-	if handler.syncService != nil {
-		go handler.syncService.SyncOnce(context.Background())
+	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
+		handler.logger.Error("initial sync failed after remote session restore", "error", err)
+		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
+		return
 	}
 
-	writeJSON(response, http.StatusOK, map[string]bool{"restored": true})
+	writeJSON(response, http.StatusOK, map[string]interface{}{
+		"restored":             true,
+		"initialSyncCompleted": true,
+	})
+}
+
+func (handler *SystemHandler) runInitialDesktopSync(ctx context.Context) error {
+	if handler.syncService == nil {
+		return nil
+	}
+
+	needsBootstrap, err := handler.syncService.NeedsBootstrapPull(ctx)
+	if err != nil {
+		return err
+	}
+	if needsBootstrap {
+		return handler.syncService.ForceFullPull(ctx)
+	}
+	return handler.syncService.SyncOnce(ctx)
 }
 
 func (handler *SystemHandler) LogoutRemoteSyncSession(response http.ResponseWriter, request *http.Request) {

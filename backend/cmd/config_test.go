@@ -36,8 +36,8 @@ func TestLoadAppConfig_ValidEnvironment_ReturnsConfig(t *testing.T) {
 	if config.remoteDatabaseURL != "postgres://remote.example/taskify" {
 		t.Errorf("expected remote database URL to be preserved, got %q", config.remoteDatabaseURL)
 	}
-	if config.remoteAPIURL != "" {
-		t.Errorf("expected empty remote api url by default, got %q", config.remoteAPIURL)
+	if config.remoteAPIURL != defaultRemoteAPIURL {
+		t.Errorf("expected default remote api url %q, got %q", defaultRemoteAPIURL, config.remoteAPIURL)
 	}
 }
 
@@ -69,7 +69,6 @@ func TestLoadAppConfig_LocalEnvironmentWithoutJWTSecret_ReturnsConfig(t *testing
 func TestLoadAppConfig_LocalEnvironmentUsesDefaultsWhenValuesAreMissing(t *testing.T) {
 	getenv := mapGetenv(map[string]string{
 		environmentEnvKey:  "development",
-		remoteAPIURLEnvKey: "https://taskify-api.example.com",
 		jwtSecretEnvKey:    "",
 	})
 
@@ -89,6 +88,41 @@ func TestLoadAppConfig_LocalEnvironmentUsesDefaultsWhenValuesAreMissing(t *testi
 	}
 	if config.bcryptCost != 10 {
 		t.Fatalf("expected default bcrypt cost 10, got %d", config.bcryptCost)
+	}
+	if config.remoteAPIURL != defaultRemoteAPIURL {
+		t.Fatalf("expected default remote api url %q, got %q", defaultRemoteAPIURL, config.remoteAPIURL)
+	}
+}
+
+func TestLoadAppConfig_RemoteAPIURLBlank_UsesDefault(t *testing.T) {
+	getenv := mapGetenv(map[string]string{
+		environmentEnvKey:  "development",
+		remoteAPIURLEnvKey: "   ",
+	})
+
+	config, err := loadAppConfig(getenv)
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if config.remoteAPIURL != defaultRemoteAPIURL {
+		t.Fatalf("expected default remote api url %q, got %q", defaultRemoteAPIURL, config.remoteAPIURL)
+	}
+}
+
+func TestLoadAppConfig_RemoteAPIURLWithTrailingSlash_NormalizesValue(t *testing.T) {
+	getenv := mapGetenv(map[string]string{
+		environmentEnvKey:  "development",
+		remoteAPIURLEnvKey: "https://taskify-api.example.com/",
+	})
+
+	config, err := loadAppConfig(getenv)
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if config.remoteAPIURL != "https://taskify-api.example.com" {
+		t.Fatalf("expected normalized remote api url, got %q", config.remoteAPIURL)
 	}
 }
 

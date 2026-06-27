@@ -52,6 +52,34 @@ type mockRemoteSessionService struct {
 	cleared         bool
 }
 
+type mockLocalSyncService struct {
+	needsBootstrap     bool
+	needsBootstrapErr  error
+	syncErr            error
+	forceErr           error
+	syncCalls          int
+	forceCalls         int
+	eventHub           *services.SyncEventHub
+}
+
+func (service *mockLocalSyncService) SyncOnce(ctx context.Context) error {
+	service.syncCalls++
+	return service.syncErr
+}
+
+func (service *mockLocalSyncService) ForceFullPull(ctx context.Context) error {
+	service.forceCalls++
+	return service.forceErr
+}
+
+func (service *mockLocalSyncService) NeedsBootstrapPull(ctx context.Context) (bool, error) {
+	return service.needsBootstrap, service.needsBootstrapErr
+}
+
+func (service *mockLocalSyncService) EventHub() *services.SyncEventHub {
+	return service.eventHub
+}
+
 func (service *mockRemoteSessionService) LoginRemoteSession(ctx context.Context, email, password string) error {
 	_, err := service.AuthenticateRemoteSession(ctx, email, password)
 	return err
@@ -241,7 +269,8 @@ func TestSystemHandler_PurgeSQLiteClearsLocalData(t *testing.T) {
 
 func TestSystemHandler_LoginRemoteSyncSessionReturnsRemoteTokens(t *testing.T) {
 	sessionSync := &mockRemoteSessionService{tokenPair: ports.TokenPair{AccessToken: "remote-access", RefreshToken: "remote-refresh"}}
-	handler := NewSystemHandler(nil, nil, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	syncService := &mockLocalSyncService{}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
 	request := httptest.NewRequest(http.MethodPost, "/sync/session/login", strings.NewReader(validLoginJSON()))
 	response := httptest.NewRecorder()
 
@@ -254,11 +283,18 @@ func TestSystemHandler_LoginRemoteSyncSessionReturnsRemoteTokens(t *testing.T) {
 	if !strings.Contains(body, `"accessToken":"remote-access"`) || !strings.Contains(body, `"refreshToken":"remote-refresh"`) {
 		t.Fatalf("expected remote token pair in response, got %s", body)
 	}
+	if !strings.Contains(body, `"initialSyncCompleted":true`) {
+		t.Fatalf("expected initial sync completion in response, got %s", body)
+	}
+	if syncService.syncCalls != 1 || syncService.forceCalls != 0 {
+		t.Fatalf("expected incremental sync once after login, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
+	}
 }
 
 func TestSystemHandler_RestoreRemoteSyncSessionRestoresTokens(t *testing.T) {
 	sessionSync := &mockRemoteSessionService{}
-	handler := NewSystemHandler(nil, nil, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	syncService := &mockLocalSyncService{}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
 	payload, _ := json.Marshal(map[string]string{
 		"accessToken":  "remote-access",
 		"refreshToken": "remote-refresh",
@@ -273,6 +309,64 @@ func TestSystemHandler_RestoreRemoteSyncSessionRestoresTokens(t *testing.T) {
 	}
 	if sessionSync.restoredAccess != "remote-access" || sessionSync.restoredRefresh != "remote-refresh" {
 		t.Fatalf("expected remote session to be restored, got %q %q", sessionSync.restoredAccess, sessionSync.restoredRefresh)
+	}
+	if syncService.syncCalls != 1 || syncService.forceCalls != 0 {
+		t.Fatalf("expected incremental sync once after restore, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
+	}
+}
+
+func TestSystemHandler_LoginRemoteSyncSessionUsesForceFullPullWhenBootstrapIsNeeded(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{tokenPair: ports.TokenPair{AccessToken: "remote-access", RefreshToken: "remote-refresh"}}
+	syncService := &mockLocalSyncService{needsBootstrap: true}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/login", strings.NewReader(validLoginJSON()))
+	response := httptest.NewRecorder()
+
+	handler.LoginRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if syncService.forceCalls != 1 || syncService.syncCalls != 0 {
+		t.Fatalf("expected force full pull after login bootstrap, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
+	}
+}
+
+func TestSystemHandler_RestoreRemoteSyncSessionUsesForceFullPullWhenBootstrapIsNeeded(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{}
+	syncService := &mockLocalSyncService{needsBootstrap: true}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	payload, _ := json.Marshal(map[string]string{
+		"accessToken":  "remote-access",
+		"refreshToken": "remote-refresh",
+	})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/restore", strings.NewReader(string(payload)))
+	response := httptest.NewRecorder()
+
+	handler.RestoreRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if syncService.forceCalls != 1 || syncService.syncCalls != 0 {
+		t.Fatalf("expected force full pull after restore bootstrap, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
+	}
+}
+
+func TestSystemHandler_LoginRemoteSyncSessionReturnsErrorWhenInitialSyncFails(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{tokenPair: ports.TokenPair{AccessToken: "remote-access", RefreshToken: "remote-refresh"}}
+	syncService := &mockLocalSyncService{forceErr: errors.New("boom"), needsBootstrap: true}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/login", strings.NewReader(validLoginJSON()))
+	response := httptest.NewRecorder()
+
+	handler.LoginRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), "initial sync failed") {
+		t.Fatalf("expected initial sync failure body, got %s", response.Body.String())
 	}
 }
 

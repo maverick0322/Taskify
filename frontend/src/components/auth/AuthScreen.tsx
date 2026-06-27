@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTheme } from "@/components/theme-provider";
+import { isTauriRuntime } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { login, register } from "@/services/authService";
@@ -72,12 +73,14 @@ export function AuthScreen() {
         | {
             accessToken?: string;
             refreshToken?: string;
+            initialSyncCompleted?: boolean;
           }
         | undefined;
-      try {
+      if (isTauriRuntime()) {
         remoteSession = await connectDesktopSyncSession({ email, password });
-      } catch (error) {
-        console.warn("desktop sync session login failed", error);
+        if (!remoteSession?.initialSyncCompleted) {
+          throw new Error("initial sync did not complete");
+        }
       }
       await persistSession({
         accessToken: tokenPair.accessToken,
