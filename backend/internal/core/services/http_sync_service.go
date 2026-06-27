@@ -181,6 +181,11 @@ func (service *HTTPRemoteSyncService) CurrentRemoteSession() (ports.TokenPair, b
 	}, true
 }
 
+func (service *HTTPRemoteSyncService) HasRemoteSession() bool {
+	_, _, ok := service.sessionSnapshot()
+	return ok
+}
+
 func (service *HTTPRemoteSyncService) SyncOnce(ctx context.Context) error {
 	return service.syncOnce(ctx, false)
 }

@@ -18,6 +18,10 @@ type backgroundSyncService interface {
 	NeedsBootstrapPull(ctx context.Context) (bool, error)
 }
 
+type sessionAwareBackgroundSyncService interface {
+	HasRemoteSession() bool
+}
+
 func startSyncWorker(ctx context.Context, syncService backgroundSyncService, signalBus *services.SyncSignalBus, logger ports.Logger) {
 	logger.Info("[SYNC] Worker iniciado; fallback=5m")
 	runSafeSyncCycle(ctx, syncService, logger, shouldRunBootstrapPull(ctx, syncService, logger))
@@ -62,6 +66,11 @@ func runSafeSyncCycle(ctx context.Context, syncService backgroundSyncService, lo
 		}
 	}()
 
+	if !workerHasRemoteSession(syncService) {
+		logger.Info("[SYNC] Worker esperando sesión remota; ciclo omitido", "fullPull", fullPull)
+		return
+	}
+
 	var err error
 	if fullPull {
 		err = syncService.ForceFullPull(ctx)
@@ -71,4 +80,12 @@ func runSafeSyncCycle(ctx context.Context, syncService backgroundSyncService, lo
 	if err != nil {
 		logger.Warn("[SYNC] Background sync falló", "fullPull", fullPull, "error", err)
 	}
+}
+
+func workerHasRemoteSession(syncService backgroundSyncService) bool {
+	sessionAwareService, ok := syncService.(sessionAwareBackgroundSyncService)
+	if !ok {
+		return true
+	}
+	return sessionAwareService.HasRemoteSession()
 }
