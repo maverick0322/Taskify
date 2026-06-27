@@ -68,16 +68,24 @@ export function AuthScreen() {
       }
 
       const tokenPair = await login({ email, password });
-      await persistSession({
-        accessToken: tokenPair.accessToken,
-        refreshToken: tokenPair.refreshToken,
-      });
-      setAuthenticatedSession(tokenPair.accessToken);
+      let remoteSession:
+        | {
+            accessToken?: string;
+            refreshToken?: string;
+          }
+        | undefined;
       try {
-        await connectDesktopSyncSession({ email, password });
+        remoteSession = await connectDesktopSyncSession({ email, password });
       } catch (error) {
         console.warn("desktop sync session login failed", error);
       }
+      await persistSession({
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        remoteAccessToken: remoteSession?.accessToken,
+        remoteRefreshToken: remoteSession?.refreshToken,
+      });
+      setAuthenticatedSession(tokenPair.accessToken);
     } catch (error) {
       setErrorMessage(
         getFriendlyErrorMessage(

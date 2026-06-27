@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	handlerMiddleware "github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
+	"github.com/maverick0322/taskify/backend/internal/core/ports"
 	"github.com/maverick0322/taskify/backend/internal/core/services"
 )
 
@@ -40,6 +42,32 @@ type syncEventRecorder struct {
 	body   strings.Builder
 	status int
 	mutex  sync.Mutex
+}
+
+type mockRemoteSessionService struct {
+	tokenPair       ports.TokenPair
+	loginErr        error
+	restoredAccess  string
+	restoredRefresh string
+	cleared         bool
+}
+
+func (service *mockRemoteSessionService) LoginRemoteSession(ctx context.Context, email, password string) error {
+	_, err := service.AuthenticateRemoteSession(ctx, email, password)
+	return err
+}
+
+func (service *mockRemoteSessionService) AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error) {
+	return service.tokenPair, service.loginErr
+}
+
+func (service *mockRemoteSessionService) RestoreRemoteSession(accessToken, refreshToken string) {
+	service.restoredAccess = accessToken
+	service.restoredRefresh = refreshToken
+}
+
+func (service *mockRemoteSessionService) ClearSession() {
+	service.cleared = true
 }
 
 func newSyncEventRecorder() *syncEventRecorder {
@@ -209,6 +237,43 @@ func TestSystemHandler_PurgeSQLiteClearsLocalData(t *testing.T) {
 	assertRowCount(t, database, "boards", 0)
 	assertRowCount(t, database, "sync_outbox", 0)
 	assertRowCount(t, database, "sync_state", 0)
+}
+
+func TestSystemHandler_LoginRemoteSyncSessionReturnsRemoteTokens(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{tokenPair: ports.TokenPair{AccessToken: "remote-access", RefreshToken: "remote-refresh"}}
+	handler := NewSystemHandler(nil, nil, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/login", strings.NewReader(validLoginJSON()))
+	response := httptest.NewRecorder()
+
+	handler.LoginRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"accessToken":"remote-access"`) || !strings.Contains(body, `"refreshToken":"remote-refresh"`) {
+		t.Fatalf("expected remote token pair in response, got %s", body)
+	}
+}
+
+func TestSystemHandler_RestoreRemoteSyncSessionRestoresTokens(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{}
+	handler := NewSystemHandler(nil, nil, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	payload, _ := json.Marshal(map[string]string{
+		"accessToken":  "remote-access",
+		"refreshToken": "remote-refresh",
+	})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/restore", strings.NewReader(string(payload)))
+	response := httptest.NewRecorder()
+
+	handler.RestoreRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if sessionSync.restoredAccess != "remote-access" || sessionSync.restoredRefresh != "remote-refresh" {
+		t.Fatalf("expected remote session to be restored, got %q %q", sessionSync.restoredAccess, sessionSync.restoredRefresh)
+	}
 }
 
 func openHandlerSyncDatabase(t *testing.T) *sql.DB {

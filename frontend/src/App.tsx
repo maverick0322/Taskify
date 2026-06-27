@@ -8,6 +8,7 @@ import { WindowTitlebar } from "@/components/taskify/window-titlebar";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { loadStoredSession } from "@/services/secureSession";
+import { restoreDesktopSyncSession } from "@/services/systemService";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,15 @@ function App() {
 
       if (storedSession?.accessToken) {
         login(storedSession.accessToken);
+      }
+      if (
+        storedSession?.remoteAccessToken &&
+        storedSession.remoteRefreshToken
+      ) {
+        await restoreDesktopSyncSession({
+          accessToken: storedSession.remoteAccessToken,
+          refreshToken: storedSession.remoteRefreshToken,
+        }).catch(() => undefined);
       }
       setIsBootstrappingSession(false);
     })();

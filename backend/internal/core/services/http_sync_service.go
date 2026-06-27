@@ -19,6 +19,16 @@ import (
 
 var ErrRemoteSyncSessionUnavailable = errors.New("sync: remote session is unavailable")
 
+type RemoteUserProfile struct {
+	ID              string
+	Email           string
+	FirstName       string
+	LastName        string
+	BirthDate       time.Time
+	AvatarLocalPath string
+	AvatarURL       string
+}
+
 type HTTPRemoteSyncService struct {
 	local        *sql.DB
 	remoteAPIURL string
@@ -69,26 +79,106 @@ func (service *HTTPRemoteSyncService) ClearSession() {
 }
 
 func (service *HTTPRemoteSyncService) LoginRemoteSession(ctx context.Context, email, password string) error {
+	_, err := service.AuthenticateRemoteSession(ctx, email, password)
+	return err
+}
+
+func (service *HTTPRemoteSyncService) AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error) {
 	payload := map[string]string{
 		"email":    strings.TrimSpace(email),
 		"password": password,
 	}
 
-	responseBody, err := service.doJSON(ctx, http.MethodPost, "/users/login", payload, false)
+	responseBody, statusCode, err := service.doJSONRequest(ctx, http.MethodPost, "/users/login", payload, false, true)
 	if err != nil {
-		return err
+		if statusCode == http.StatusUnauthorized {
+			return ports.TokenPair{}, ErrInvalidCredentials
+		}
+		return ports.TokenPair{}, ErrRemoteAuthUnavailable
 	}
 
 	var response tokenPairResponse
 	if err := json.Unmarshal(responseBody, &response); err != nil {
-		return fmt.Errorf("sync: failed to decode remote login response: %w", err)
+		return ports.TokenPair{}, fmt.Errorf("sync: failed to decode remote login response: %w", err)
 	}
 	if strings.TrimSpace(response.AccessToken) == "" || strings.TrimSpace(response.RefreshToken) == "" {
-		return fmt.Errorf("sync: remote login did not return a token pair")
+		return ports.TokenPair{}, fmt.Errorf("sync: remote login did not return a token pair")
 	}
 
 	service.SetSession(response.AccessToken, response.RefreshToken)
+	return ports.TokenPair{
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
+	}, nil
+}
+
+func (service *HTTPRemoteSyncService) RegisterRemoteUser(ctx context.Context, email, password, firstName, lastName, birthDate string) error {
+	payload := map[string]string{
+		"email":     strings.TrimSpace(email),
+		"password":  password,
+		"firstName": strings.TrimSpace(firstName),
+		"lastName":  strings.TrimSpace(lastName),
+		"birthDate": strings.TrimSpace(birthDate),
+	}
+
+	_, statusCode, err := service.doJSONRequest(ctx, http.MethodPost, "/users/register", payload, false, true)
+	if err != nil {
+		switch statusCode {
+		case http.StatusConflict:
+			return ErrUserAlreadyExists
+		case http.StatusBadRequest:
+			return ErrInvalidRemoteUserData
+		default:
+			return ErrRemoteAuthUnavailable
+		}
+	}
+
 	return nil
+}
+
+func (service *HTTPRemoteSyncService) GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error) {
+	responseBody, err := service.doJSON(ctx, http.MethodGet, "/users/me", nil, true)
+	if err != nil {
+		if errors.Is(err, ErrRemoteSyncSessionUnavailable) {
+			return nil, ErrRemoteAuthUnavailable
+		}
+		return nil, ErrRemoteAuthUnavailable
+	}
+
+	var response remoteUserProfileResponse
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		return nil, fmt.Errorf("sync: failed to decode remote profile response: %w", err)
+	}
+
+	birthDate, err := time.Parse("2006-01-02", strings.TrimSpace(response.BirthDate))
+	if err != nil {
+		return nil, fmt.Errorf("sync: invalid remote birth date: %w", err)
+	}
+
+	return &RemoteUserProfile{
+		ID:              strings.TrimSpace(response.ID),
+		Email:           strings.TrimSpace(response.Email),
+		FirstName:       strings.TrimSpace(response.FirstName),
+		LastName:        strings.TrimSpace(response.LastName),
+		BirthDate:       birthDate.UTC(),
+		AvatarLocalPath: strings.TrimSpace(response.AvatarLocalPath),
+		AvatarURL:       strings.TrimSpace(response.AvatarURL),
+	}, nil
+}
+
+func (service *HTTPRemoteSyncService) RestoreRemoteSession(accessToken, refreshToken string) {
+	service.SetSession(accessToken, refreshToken)
+}
+
+func (service *HTTPRemoteSyncService) CurrentRemoteSession() (ports.TokenPair, bool) {
+	accessToken, refreshToken, ok := service.sessionSnapshot()
+	if !ok {
+		return ports.TokenPair{}, false
+	}
+	return ports.TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}, true
 }
 
 func (service *HTTPRemoteSyncService) SyncOnce(ctx context.Context) error {
@@ -548,6 +638,16 @@ func (service *HTTPRemoteSyncService) sessionSnapshot() (string, string, bool) {
 type tokenPairResponse struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken"`
+}
+
+type remoteUserProfileResponse struct {
+	ID              string `json:"id"`
+	Email           string `json:"email"`
+	FirstName       string `json:"firstName"`
+	LastName        string `json:"lastName"`
+	BirthDate       string `json:"birthDate"`
+	AvatarLocalPath string `json:"avatarLocalPath"`
+	AvatarURL       string `json:"avatarUrl"`
 }
 
 type syncPushHTTPPayload struct {

@@ -18,6 +18,10 @@ const SESSION_ACCOUNT_NAME: &str = "desktop-session";
 struct StoredSession {
     access_token: String,
     refresh_token: String,
+    #[serde(default)]
+    remote_access_token: Option<String>,
+    #[serde(default)]
+    remote_refresh_token: Option<String>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -27,10 +31,17 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn set_secure_session(access_token: String, refresh_token: String) -> Result<(), String> {
+fn set_secure_session(
+    access_token: String,
+    refresh_token: String,
+    remote_access_token: Option<String>,
+    remote_refresh_token: Option<String>,
+) -> Result<(), String> {
     let session = StoredSession {
         access_token,
         refresh_token,
+        remote_access_token,
+        remote_refresh_token,
     };
     let serialized =
         serde_json::to_string(&session).map_err(|error| format!("serialize session: {error}"))?;

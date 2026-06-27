@@ -206,6 +206,18 @@ func TestUserHandler_LoginInternalError_ReturnsInternalServerError(t *testing.T)
 	}
 }
 
+func TestUserHandler_LoginRemoteUnavailable_ReturnsBadGateway(t *testing.T) {
+	router := createUserTestRouter(&mockUserUseCase{errToReturn: services.ErrRemoteAuthUnavailable}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/users/login", strings.NewReader(validLoginJSON()))
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway {
+		t.Errorf("expected status %d, got %d", http.StatusBadGateway, response.Code)
+	}
+}
+
 func TestUserHandler_RefreshValidToken_ReturnsOK(t *testing.T) {
 	// Arrange
 	router := createUserTestRouter(&mockUserUseCase{accessTokenToReturn: "new-access-token", refreshTokenToReturn: "new-refresh-token"}, &mockHandlerLogger{})

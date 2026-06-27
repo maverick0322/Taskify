@@ -21,7 +21,15 @@ var (
 	ErrInvalidRefreshToken   = errors.New("service: invalid refresh token")
 	ErrSessionRevoked        = errors.New("service: refresh session has been revoked")
 	ErrRefreshSessionExpired = errors.New("service: refresh session has expired")
+	ErrRemoteAuthUnavailable = errors.New("service: remote auth is unavailable")
+	ErrInvalidRemoteUserData = errors.New("service: remote user data is invalid")
 )
+
+type remoteAuthClient interface {
+	AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
+	RegisterRemoteUser(ctx context.Context, email, password, firstName, lastName, birthDate string) error
+	GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error)
+}
 
 // userService implements ports.UserUseCase.
 // Unexported struct ensures it can only be created via the constructor (Factory Pattern).
@@ -32,6 +40,7 @@ type userService struct {
 	tokenGen    ports.TokenGenerator
 	idGen       ports.IDGenerator
 	logger      ports.Logger
+	remoteAuth  remoteAuthClient
 }
 
 // NewUserService creates a new instance injecting all required dependencies.
@@ -43,6 +52,18 @@ func NewUserService(
 	idGen ports.IDGenerator,
 	logger ports.Logger,
 ) ports.UserUseCase {
+	return NewUserServiceWithRemoteAuth(repo, sessionRepo, hasher, tokenGen, idGen, logger, nil)
+}
+
+func NewUserServiceWithRemoteAuth(
+	repo ports.UserRepository,
+	sessionRepo ports.SessionRepository,
+	hasher ports.PasswordHasher,
+	tokenGen ports.TokenGenerator,
+	idGen ports.IDGenerator,
+	logger ports.Logger,
+	remoteAuth remoteAuthClient,
+) ports.UserUseCase {
 	return &userService{
 		userRepo:    repo,
 		sessionRepo: sessionRepo,
@@ -50,10 +71,15 @@ func NewUserService(
 		tokenGen:    tokenGen,
 		idGen:       idGen,
 		logger:      logger,
+		remoteAuth:  remoteAuth,
 	}
 }
 
 func (s *userService) Register(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error) {
+	if s.remoteAuth != nil {
+		return s.registerRemote(ctx, email, plainPassword, firstName, lastName, birthDate)
+	}
+
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && existingUser != nil {
 		// Log as Warn since it's a client error, not a system failure. Do not log the email to protect PII.
@@ -92,6 +118,14 @@ func (s *userService) Register(ctx context.Context, email, plainPassword, firstN
 }
 
 func (s *userService) Authenticate(ctx context.Context, email, plainPassword string) (string, string, error) {
+	if s.remoteAuth != nil {
+		return s.authenticateDesktop(ctx, email, plainPassword)
+	}
+
+	return s.authenticateLocal(ctx, email, plainPassword)
+}
+
+func (s *userService) authenticateLocal(ctx context.Context, email, plainPassword string) (string, string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if errors.Is(err, ports.ErrUserNotFound) {
 		s.logger.Warn("authentication failed: user not found")
@@ -112,6 +146,106 @@ func (s *userService) Authenticate(ctx context.Context, email, plainPassword str
 		return "", "", ErrInvalidCredentials
 	}
 
+	return s.issueLocalSession(ctx, user)
+}
+
+func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassword string) (string, string, error) {
+	localUser, localErr := s.userRepo.GetByEmail(ctx, email)
+	if localErr != nil && !errors.Is(localErr, ports.ErrUserNotFound) {
+		s.logger.Error("failed to retrieve local user during desktop authentication", "error", localErr)
+		return "", "", ErrInternalProcessing
+	}
+
+	remoteUser, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
+	if err == nil {
+		return s.issueLocalSession(ctx, remoteUser)
+	}
+	if errors.Is(err, ErrInvalidCredentials) {
+		return "", "", ErrInvalidCredentials
+	}
+	if localErr == nil && localUser != nil && errors.Is(err, ErrRemoteAuthUnavailable) {
+		s.logger.Warn("remote auth unavailable, falling back to local cached credentials", "email", email)
+		if compareErr := s.hasher.Compare(plainPassword, localUser.PasswordHash()); compareErr != nil {
+			return "", "", ErrInvalidCredentials
+		}
+		return s.issueLocalSession(ctx, localUser)
+	}
+	if errors.Is(err, ErrRemoteAuthUnavailable) {
+		return "", "", ErrRemoteAuthUnavailable
+	}
+	return "", "", ErrInternalProcessing
+}
+
+func (s *userService) registerRemote(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error) {
+	if err := s.remoteAuth.RegisterRemoteUser(ctx, email, plainPassword, firstName, lastName, birthDate.Format("2006-01-02")); err != nil {
+		return nil, err
+	}
+
+	user, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func (s *userService) authenticateAndHydrateRemoteUser(ctx context.Context, email, plainPassword string) (*domain.User, error) {
+	if _, err := s.remoteAuth.AuthenticateRemoteSession(ctx, email, plainPassword); err != nil {
+		return nil, err
+	}
+
+	remoteProfile, err := s.remoteAuth.GetRemoteProfile(ctx)
+	if err != nil {
+		if errors.Is(err, ErrRemoteAuthUnavailable) {
+			return nil, err
+		}
+		s.logger.Error("failed to fetch remote profile during desktop authentication", "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	localUser, localErr := s.userRepo.GetByEmail(ctx, remoteProfile.Email)
+	if localErr != nil && !errors.Is(localErr, ports.ErrUserNotFound) {
+		s.logger.Error("failed to resolve local user during remote hydration", "error", localErr)
+		return nil, ErrInternalProcessing
+	}
+
+	hashedPassword, err := s.hasher.Hash(plainPassword)
+	if err != nil {
+		s.logger.Error("failed to hash local password during remote hydration", "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	profile, err := domain.NewUserProfile(remoteProfile.FirstName, remoteProfile.LastName, remoteProfile.BirthDate)
+	if err != nil {
+		s.logger.Error("remote profile is invalid for local hydration", "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	userID := remoteProfile.ID
+	avatarLocalPath := remoteProfile.AvatarLocalPath
+	if localErr == nil && localUser != nil {
+		userID = localUser.ID()
+		if avatarLocalPath == "" {
+			avatarLocalPath = localUser.AvatarLocalPath()
+		}
+	}
+
+	user, err := domain.NewUser(userID, remoteProfile.Email, hashedPassword, profile)
+	if err != nil {
+		s.logger.Error("failed to build hydrated local user", "error", err)
+		return nil, ErrInternalProcessing
+	}
+	user.UpdateAvatar(avatarLocalPath, remoteProfile.AvatarURL)
+
+	if err := s.userRepo.Upsert(ctx, user); err != nil {
+		s.logger.Error("failed to upsert hydrated local user", "userID", user.ID(), "error", err)
+		return nil, ErrInternalProcessing
+	}
+
+	return user, nil
+}
+
+func (s *userService) issueLocalSession(ctx context.Context, user *domain.User) (string, string, error) {
 	tokenPair, err := s.tokenGen.GenerateTokenPair(tokenSubjectFromUser(user))
 	if err != nil {
 		s.logger.Error("failed to generate token pair", "userID", user.ID(), "error", err)

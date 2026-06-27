@@ -25,6 +25,8 @@ type localSyncService interface {
 
 type remoteSessionService interface {
 	LoginRemoteSession(ctx context.Context, email, password string) error
+	AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
+	RestoreRemoteSession(accessToken, refreshToken string)
 	ClearSession()
 }
 
@@ -54,6 +56,7 @@ func (handler *SystemHandler) RegisterEventRoutes(router chi.Router) {
 
 func (handler *SystemHandler) RegisterPublicRoutes(router chi.Router) {
 	router.Post("/sync/session/login", handler.LoginRemoteSyncSession)
+	router.Post("/sync/session/restore", handler.RestoreRemoteSyncSession)
 	router.Post("/sync/session/logout", handler.LogoutRemoteSyncSession)
 }
 
@@ -161,13 +164,46 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 		return
 	}
 
-	if err := handler.sessionSync.LoginRemoteSession(request.Context(), payload.Email, payload.Password); err != nil {
+	tokenPair, err := handler.sessionSync.AuthenticateRemoteSession(request.Context(), payload.Email, payload.Password)
+	if err != nil {
 		handler.logger.Warn("remote sync session login failed", "error", err)
 		writeJSON(response, http.StatusBadGateway, errorResponse{Error: "remote sync login failed"})
 		return
 	}
 
-	writeJSON(response, http.StatusOK, map[string]bool{"connected": true})
+	if handler.syncService != nil {
+		go handler.syncService.SyncOnce(context.Background())
+	}
+
+	writeJSON(response, http.StatusOK, map[string]interface{}{
+		"connected":    true,
+		"accessToken":  tokenPair.AccessToken,
+		"refreshToken": tokenPair.RefreshToken,
+	})
+}
+
+func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWriter, request *http.Request) {
+	if handler.sessionSync == nil {
+		writeJSON(response, http.StatusServiceUnavailable, errorResponse{Error: "cloud sync is not configured"})
+		return
+	}
+
+	var payload restoreRemoteSessionRequest
+	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+	if strings.TrimSpace(payload.AccessToken) == "" || strings.TrimSpace(payload.RefreshToken) == "" {
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	handler.sessionSync.RestoreRemoteSession(payload.AccessToken, payload.RefreshToken)
+	if handler.syncService != nil {
+		go handler.syncService.SyncOnce(context.Background())
+	}
+
+	writeJSON(response, http.StatusOK, map[string]bool{"restored": true})
 }
 
 func (handler *SystemHandler) LogoutRemoteSyncSession(response http.ResponseWriter, request *http.Request) {
@@ -280,6 +316,11 @@ type syncPushRequest struct {
 
 type syncPushResponse struct {
 	Applied int `json:"applied"`
+}
+
+type restoreRemoteSessionRequest struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 type syncPullResponse struct {

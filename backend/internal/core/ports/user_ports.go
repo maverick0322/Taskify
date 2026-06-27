@@ -13,6 +13,7 @@ import (
 // necessary for user data management, completely abstracting the underlying database.
 type UserRepository interface {
 	Save(ctx context.Context, user *domain.User) error
+	Upsert(ctx context.Context, user *domain.User) error
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	UpdateProfileName(ctx context.Context, userID, firstName, lastName string) error

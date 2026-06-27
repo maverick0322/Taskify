@@ -16,14 +16,28 @@ export async function checkpointSQLite(): Promise<{ checkpointed: boolean }> {
 export async function connectDesktopSyncSession(credentials: {
   email: string;
   password: string;
+}): Promise<{ accessToken?: string; refreshToken?: string }> {
+  if (!isTauriRuntime()) {
+    return {};
+  }
+
+  return apiRequest<{ connected: boolean; accessToken?: string; refreshToken?: string }>("/sync/session/login", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+}
+
+export async function restoreDesktopSyncSession(tokens: {
+  accessToken: string;
+  refreshToken: string;
 }): Promise<void> {
   if (!isTauriRuntime()) {
     return;
   }
 
-  await apiRequest<{ connected: boolean }>("/sync/session/login", {
+  await apiRequest<{ restored: boolean }>("/sync/session/restore", {
     method: "POST",
-    body: JSON.stringify(credentials),
+    body: JSON.stringify(tokens),
   });
 }
 

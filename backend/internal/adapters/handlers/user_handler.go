@@ -195,6 +195,12 @@ func (handler *UserHandler) handleRegisterError(response http.ResponseWriter, er
 	case errors.Is(err, services.ErrUserAlreadyExists):
 		handler.logger.Warn("registration rejected because user already exists")
 		writeJSON(response, http.StatusConflict, errorResponse{Error: "user already exists"})
+	case errors.Is(err, services.ErrRemoteAuthUnavailable):
+		handler.logger.Warn("registration rejected because remote auth is unavailable")
+		writeJSON(response, http.StatusBadGateway, errorResponse{Error: "remote auth unavailable"})
+	case errors.Is(err, services.ErrInvalidRemoteUserData):
+		handler.logger.Warn("registration rejected because remote user data is invalid")
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid user data"})
 	case isDomainValidationError(err):
 		handler.logger.Warn("registration rejected because user data is invalid")
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid user data"})
@@ -208,6 +214,11 @@ func (handler *UserHandler) handleLoginError(response http.ResponseWriter, err e
 	if errors.Is(err, services.ErrInvalidCredentials) {
 		handler.logger.Warn("login rejected because credentials are invalid")
 		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "invalid credentials"})
+		return
+	}
+	if errors.Is(err, services.ErrRemoteAuthUnavailable) {
+		handler.logger.Warn("login rejected because remote auth is unavailable")
+		writeJSON(response, http.StatusBadGateway, errorResponse{Error: "remote auth unavailable"})
 		return
 	}
 
@@ -293,6 +304,7 @@ type userProfileResponse struct {
 	Email           string `json:"email"`
 	FirstName       string `json:"firstName"`
 	LastName        string `json:"lastName"`
+	BirthDate       string `json:"birthDate"`
 	AvatarLocalPath string `json:"avatarLocalPath,omitempty"`
 	AvatarURL       string `json:"avatarUrl,omitempty"`
 }
@@ -304,6 +316,7 @@ func userProfileResponseFromDomain(user *domain.User) userProfileResponse {
 		Email:           user.Email(),
 		FirstName:       profile.FirstName(),
 		LastName:        profile.LastName(),
+		BirthDate:       profile.BirthDate().Format(birthDateLayout),
 		AvatarLocalPath: user.AvatarLocalPath(),
 		AvatarURL:       user.AvatarURL(),
 	}

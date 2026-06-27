@@ -16,6 +16,27 @@ const (
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
+	sqliteUpsertUserQuery = `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+		ON CONFLICT(id) DO UPDATE SET
+			email = excluded.email,
+			password_hash = excluded.password_hash,
+			first_name = excluded.first_name,
+			last_name = excluded.last_name,
+			birth_date = excluded.birth_date,
+			avatar_local_path = CASE
+				WHEN excluded.avatar_local_path IS NULL OR excluded.avatar_local_path = '' THEN users.avatar_local_path
+				ELSE excluded.avatar_local_path
+			END,
+			avatar_url = CASE
+				WHEN excluded.avatar_url IS NULL OR excluded.avatar_url = '' THEN users.avatar_url
+				ELSE excluded.avatar_url
+			END,
+			updated_at = excluded.updated_at,
+			deleted_at = NULL
+	`
+
 	sqliteGetUserByIDQuery = `
 		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
@@ -86,6 +107,36 @@ func (repository *SQLiteUserRepository) Save(ctx context.Context, user *domain.U
 
 	repository.logger.Error("failed to save user", "userID", user.ID(), "error", err)
 	return ports.ErrRepositoryUnavailable
+}
+
+func (repository *SQLiteUserRepository) Upsert(ctx context.Context, user *domain.User) error {
+	if user == nil {
+		repository.logger.Error("cannot upsert nil user")
+		return ports.ErrRepositoryUnavailable
+	}
+
+	profile := user.Profile()
+	now := timeValue(time.Now())
+	_, err := repository.database.ExecContext(
+		ctx,
+		sqliteUpsertUserQuery,
+		user.ID(),
+		user.Email(),
+		user.PasswordHash(),
+		profile.FirstName(),
+		profile.LastName(),
+		timeValue(profile.BirthDate()),
+		nullableString(nonEmptyStringPtr(user.AvatarLocalPath())),
+		nullableString(nonEmptyStringPtr(user.AvatarURL())),
+		now,
+		now,
+	)
+	if err != nil {
+		repository.logger.Error("failed to upsert user", "userID", user.ID(), "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+
+	return nil
 }
 
 func (repository *SQLiteUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {

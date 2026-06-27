@@ -21,6 +21,21 @@ const (
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
+	upsertUserQuery = `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO UPDATE SET
+			email = EXCLUDED.email,
+			password_hash = EXCLUDED.password_hash,
+			first_name = EXCLUDED.first_name,
+			last_name = EXCLUDED.last_name,
+			birth_date = EXCLUDED.birth_date,
+			avatar_local_path = COALESCE(NULLIF(EXCLUDED.avatar_local_path, ''), users.avatar_local_path),
+			avatar_url = COALESCE(NULLIF(EXCLUDED.avatar_url, ''), users.avatar_url),
+			updated_at = NOW(),
+			deleted_at = NULL
+	`
+
 	getUserByIDQuery = `
 		SELECT id, email, password_hash, first_name, last_name, birth_date, avatar_local_path, avatar_url
 		FROM users
@@ -101,6 +116,33 @@ func (repository *PostgresUserRepository) Save(ctx context.Context, user *domain
 
 	repository.logger.Error("failed to save user", "userID", user.ID(), "error", err)
 	return ports.ErrRepositoryUnavailable
+}
+
+func (repository *PostgresUserRepository) Upsert(ctx context.Context, user *domain.User) error {
+	if user == nil {
+		repository.logger.Error("cannot upsert nil user")
+		return ports.ErrRepositoryUnavailable
+	}
+
+	profile := user.Profile()
+	_, err := repository.database.Exec(
+		ctx,
+		upsertUserQuery,
+		user.ID(),
+		user.Email(),
+		user.PasswordHash(),
+		profile.FirstName(),
+		profile.LastName(),
+		profile.BirthDate(),
+		nullablePlainString(user.AvatarLocalPath()),
+		nullablePlainString(user.AvatarURL()),
+	)
+	if err != nil {
+		repository.logger.Error("failed to upsert user", "userID", user.ID(), "error", err)
+		return ports.ErrRepositoryUnavailable
+	}
+
+	return nil
 }
 
 func (repository *PostgresUserRepository) GetByID(ctx context.Context, id string) (*domain.User, error) {

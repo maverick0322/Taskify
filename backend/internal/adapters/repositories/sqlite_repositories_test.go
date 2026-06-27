@@ -155,6 +155,53 @@ func TestSQLiteRepositories_PersistAndQueryLocalFirstData(t *testing.T) {
 	}
 }
 
+func TestSQLiteUserRepository_UpsertPreservesAvatarLocalPathAndRefreshesRemoteFields(t *testing.T) {
+	ctx := context.Background()
+	database := openTestSQLiteDatabase(t)
+	logger := &fakeRepositoryLogger{}
+	userRepository := NewSQLiteUserRepository(database, logger)
+
+	profile, err := domain.NewUserProfile("Jane", "Doe", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("failed to create initial profile: %v", err)
+	}
+	user, err := domain.NewUser("user-1", "jane@example.com", "hashed-password-value", profile)
+	if err != nil {
+		t.Fatalf("failed to create initial user: %v", err)
+	}
+	user.UpdateAvatar("C:/avatars/jane.png", "")
+	if err := userRepository.Save(ctx, user); err != nil {
+		t.Fatalf("failed to save initial user: %v", err)
+	}
+
+	updatedProfile, err := domain.NewUserProfile("Jane", "Doe", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("failed to create updated profile: %v", err)
+	}
+	updatedUser, err := domain.NewUser("user-1", "jane@example.com", "new-hash-value", updatedProfile)
+	if err != nil {
+		t.Fatalf("failed to create updated user: %v", err)
+	}
+	updatedUser.UpdateAvatar("", "https://cdn.example.com/jane.png")
+	if err := userRepository.Upsert(ctx, updatedUser); err != nil {
+		t.Fatalf("failed to upsert user: %v", err)
+	}
+
+	storedUser, err := userRepository.GetByEmail(ctx, "jane@example.com")
+	if err != nil {
+		t.Fatalf("failed to retrieve upserted user: %v", err)
+	}
+	if storedUser.AvatarLocalPath() != "C:/avatars/jane.png" {
+		t.Fatalf("expected local avatar path to be preserved, got %q", storedUser.AvatarLocalPath())
+	}
+	if storedUser.AvatarURL() != "https://cdn.example.com/jane.png" {
+		t.Fatalf("expected avatar url to be refreshed, got %q", storedUser.AvatarURL())
+	}
+	if storedUser.PasswordHash() != "new-hash-value" {
+		t.Fatalf("expected password hash to be refreshed, got %q", storedUser.PasswordHash())
+	}
+}
+
 func openTestSQLiteDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 

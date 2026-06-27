@@ -153,7 +153,6 @@ func run() error {
 		financialAccountRepository = repositories.NewSQLiteFinancialAccountRepository(sqliteDatabase, applicationLogger)
 		notificationRepository = repositories.NewSQLiteNotificationRepository(sqliteDatabase, applicationLogger)
 	}
-	userUseCase := services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, columnRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
 	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
@@ -170,6 +169,8 @@ func run() error {
 	var syncSignalBus *services.SyncSignalBus
 	var sessionSyncService interface {
 		LoginRemoteSession(ctx context.Context, email, password string) error
+		AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
+		RestoreRemoteSession(accessToken, refreshToken string)
 		ClearSession()
 	}
 	if isProduction {
@@ -184,6 +185,13 @@ func run() error {
 		applicationLogger.Info("[SYNC] Servicio de sincronización HTTP inicializado", "remoteAPIURL", config.remoteAPIURL)
 	} else if !isProduction {
 		applicationLogger.Warn("[SYNC] REMOTE_API_URL vacío: sync remoto desactivado")
+	}
+	var userUseCase ports.UserUseCase
+	if !isProduction && config.remoteAPIURL != "" {
+		httpSyncService, _ := syncService.(*services.HTTPRemoteSyncService)
+		userUseCase = services.NewUserServiceWithRemoteAuth(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger, httpSyncService)
+	} else {
+		userUseCase = services.NewUserService(userRepository, sessionRepository, passwordHasher, tokenGenerator, idGenerator, applicationLogger)
 	}
 	userHandler := handlers.NewUserHandler(userUseCase, applicationLogger)
 	taskHandler := handlers.NewTaskHandler(taskUseCase, applicationLogger)

@@ -17,10 +17,16 @@ type mockUserRepository struct {
 	getByEmailError  error
 	saveError        error
 	savedUser        *domain.User
+	upsertedUser     *domain.User
 }
 
 func (repository *mockUserRepository) Save(ctx context.Context, user *domain.User) error {
 	repository.savedUser = user
+	return repository.saveError
+}
+
+func (repository *mockUserRepository) Upsert(ctx context.Context, user *domain.User) error {
+	repository.upsertedUser = user
 	return repository.saveError
 }
 
@@ -115,6 +121,32 @@ type mockLogger struct{}
 func (logger *mockLogger) Info(msg string, keys ...interface{})  {}
 func (logger *mockLogger) Warn(msg string, keys ...interface{})  {}
 func (logger *mockLogger) Error(msg string, keys ...interface{}) {}
+
+type mockRemoteAuthClient struct {
+	tokenPair       ports.TokenPair
+	profileToReturn *RemoteUserProfile
+	authErr         error
+	registerErr     error
+	profileErr      error
+	email           string
+	password        string
+}
+
+func (client *mockRemoteAuthClient) AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error) {
+	client.email = email
+	client.password = password
+	return client.tokenPair, client.authErr
+}
+
+func (client *mockRemoteAuthClient) RegisterRemoteUser(ctx context.Context, email, password, firstName, lastName, birthDate string) error {
+	client.email = email
+	client.password = password
+	return client.registerErr
+}
+
+func (client *mockRemoteAuthClient) GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error) {
+	return client.profileToReturn, client.profileErr
+}
 
 func TestRegister_NewUser_ReturnsUserAndSaves(t *testing.T) {
 	// Arrange
@@ -504,6 +536,97 @@ func TestRefreshSession_RotateFailure_ReturnsErrInternalProcessing(t *testing.T)
 	// Assert
 	if !errors.Is(err, ErrInternalProcessing) {
 		t.Errorf("expected error %v, got %v", ErrInternalProcessing, err)
+	}
+}
+
+func TestAuthenticate_DesktopRemoteLoginHydratesLocalUserAndReturnsLocalTokens(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockSessions := &mockSessionRepository{}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair: validServiceTokenPair(),
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "test@domain.com",
+			FirstName: "Jane",
+			LastName:  "Doe",
+			BirthDate: time.Now().AddDate(-25, 0, 0),
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	accessToken, refreshToken, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if accessToken != "access-token" || refreshToken != "refresh-token" {
+		t.Fatalf("expected local token pair, got %q %q", accessToken, refreshToken)
+	}
+	if mockRepo.upsertedUser == nil {
+		t.Fatal("expected remote user to be upserted locally")
+	}
+	if mockRepo.upsertedUser.ID() != "remote-user-1" {
+		t.Fatalf("expected remote user id to be stored locally, got %s", mockRepo.upsertedUser.ID())
+	}
+	if mockRepo.upsertedUser.PasswordHash() != "hashed-local-password" {
+		t.Fatalf("expected local password hash to be refreshed, got %s", mockRepo.upsertedUser.PasswordHash())
+	}
+}
+
+func TestAuthenticate_DesktopRemoteUnavailableFallsBackToLocalUser(t *testing.T) {
+	localUser := createServiceTestUser(t)
+	mockRepo := &mockUserRepository{userToReturn: localUser}
+	mockSessions := &mockSessionRepository{}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{authErr: ErrRemoteAuthUnavailable}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	accessToken, refreshToken, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if accessToken != "access-token" || refreshToken != "refresh-token" {
+		t.Fatalf("expected local token pair, got %q %q", accessToken, refreshToken)
+	}
+}
+
+func TestAuthenticate_DesktopCleanInstallOfflineReturnsErrRemoteAuthUnavailable(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	remoteAuth := &mockRemoteAuthClient{authErr: ErrRemoteAuthUnavailable}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, &mockSessionRepository{}, &mockHasher{}, &mockTokenGen{}, &mockIDGen{}, &mockLogger{}, remoteAuth)
+
+	_, _, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+
+	if !errors.Is(err, ErrRemoteAuthUnavailable) {
+		t.Fatalf("expected error %v, got %v", ErrRemoteAuthUnavailable, err)
+	}
+}
+
+func TestRegister_DesktopRemoteFirstHydratesLocalUser(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair: validServiceTokenPair(),
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "test@domain.com",
+			FirstName: "John",
+			LastName:  "Doe",
+			BirthDate: time.Now().AddDate(-25, 0, 0),
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, &mockSessionRepository{}, mockHasher, &mockTokenGen{tokenPair: validServiceTokenPair()}, &mockIDGen{}, &mockLogger{}, remoteAuth)
+
+	user, err := svc.Register(context.Background(), "test@domain.com", "securePass123", "John", "Doe", time.Now().AddDate(-25, 0, 0))
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if user == nil || mockRepo.upsertedUser == nil {
+		t.Fatal("expected remote register to hydrate local user")
 	}
 }
 

@@ -162,6 +162,8 @@ async function performRefresh(): Promise<string> {
   await persistSession({
     accessToken: tokenPair.accessToken,
     refreshToken: tokenPair.refreshToken,
+    remoteAccessToken: storedSession?.remoteAccessToken,
+    remoteRefreshToken: storedSession?.remoteRefreshToken,
   });
   useAuthStore.getState().login(tokenPair.accessToken);
 
