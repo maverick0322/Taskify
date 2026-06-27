@@ -365,6 +365,10 @@ func (service *HTTPRemoteSyncService) applyPulledChanges(ctx context.Context, ch
 	}
 	defer tx.Rollback()
 
+	if _, err := tx.ExecContext(ctx, "PRAGMA defer_foreign_keys = ON"); err != nil {
+		return 0, err
+	}
+
 	if err := setOutboxSuppression(ctx, tx, true); err != nil {
 		return 0, err
 	}
@@ -376,7 +380,12 @@ func (service *HTTPRemoteSyncService) applyPulledChanges(ctx context.Context, ch
 	remoteToLocalUserID := make(map[string]string)
 	pulledRows := 0
 
-	for _, change := range changes {
+	orderedChanges, err := orderedRemoteSyncChanges(changes)
+	if err != nil {
+		return pulledRows, err
+	}
+
+	for _, change := range orderedChanges {
 		table, ok := syncTableSpecByName(change.Table)
 		if !ok {
 			return pulledRows, fmt.Errorf("sync: unknown table %q in remote payload", change.Table)
@@ -408,6 +417,23 @@ func (service *HTTPRemoteSyncService) applyPulledChanges(ctx context.Context, ch
 		return pulledRows, err
 	}
 	return pulledRows, nil
+}
+
+func orderedRemoteSyncChanges(changes []RemoteSyncChange) ([]RemoteSyncChange, error) {
+	changesByTable := make(map[string][]RemoteSyncChange)
+	for _, change := range changes {
+		if _, ok := syncTableSpecByName(change.Table); !ok {
+			return nil, fmt.Errorf("sync: unknown table %q in remote payload", change.Table)
+		}
+		changesByTable[change.Table] = append(changesByTable[change.Table], change)
+	}
+
+	ordered := make([]RemoteSyncChange, 0, len(changes))
+	for _, table := range syncTableSpecs() {
+		ordered = append(ordered, changesByTable[table.name]...)
+	}
+
+	return ordered, nil
 }
 
 func rewritePulledUserRow(values []interface{}, localUserIDByEmail map[string]string, remoteToLocalUserID map[string]string) {
