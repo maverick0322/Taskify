@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { isTauriRuntime } from "@/lib/runtime";
-import { API_BASE_URL } from "@/services/api";
+import { resolveApiBaseUrl } from "@/services/api";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export function useSyncEvents() {
@@ -14,7 +14,7 @@ export function useSyncEvents() {
       return;
     }
 
-    const eventUrl = new URL(`${API_BASE_URL}/sync/events`);
+    const eventUrl = new URL(`${resolveApiBaseUrl()}/sync/events`);
     eventUrl.searchParams.set("token", accessToken);
 
     const eventSource = new EventSource(eventUrl.toString());

@@ -6,8 +6,6 @@ import {
   persistSession,
 } from "@/services/secureSession";
 
-export const API_BASE_URL = resolveApiBaseUrl();
-
 type ApiErrorResponse = {
   error?: string;
 };
@@ -50,6 +48,8 @@ async function requestWithAuth<T>(
   options: RequestInit,
   canRefresh: boolean,
 ): Promise<T> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  const requestUrl = `${apiBaseUrl}${path}`;
   const headers = new Headers(options.headers);
   const hasBody = options.body !== undefined && options.body !== null;
 
@@ -62,7 +62,7 @@ async function requestWithAuth<T>(
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await safeFetch(`${API_BASE_URL}${path}`, {
+  const response = await safeFetch(requestUrl, {
     ...options,
     headers,
   });
@@ -88,6 +88,14 @@ async function requestWithAuth<T>(
   }
 
   if (!response.ok) {
+    if (typeof window !== "undefined") {
+      console.error("[API] Request failed", {
+        path,
+        requestUrl,
+        method: options.method ?? "GET",
+        status: response.status,
+      });
+    }
     throw apiErrorFromResponse(
       response.status,
       await errorMessageFromResponse(response),
@@ -121,6 +129,7 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 async function performRefresh(): Promise<string> {
+  const apiBaseUrl = resolveApiBaseUrl();
   const storedSession = await loadStoredSession();
   const refreshToken = storedSession?.refreshToken;
 
@@ -133,7 +142,7 @@ async function performRefresh(): Promise<string> {
     );
   }
 
-  const response = await safeFetch(`${API_BASE_URL}/users/refresh`, {
+  const response = await safeFetch(`${apiBaseUrl}/users/refresh`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -216,6 +225,13 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
   try {
     return await fetch(input, init);
   } catch (error) {
+    if (typeof window !== "undefined") {
+      console.error("[API] Network request failed", {
+        input: String(input),
+        method: init?.method ?? "GET",
+        error,
+      });
+    }
     throw networkApiError(error);
   }
 }
@@ -335,7 +351,7 @@ const translatedBackendMessages: Record<string, string> = {
   "internal server error": "Ocurrio un error inesperado en el servidor.",
 };
 
-function resolveApiBaseUrl() {
+export function resolveApiBaseUrl() {
   if (typeof window !== "undefined" && isTauriRuntime()) {
     return "http://localhost:8080";
   }

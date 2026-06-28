@@ -26,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { useTheme } from "@/components/theme-provider";
 import { isTauriRuntime } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
-import { getFriendlyErrorMessage } from "@/services/api";
+import { getFriendlyErrorMessage, normalizeApiError, resolveApiBaseUrl } from "@/services/api";
 import { login, register } from "@/services/authService";
 import { persistSession } from "@/services/secureSession";
 import { connectDesktopSyncSession } from "@/services/systemService";
@@ -58,6 +58,13 @@ export function AuthScreen() {
     setIsLoading(true);
 
     try {
+      console.info("[AUTH][UI] Starting authentication flow", {
+        isLogin,
+        isTauriRuntime: isTauriRuntime(),
+        apiBaseUrl: resolveApiBaseUrl(),
+        email,
+      });
+
       if (!isLogin) {
         await register({
           email,
@@ -69,6 +76,11 @@ export function AuthScreen() {
       }
 
       const tokenPair = await login({ email, password });
+      console.info("[AUTH][UI] Local token pair received", {
+        isTauriRuntime: isTauriRuntime(),
+        apiBaseUrl: resolveApiBaseUrl(),
+        email,
+      });
       let remoteSession:
         | {
             accessToken?: string;
@@ -77,10 +89,15 @@ export function AuthScreen() {
           }
         | undefined;
       if (isTauriRuntime()) {
+        console.info("[AUTH][UI] Connecting desktop sync session", { email });
         remoteSession = await connectDesktopSyncSession({ email, password });
         if (!remoteSession?.initialSyncCompleted) {
           throw new Error("initial sync did not complete");
         }
+        console.info("[AUTH][UI] Desktop sync session connected", {
+          email,
+          initialSyncCompleted: remoteSession.initialSyncCompleted,
+        });
       }
       await persistSession({
         accessToken: tokenPair.accessToken,
@@ -90,6 +107,19 @@ export function AuthScreen() {
       });
       setAuthenticatedSession(tokenPair.accessToken);
     } catch (error) {
+      const normalizedError = normalizeApiError(
+        error,
+        "No pudimos completar la autenticacion.",
+      );
+      console.error("[AUTH][UI] Authentication flow failed", {
+        isLogin,
+        isTauriRuntime: isTauriRuntime(),
+        apiBaseUrl: resolveApiBaseUrl(),
+        email,
+        status: normalizedError.status,
+        backendMessage: normalizedError.backendMessage,
+        technicalMessage: normalizedError.technicalMessage,
+      });
       setErrorMessage(
         getFriendlyErrorMessage(
           error,
