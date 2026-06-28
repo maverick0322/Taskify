@@ -280,7 +280,7 @@ func ensureSQLiteOutbox(ctx context.Context, database *sql.DB) error {
 		return fmt.Errorf("failed to initialize sqlite sync outbox: %w", err)
 	}
 
-	for _, table := range []string{"users", "boards", "columns", "tasks", "financial_accounts", "transactions", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
+	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "financial_accounts", "transactions", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
 		if err := ensureSQLiteOutboxTriggers(ctx, database, table); err != nil {
 			return err
 		}

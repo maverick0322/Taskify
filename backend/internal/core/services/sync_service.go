@@ -464,6 +464,7 @@ func syncTableSpecs() []syncTableSpec {
 		{name: "boards", columns: []string{"id", "user_id", "name", "created_at", "updated_at", "deleted_at"}},
 		{name: "columns", columns: []string{"id", "board_id", "name", "color", "position", "created_at", "updated_at", "deleted_at"}},
 		{name: "tasks", columns: []string{"id", "user_id", "board_id", "column_id", "title", "description", "status", "priority", "due_date", "created_at", "updated_at", "deleted_at"}},
+		{name: "credit_cards", columns: []string{"id", "user_id", "name", "bank", "last4", "cutoff_day", "payment_day", "limit_cents", "color", "network", "created_at", "updated_at", "deleted_at"}},
 		{name: "financial_accounts", columns: []string{"id", "user_id", "type", "name", "institution", "last4", "opening_balance_cents", "current_balance_cents", "credit_limit_cents", "cutoff_day", "payment_day", "color", "network", "created_at", "updated_at", "deleted_at"}},
 		{name: "transactions", columns: []string{"id", "user_id", "credit_card_id", "payment_account_id", "destination_account_id", "type", "concept", "category", "amount_cents", "date", "status", "msi", "installment_number", "installment_count", "is_historical", "recurrence", "recurrence_limit", "last_paid_at", "created_at", "updated_at", "deleted_at"}},
 		{name: "ledger_entries", columns: []string{"id", "user_id", "account_id", "transaction_id", "amount_cents", "entry_type", "created_at", "updated_at", "deleted_at"}},

@@ -128,6 +128,54 @@ func TestHTTPRemoteSyncService_ApplyPulledChanges_ReordersFinancialHierarchy(t *
 	assertHTTPSyncRowCount(t, database, "ledger_entries", 1)
 }
 
+func TestHTTPRemoteSyncService_ApplyPulledChanges_ReordersCreditCardHierarchy(t *testing.T) {
+	database := openHTTPSyncTestDatabase(t)
+	service := NewHTTPRemoteSyncService(database, "https://taskify-7n1b.onrender.com", &mockLogger{})
+
+	changes := []RemoteSyncChange{
+		{
+			Table: "transactions",
+			Values: []interface{}{
+				"transaction-1", "user-1", "card-1", nil, nil, "EXPENSE", "Laptop", "Compras", int64(250000),
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)), "PAID", nil, nil, nil, false, "once", nil, nil,
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)),
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)),
+				nil,
+			},
+		},
+		{
+			Table: "credit_cards",
+			Values: []interface{}{
+				"card-1", "user-1", "Tarjeta Oro", "Banco Uno", "4242", int64(20), int64(10), int64(500000), "gold", "Visa",
+				timeValue(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+				timeValue(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+				nil,
+			},
+		},
+		{
+			Table: "users",
+			Values: []interface{}{
+				"user-1", "user1@example.com", "hashedpassword", "User", "One",
+				timeValue(time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)),
+				"", "", timeValue(time.Date(2026, 6, 27, 7, 0, 0, 0, time.UTC)),
+				timeValue(time.Date(2026, 6, 27, 7, 0, 0, 0, time.UTC)),
+				nil,
+			},
+		},
+	}
+
+	pulledRows, err := service.applyPulledChanges(context.Background(), changes)
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if pulledRows != 3 {
+		t.Fatalf("expected 3 pulled rows, got %d", pulledRows)
+	}
+	assertHTTPSyncRowCount(t, database, "credit_cards", 1)
+	assertHTTPSyncRowCount(t, database, "transactions", 1)
+}
+
 func TestHTTPRemoteSyncService_ApplyPulledChanges_FailsWhenParentIsMissing(t *testing.T) {
 	database := openHTTPSyncTestDatabase(t)
 	service := NewHTTPRemoteSyncService(database, "https://taskify-7n1b.onrender.com", &mockLogger{})
@@ -140,6 +188,40 @@ func TestHTTPRemoteSyncService_ApplyPulledChanges_FailsWhenParentIsMissing(t *te
 				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)),
 				timeValue(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
 				timeValue(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+				nil,
+			},
+		},
+		{
+			Table: "users",
+			Values: []interface{}{
+				"user-1", "user1@example.com", "hashedpassword", "User", "One",
+				timeValue(time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)),
+				"", "", timeValue(time.Date(2026, 6, 27, 7, 0, 0, 0, time.UTC)),
+				timeValue(time.Date(2026, 6, 27, 7, 0, 0, 0, time.UTC)),
+				nil,
+			},
+		},
+	}
+
+	_, err := service.applyPulledChanges(context.Background(), changes)
+
+	if err == nil {
+		t.Fatal("expected foreign key error, got nil")
+	}
+}
+
+func TestHTTPRemoteSyncService_ApplyPulledChanges_FailsWhenCreditCardParentIsMissing(t *testing.T) {
+	database := openHTTPSyncTestDatabase(t)
+	service := NewHTTPRemoteSyncService(database, "https://taskify-7n1b.onrender.com", &mockLogger{})
+
+	changes := []RemoteSyncChange{
+		{
+			Table: "transactions",
+			Values: []interface{}{
+				"transaction-1", "user-1", "card-missing", nil, nil, "EXPENSE", "Laptop", "Compras", int64(250000),
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)), "PAID", nil, nil, nil, false, "once", nil, nil,
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)),
+				timeValue(time.Date(2026, 6, 27, 10, 0, 0, 0, time.UTC)),
 				nil,
 			},
 		},
@@ -249,6 +331,21 @@ CREATE TABLE tasks (
 	updated_at DATETIME NOT NULL,
 	deleted_at DATETIME
 );
+CREATE TABLE credit_cards (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id),
+	name TEXT NOT NULL,
+	bank TEXT NOT NULL,
+	last4 TEXT NOT NULL,
+	cutoff_day INTEGER NOT NULL,
+	payment_day INTEGER NOT NULL,
+	limit_cents INTEGER NOT NULL,
+	color TEXT NOT NULL,
+	network TEXT NOT NULL,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	deleted_at DATETIME
+);
 CREATE TABLE financial_accounts (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
@@ -270,7 +367,7 @@ CREATE TABLE financial_accounts (
 CREATE TABLE transactions (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
-	credit_card_id TEXT,
+	credit_card_id TEXT REFERENCES credit_cards(id),
 	payment_account_id TEXT REFERENCES financial_accounts(id),
 	destination_account_id TEXT REFERENCES financial_accounts(id),
 	type TEXT NOT NULL,
