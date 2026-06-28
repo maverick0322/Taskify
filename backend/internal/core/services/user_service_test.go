@@ -128,6 +128,11 @@ type mockRemoteAuthClient struct {
 	authErr         error
 	registerErr     error
 	profileErr      error
+	needsBootstrap  bool
+	syncErr         error
+	forceErr        error
+	syncCalls       int
+	forceCalls      int
 	email           string
 	password        string
 }
@@ -146,6 +151,20 @@ func (client *mockRemoteAuthClient) RegisterRemoteUser(ctx context.Context, emai
 
 func (client *mockRemoteAuthClient) GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error) {
 	return client.profileToReturn, client.profileErr
+}
+
+func (client *mockRemoteAuthClient) SyncOnce(ctx context.Context) error {
+	client.syncCalls++
+	return client.syncErr
+}
+
+func (client *mockRemoteAuthClient) ForceFullPull(ctx context.Context) error {
+	client.forceCalls++
+	return client.forceErr
+}
+
+func (client *mockRemoteAuthClient) NeedsBootstrapPull(ctx context.Context) (bool, error) {
+	return client.needsBootstrap, nil
 }
 
 func TestRegister_NewUser_ReturnsUserAndSaves(t *testing.T) {
@@ -573,6 +592,9 @@ func TestAuthenticate_DesktopRemoteLoginHydratesLocalUserAndReturnsLocalTokens(t
 	if mockRepo.upsertedUser.PasswordHash() != "hashed-local-password" {
 		t.Fatalf("expected local password hash to be refreshed, got %s", mockRepo.upsertedUser.PasswordHash())
 	}
+	if remoteAuth.syncCalls != 1 || remoteAuth.forceCalls != 0 {
+		t.Fatalf("expected incremental desktop bootstrap sync, got sync=%d force=%d", remoteAuth.syncCalls, remoteAuth.forceCalls)
+	}
 }
 
 func TestAuthenticate_DesktopRemoteUnavailableFallsBackToLocalUser(t *testing.T) {
@@ -687,6 +709,57 @@ func TestAuthenticate_DesktopRemoteProfileWithoutNames_UsesFallbacks(t *testing.
 	}
 	if mockRepo.upsertedUser.Profile().LastName() != "xy" {
 		t.Fatalf("expected fallback last name xy, got %q", mockRepo.upsertedUser.Profile().LastName())
+	}
+}
+
+func TestAuthenticate_DesktopBootstrapForceFullPullWhenWatermarkIsMissing(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockSessions := &mockSessionRepository{}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair:      validServiceTokenPair(),
+		needsBootstrap: true,
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "test@domain.com",
+			FirstName: "Jane",
+			LastName:  "Doe",
+			BirthDate: time.Now().AddDate(-25, 0, 0),
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	_, _, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if remoteAuth.forceCalls != 1 || remoteAuth.syncCalls != 0 {
+		t.Fatalf("expected force full pull desktop bootstrap, got sync=%d force=%d", remoteAuth.syncCalls, remoteAuth.forceCalls)
+	}
+}
+
+func TestAuthenticate_DesktopReturnsInternalProcessingWhenBootstrapSyncFails(t *testing.T) {
+	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
+	mockSessions := &mockSessionRepository{}
+	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		tokenPair: validServiceTokenPair(),
+		syncErr:   errors.New("boom"),
+		profileToReturn: &RemoteUserProfile{
+			ID:        "remote-user-1",
+			Email:     "test@domain.com",
+			FirstName: "Jane",
+			LastName:  "Doe",
+			BirthDate: time.Now().AddDate(-25, 0, 0),
+		},
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	_, _, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+	if !errors.Is(err, ErrInternalProcessing) {
+		t.Fatalf("expected %v, got %v", ErrInternalProcessing, err)
 	}
 }
 

@@ -28,9 +28,6 @@ export async function loadStoredSession(): Promise<StoredSession | null> {
     return {
       accessToken,
       refreshToken,
-      remoteAccessToken: localStorage.getItem("remoteAccessToken") || undefined,
-      remoteRefreshToken:
-        localStorage.getItem("remoteRefreshToken") || undefined,
     };
   }
 
@@ -42,8 +39,6 @@ export async function loadStoredSession(): Promise<StoredSession | null> {
   return {
     accessToken: session.access_token,
     refreshToken: session.refresh_token,
-    remoteAccessToken: session.remote_access_token ?? undefined,
-    remoteRefreshToken: session.remote_refresh_token ?? undefined,
   };
 }
 
@@ -51,21 +46,16 @@ export async function persistSession(session: StoredSession): Promise<void> {
   if (!isTauriRuntime()) {
     localStorage.setItem("accessToken", session.accessToken);
     localStorage.setItem("refreshToken", session.refreshToken);
-    if (session.remoteAccessToken && session.remoteRefreshToken) {
-      localStorage.setItem("remoteAccessToken", session.remoteAccessToken);
-      localStorage.setItem("remoteRefreshToken", session.remoteRefreshToken);
-    } else {
-      localStorage.removeItem("remoteAccessToken");
-      localStorage.removeItem("remoteRefreshToken");
-    }
+    localStorage.removeItem("remoteAccessToken");
+    localStorage.removeItem("remoteRefreshToken");
     return;
   }
 
   await invoke("set_secure_session", {
     accessToken: session.accessToken,
     refreshToken: session.refreshToken,
-    remoteAccessToken: session.remoteAccessToken ?? null,
-    remoteRefreshToken: session.remoteRefreshToken ?? null,
+    remoteAccessToken: null,
+    remoteRefreshToken: null,
   });
 }
 

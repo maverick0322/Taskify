@@ -29,6 +29,9 @@ type remoteAuthClient interface {
 	AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
 	RegisterRemoteUser(ctx context.Context, email, password, firstName, lastName, birthDate string) error
 	GetRemoteProfile(ctx context.Context) (*RemoteUserProfile, error)
+	SyncOnce(ctx context.Context) error
+	ForceFullPull(ctx context.Context) error
+	NeedsBootstrapPull(ctx context.Context) (bool, error)
 }
 
 // userService implements ports.UserUseCase.
@@ -164,6 +167,10 @@ func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassw
 
 	remoteUser, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
 	if err == nil {
+		if err := s.runInitialDesktopSync(ctx, email); err != nil {
+			s.logger.Error("[AUTH][DESKTOP] El bootstrap inicial falló después del login remoto", "email", email, "error", err)
+			return "", "", ErrInternalProcessing
+		}
 		s.logger.Info("[AUTH][DESKTOP] Autenticación remota e hidratación local completadas", "email", email, "userID", remoteUser.ID())
 		return s.issueLocalSession(ctx, remoteUser)
 	}
@@ -199,6 +206,33 @@ func (s *userService) registerRemote(ctx context.Context, email, plainPassword, 
 	}
 
 	return user, nil
+}
+
+func (s *userService) runInitialDesktopSync(ctx context.Context, email string) error {
+	if s.remoteAuth == nil {
+		return nil
+	}
+
+	needsBootstrap, err := s.remoteAuth.NeedsBootstrapPull(ctx)
+	if err != nil {
+		s.logger.Error("[AUTH][DESKTOP] No se pudo determinar el modo de sync inicial", "email", email, "error", err)
+		return err
+	}
+	if needsBootstrap {
+		s.logger.Info("[AUTH][DESKTOP] Ejecutando ForceFullPull inicial desde el login principal", "email", email)
+		if err := s.remoteAuth.ForceFullPull(ctx); err != nil {
+			return err
+		}
+		s.logger.Info("[AUTH][DESKTOP] ForceFullPull inicial completado desde el login principal", "email", email)
+		return nil
+	}
+
+	s.logger.Info("[AUTH][DESKTOP] Ejecutando SyncOnce inicial desde el login principal", "email", email)
+	if err := s.remoteAuth.SyncOnce(ctx); err != nil {
+		return err
+	}
+	s.logger.Info("[AUTH][DESKTOP] SyncOnce inicial completado desde el login principal", "email", email)
+	return nil
 }
 
 func (s *userService) authenticateAndHydrateRemoteUser(ctx context.Context, email, plainPassword string) (*domain.User, error) {

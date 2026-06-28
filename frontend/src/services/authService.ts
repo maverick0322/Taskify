@@ -1,4 +1,5 @@
 import { apiRequest } from "@/services/api";
+import { isTauriRuntime } from "@/lib/runtime";
 
 export type LoginCredentials = {
   email: string;
@@ -29,6 +30,9 @@ export async function login(
   return apiRequest<LoginResponse>("/users/login", {
     method: "POST",
     body: JSON.stringify(credentials),
+    timeoutMs: isTauriRuntime() ? 60000 : undefined,
+    timeoutMessage:
+      "La sincronizacion inicial esta tardando demasiado. Intenta iniciar sesion de nuevo.",
   });
 }
 

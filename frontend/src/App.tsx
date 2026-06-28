@@ -27,16 +27,8 @@ function App() {
         return;
       }
 
-      if (
-        storedSession?.remoteAccessToken &&
-        storedSession.remoteRefreshToken
-      ) {
-        await restoreDesktopSyncSession({
-          accessToken: storedSession.remoteAccessToken,
-          refreshToken: storedSession.remoteRefreshToken,
-        }).catch(() => undefined);
-      }
       if (storedSession?.accessToken) {
+        await restoreDesktopSyncSession().catch(() => undefined);
         login(storedSession.accessToken);
       }
       setIsBootstrappingSession(false);

@@ -15,6 +15,11 @@ type TokenPairResponse = {
   refreshToken?: string;
 };
 
+type ApiRequestOptions = RequestInit & {
+  timeoutMs?: number;
+  timeoutMessage?: string;
+};
+
 export class ApiError extends Error {
   readonly status: number;
   readonly backendMessage?: string;
@@ -38,14 +43,14 @@ let refreshTokenPromise: Promise<string> | null = null;
 
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit = {},
+  options: ApiRequestOptions = {},
 ): Promise<T> {
   return requestWithAuth<T>(path, options, true);
 }
 
 async function requestWithAuth<T>(
   path: string,
-  options: RequestInit,
+  options: ApiRequestOptions,
   canRefresh: boolean,
 ): Promise<T> {
   const apiBaseUrl = resolveApiBaseUrl();
@@ -222,9 +227,39 @@ async function errorMessageFromResponse(response: Response): Promise<string> {
 }
 
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const timeoutOptions = init as ApiRequestOptions | undefined;
+  const timeoutMs = timeoutOptions?.timeoutMs ?? 0;
+  const timeoutMessage = timeoutOptions?.timeoutMessage;
+  const controller = new AbortController();
+  const signal = init?.signal;
+  let timeoutID: ReturnType<typeof setTimeout> | undefined;
+
+  const abortListener = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", abortListener, { once: true });
+    }
+  }
+  if (timeoutMs > 0) {
+    timeoutID = setTimeout(() => controller.abort(), timeoutMs);
+  }
+
   try {
-    return await fetch(input, init);
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError" && timeoutMs > 0) {
+      throw new ApiError(
+        408,
+        timeoutMessage ?? "La sincronizacion inicial esta tardando demasiado. Intentalo de nuevo.",
+        undefined,
+        "request timeout",
+      );
+    }
     if (typeof window !== "undefined") {
       console.error("[API] Network request failed", {
         input: String(input),
@@ -233,6 +268,11 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
       });
     }
     throw networkApiError(error);
+  } finally {
+    if (timeoutID) {
+      clearTimeout(timeoutID);
+    }
+    signal?.removeEventListener("abort", abortListener);
   }
 }
 
@@ -352,7 +392,7 @@ const translatedBackendMessages: Record<string, string> = {
 };
 
 export function resolveApiBaseUrl() {
-  if (typeof window !== "undefined" && isTauriRuntime()) {
+  if (isTauriRuntime()) {
     return "http://localhost:8080";
   }
 

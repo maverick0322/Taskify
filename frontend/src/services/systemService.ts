@@ -17,8 +17,6 @@ export async function connectDesktopSyncSession(credentials: {
   email: string;
   password: string;
 }): Promise<{
-  accessToken?: string;
-  refreshToken?: string;
   initialSyncCompleted?: boolean;
 }> {
   if (!isTauriRuntime()) {
@@ -27,19 +25,20 @@ export async function connectDesktopSyncSession(credentials: {
 
   return apiRequest<{
     connected: boolean;
-    accessToken?: string;
-    refreshToken?: string;
     initialSyncCompleted?: boolean;
   }>("/sync/session/login", {
     method: "POST",
     body: JSON.stringify(credentials),
+    timeoutMs: 60000,
+    timeoutMessage:
+      "La sincronizacion inicial esta tardando demasiado. Intenta de nuevo.",
   });
 }
 
-export async function restoreDesktopSyncSession(tokens: {
-  accessToken: string;
-  refreshToken: string;
-}): Promise<{ initialSyncCompleted?: boolean }> {
+export async function restoreDesktopSyncSession(): Promise<{
+  restored?: boolean;
+  initialSyncCompleted?: boolean;
+}> {
   if (!isTauriRuntime()) {
     return {};
   }
@@ -47,8 +46,10 @@ export async function restoreDesktopSyncSession(tokens: {
   return apiRequest<{ restored: boolean; initialSyncCompleted?: boolean }>(
     "/sync/session/restore",
     {
-    method: "POST",
-    body: JSON.stringify(tokens),
+      method: "POST",
+      timeoutMs: 60000,
+      timeoutMessage:
+        "La restauracion de la sincronizacion esta tardando demasiado. Intenta de nuevo.",
     },
   );
 }

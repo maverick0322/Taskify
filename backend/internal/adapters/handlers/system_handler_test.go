@@ -49,6 +49,8 @@ type mockRemoteSessionService struct {
 	loginErr        error
 	restoredAccess  string
 	restoredRefresh string
+	restorePersisted bool
+	restoreErr       error
 	cleared         bool
 }
 
@@ -92,6 +94,10 @@ func (service *mockRemoteSessionService) AuthenticateRemoteSession(ctx context.C
 func (service *mockRemoteSessionService) RestoreRemoteSession(accessToken, refreshToken string) {
 	service.restoredAccess = accessToken
 	service.restoredRefresh = refreshToken
+}
+
+func (service *mockRemoteSessionService) RestorePersistedRemoteSession(ctx context.Context) (bool, error) {
+	return service.restorePersisted, service.restoreErr
 }
 
 func (service *mockRemoteSessionService) ClearSession() {
@@ -267,7 +273,7 @@ func TestSystemHandler_PurgeSQLiteClearsLocalData(t *testing.T) {
 	assertRowCount(t, database, "sync_state", 0)
 }
 
-func TestSystemHandler_LoginRemoteSyncSessionReturnsRemoteTokens(t *testing.T) {
+func TestSystemHandler_LoginRemoteSyncSessionReturnsCompletionOnly(t *testing.T) {
 	sessionSync := &mockRemoteSessionService{tokenPair: ports.TokenPair{AccessToken: "remote-access", RefreshToken: "remote-refresh"}}
 	syncService := &mockLocalSyncService{}
 	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
@@ -280,8 +286,8 @@ func TestSystemHandler_LoginRemoteSyncSessionReturnsRemoteTokens(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.Code)
 	}
 	body := response.Body.String()
-	if !strings.Contains(body, `"accessToken":"remote-access"`) || !strings.Contains(body, `"refreshToken":"remote-refresh"`) {
-		t.Fatalf("expected remote token pair in response, got %s", body)
+	if strings.Contains(body, `"accessToken"`) || strings.Contains(body, `"refreshToken"`) {
+		t.Fatalf("expected no remote token pair in response, got %s", body)
 	}
 	if !strings.Contains(body, `"initialSyncCompleted":true`) {
 		t.Fatalf("expected initial sync completion in response, got %s", body)
@@ -312,6 +318,23 @@ func TestSystemHandler_RestoreRemoteSyncSessionRestoresTokens(t *testing.T) {
 	}
 	if syncService.syncCalls != 1 || syncService.forceCalls != 0 {
 		t.Fatalf("expected incremental sync once after restore, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
+	}
+}
+
+func TestSystemHandler_RestoreRemoteSyncSessionLoadsPersistedSessionWhenBodyIsEmpty(t *testing.T) {
+	sessionSync := &mockRemoteSessionService{restorePersisted: true}
+	syncService := &mockLocalSyncService{}
+	handler := NewSystemHandler(nil, syncService, nil, sessionSync, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/sync/session/restore", nil)
+	response := httptest.NewRecorder()
+
+	handler.RestoreRemoteSyncSession(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
+	}
+	if syncService.syncCalls != 1 || syncService.forceCalls != 0 {
+		t.Fatalf("expected incremental sync once after persisted restore, got sync=%d force=%d", syncService.syncCalls, syncService.forceCalls)
 	}
 }
 

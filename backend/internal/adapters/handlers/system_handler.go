@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -28,6 +30,7 @@ type remoteSessionService interface {
 	LoginRemoteSession(ctx context.Context, email, password string) error
 	AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
 	RestoreRemoteSession(accessToken, refreshToken string)
+	RestorePersistedRemoteSession(ctx context.Context) (bool, error)
 	ClearSession()
 }
 
@@ -166,7 +169,7 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 	}
 	handler.logger.Info("[SYNC][SESSION] Solicitud de login remoto recibida", "email", strings.TrimSpace(payload.Email))
 
-	tokenPair, err := handler.sessionSync.AuthenticateRemoteSession(request.Context(), payload.Email, payload.Password)
+	_, err := handler.sessionSync.AuthenticateRemoteSession(request.Context(), payload.Email, payload.Password)
 	if err != nil {
 		handler.logger.Warn("[SYNC][SESSION] Login remoto del sidecar falló", "email", strings.TrimSpace(payload.Email), "error", err)
 		writeJSON(response, http.StatusBadGateway, errorResponse{Error: "remote sync login failed"})
@@ -183,8 +186,6 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 
 	writeJSON(response, http.StatusOK, map[string]interface{}{
 		"connected":            true,
-		"accessToken":          tokenPair.AccessToken,
-		"refreshToken":         tokenPair.RefreshToken,
 		"initialSyncCompleted": true,
 	})
 }
@@ -196,17 +197,32 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 	}
 
 	var payload restoreRemoteSessionRequest
-	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
-		return
+	if request.Body != nil {
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+			writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+			return
+		}
 	}
-	if strings.TrimSpace(payload.AccessToken) == "" || strings.TrimSpace(payload.RefreshToken) == "" {
-		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
-		return
+	if strings.TrimSpace(payload.AccessToken) != "" && strings.TrimSpace(payload.RefreshToken) != "" {
+		handler.logger.Info("[SYNC][SESSION] Restaurando sesión remota desde payload legado")
+		handler.sessionSync.RestoreRemoteSession(payload.AccessToken, payload.RefreshToken)
+	} else {
+		handler.logger.Info("[SYNC][SESSION] Restaurando sesión remota persistida en el sidecar")
+		restored, err := handler.sessionSync.RestorePersistedRemoteSession(request.Context())
+		if err != nil {
+			handler.logger.Error("[SYNC][SESSION] No se pudo restaurar la sesión remota persistida", "error", err)
+			writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
+			return
+		}
+		if !restored {
+			writeJSON(response, http.StatusOK, map[string]interface{}{
+				"restored":             false,
+				"initialSyncCompleted": false,
+			})
+			return
+		}
 	}
 
-	handler.logger.Info("[SYNC][SESSION] Restaurando sesión remota persistida")
-	handler.sessionSync.RestoreRemoteSession(payload.AccessToken, payload.RefreshToken)
 	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
 		handler.logger.Error("[SYNC][SESSION] Sync inicial falló después de restaurar la sesión remota", "error", err)
 		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})

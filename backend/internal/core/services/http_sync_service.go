@@ -19,6 +19,11 @@ import (
 
 var ErrRemoteSyncSessionUnavailable = errors.New("sync: remote session is unavailable")
 
+const (
+	remoteAccessTokenRuntimeFlagKey  = "remote_access_token"
+	remoteRefreshTokenRuntimeFlagKey = "remote_refresh_token"
+)
+
 type RemoteUserProfile struct {
 	ID              string
 	Email           string
@@ -76,6 +81,12 @@ func (service *HTTPRemoteSyncService) ClearSession() {
 
 	service.accessToken = ""
 	service.refreshToken = ""
+
+	if service.local != nil {
+		if err := service.clearPersistedRemoteSession(context.Background()); err != nil {
+			service.logger.Warn("[SYNC][AUTH] No se pudo limpiar la sesion remota persistida", "error", err)
+		}
+	}
 }
 
 func (service *HTTPRemoteSyncService) LoginRemoteSession(ctx context.Context, email, password string) error {
@@ -110,6 +121,10 @@ func (service *HTTPRemoteSyncService) AuthenticateRemoteSession(ctx context.Cont
 	}
 
 	service.SetSession(response.AccessToken, response.RefreshToken)
+	if err := service.persistRemoteSession(ctx, response.AccessToken, response.RefreshToken); err != nil {
+		service.logger.Error("[SYNC][AUTH] No se pudo persistir la sesión remota", "email", strings.TrimSpace(email), "error", err)
+		return ports.TokenPair{}, fmt.Errorf("sync: failed to persist remote session: %w", err)
+	}
 	service.logger.Info("[SYNC][AUTH] Login remoto exitoso; sesión remota almacenada", "email", strings.TrimSpace(email))
 	return ports.TokenPair{
 		AccessToken:  response.AccessToken,
@@ -198,6 +213,23 @@ func (service *HTTPRemoteSyncService) GetRemoteProfile(ctx context.Context) (*Re
 
 func (service *HTTPRemoteSyncService) RestoreRemoteSession(accessToken, refreshToken string) {
 	service.SetSession(accessToken, refreshToken)
+	if err := service.persistRemoteSession(context.Background(), accessToken, refreshToken); err != nil {
+		service.logger.Warn("[SYNC][AUTH] No se pudo persistir la sesión remota restaurada", "error", err)
+	}
+}
+
+func (service *HTTPRemoteSyncService) RestorePersistedRemoteSession(ctx context.Context) (bool, error) {
+	accessToken, refreshToken, ok, err := service.loadPersistedRemoteSession(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+
+	service.SetSession(accessToken, refreshToken)
+	service.logger.Info("[SYNC][AUTH] Sesión remota cargada desde almacenamiento local")
+	return true, nil
 }
 
 func (service *HTTPRemoteSyncService) CurrentRemoteSession() (ports.TokenPair, bool) {
@@ -691,7 +723,105 @@ func (service *HTTPRemoteSyncService) refreshRemoteTokens(ctx context.Context) e
 	}
 
 	service.SetSession(response.AccessToken, response.RefreshToken)
+	if err := service.persistRemoteSession(ctx, response.AccessToken, response.RefreshToken); err != nil {
+		service.logger.Error("[SYNC][AUTH] No se pudo persistir la sesión remota refrescada", "error", err)
+		return fmt.Errorf("sync: failed to persist remote refresh session: %w", err)
+	}
 	service.logger.Info("[SYNC][AUTH] Refresh remoto exitoso; sesión remota actualizada")
+	return nil
+}
+
+func (service *HTTPRemoteSyncService) persistRemoteSession(ctx context.Context, accessToken, refreshToken string) error {
+	if service == nil || service.local == nil {
+		return errors.New("sync: local database is required")
+	}
+
+	tx, err := service.local.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("sync: failed to start remote session persistence: %w", err)
+	}
+	defer tx.Rollback()
+
+	statements := []struct {
+		key   string
+		value string
+	}{
+		{key: remoteAccessTokenRuntimeFlagKey, value: strings.TrimSpace(accessToken)},
+		{key: remoteRefreshTokenRuntimeFlagKey, value: strings.TrimSpace(refreshToken)},
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(
+			ctx,
+			`INSERT INTO sync_runtime_flags (key, value)
+			 VALUES (?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			statement.key,
+			statement.value,
+		); err != nil {
+			return fmt.Errorf("sync: failed to persist remote session key %s: %w", statement.key, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("sync: failed to commit remote session persistence: %w", err)
+	}
+	return nil
+}
+
+func (service *HTTPRemoteSyncService) loadPersistedRemoteSession(ctx context.Context) (string, string, bool, error) {
+	if service == nil || service.local == nil {
+		return "", "", false, errors.New("sync: local database is required")
+	}
+
+	rows, err := service.local.QueryContext(
+		ctx,
+		`SELECT key, value
+		 FROM sync_runtime_flags
+		 WHERE key IN (?, ?)`,
+		remoteAccessTokenRuntimeFlagKey,
+		remoteRefreshTokenRuntimeFlagKey,
+	)
+	if err != nil {
+		return "", "", false, fmt.Errorf("sync: failed to load persisted remote session: %w", err)
+	}
+	defer rows.Close()
+
+	values := map[string]string{}
+	for rows.Next() {
+		var key string
+		var value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return "", "", false, fmt.Errorf("sync: failed to scan persisted remote session: %w", err)
+		}
+		values[key] = strings.TrimSpace(value)
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", false, fmt.Errorf("sync: failed to iterate persisted remote session rows: %w", err)
+	}
+
+	accessToken := values[remoteAccessTokenRuntimeFlagKey]
+	refreshToken := values[remoteRefreshTokenRuntimeFlagKey]
+	if accessToken == "" || refreshToken == "" {
+		return "", "", false, nil
+	}
+	return accessToken, refreshToken, true, nil
+}
+
+func (service *HTTPRemoteSyncService) clearPersistedRemoteSession(ctx context.Context) error {
+	if service == nil || service.local == nil {
+		return errors.New("sync: local database is required")
+	}
+
+	_, err := service.local.ExecContext(
+		ctx,
+		`DELETE FROM sync_runtime_flags
+		 WHERE key IN (?, ?)`,
+		remoteAccessTokenRuntimeFlagKey,
+		remoteRefreshTokenRuntimeFlagKey,
+	)
+	if err != nil {
+		return fmt.Errorf("sync: failed to clear persisted remote session: %w", err)
+	}
 	return nil
 }
 

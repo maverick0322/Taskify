@@ -5,5 +5,16 @@ declare global {
 }
 
 export function isTauriRuntime() {
-  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__)
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  if (Boolean(window.__TAURI_INTERNALS__)) {
+    return true;
+  }
+
+  return (
+    window.location.protocol === "tauri:" ||
+    window.location.hostname === "tauri.localhost"
+  );
 }

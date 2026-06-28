@@ -171,6 +171,7 @@ func run() error {
 		LoginRemoteSession(ctx context.Context, email, password string) error
 		AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
 		RestoreRemoteSession(accessToken, refreshToken string)
+		RestorePersistedRemoteSession(ctx context.Context) (bool, error)
 		ClearSession()
 	}
 	if isProduction {

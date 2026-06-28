@@ -29,7 +29,6 @@ import { cn } from "@/lib/utils";
 import { getFriendlyErrorMessage, normalizeApiError, resolveApiBaseUrl } from "@/services/api";
 import { login, register } from "@/services/authService";
 import { persistSession } from "@/services/secureSession";
-import { connectDesktopSyncSession } from "@/services/systemService";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export function AuthScreen() {
@@ -81,29 +80,9 @@ export function AuthScreen() {
         apiBaseUrl: resolveApiBaseUrl(),
         email,
       });
-      let remoteSession:
-        | {
-            accessToken?: string;
-            refreshToken?: string;
-            initialSyncCompleted?: boolean;
-          }
-        | undefined;
-      if (isTauriRuntime()) {
-        console.info("[AUTH][UI] Connecting desktop sync session", { email });
-        remoteSession = await connectDesktopSyncSession({ email, password });
-        if (!remoteSession?.initialSyncCompleted) {
-          throw new Error("initial sync did not complete");
-        }
-        console.info("[AUTH][UI] Desktop sync session connected", {
-          email,
-          initialSyncCompleted: remoteSession.initialSyncCompleted,
-        });
-      }
       await persistSession({
         accessToken: tokenPair.accessToken,
         refreshToken: tokenPair.refreshToken,
-        remoteAccessToken: remoteSession?.accessToken,
-        remoteRefreshToken: remoteSession?.refreshToken,
       });
       setAuthenticatedSession(tokenPair.accessToken);
     } catch (error) {
