@@ -23,14 +23,23 @@ export function useSyncEvents() {
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let connectInFlight = false;
+    let reconnectScheduled = false;
 
     const scheduleReconnect = () => {
-      if (disposed) {
+      if (disposed || reconnectScheduled) {
         return;
       }
+      reconnectScheduled = true;
       reconnectTimer = setTimeout(() => {
+        reconnectScheduled = false;
         void connect();
       }, 1500);
+    };
+
+    const closeEventSource = () => {
+      eventSource?.removeEventListener("sync_updated", handleSyncUpdated);
+      eventSource?.close();
+      eventSource = null;
     };
 
     const handleSyncUpdated = () => {
@@ -56,13 +65,14 @@ export function useSyncEvents() {
         eventSource.addEventListener("sync_updated", handleSyncUpdated);
         eventSource.onerror = (error) => {
           console.warn("sync events stream error", error);
-          eventSource?.close();
+          closeEventSource();
           scheduleReconnect();
         };
       } catch (error) {
         const normalizedError = normalizeApiError(error);
         if (normalizedError.status === 401) {
-          await useAuthStore.getState().logout({ purgeDesktopData: true });
+          closeEventSource();
+          await useAuthStore.getState().logout();
           return;
         }
         scheduleReconnect();
@@ -78,8 +88,7 @@ export function useSyncEvents() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
       }
-      eventSource?.removeEventListener("sync_updated", handleSyncUpdated);
-      eventSource?.close();
+      closeEventSource();
     };
   }, [accessToken, queryClient]);
 }

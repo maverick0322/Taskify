@@ -152,7 +152,7 @@ export async function ensureValidAccessToken(): Promise<string> {
   if (!storedSession?.refreshToken) {
     throw new ApiError(
       401,
-      "Tu sesion expiro. Inicia sesion nuevamente.",
+      "Tu sesión expiró. Inicia sesión nuevamente.",
       undefined,
       "missing refresh token",
     );
@@ -182,7 +182,7 @@ async function performRefresh(): Promise<string> {
   if (!refreshToken) {
     throw new ApiError(
       401,
-      "Tu sesion expiro. Inicia sesion nuevamente.",
+      "Tu sesión expiró. Inicia sesión nuevamente.",
       undefined,
       "missing refresh token",
     );
@@ -208,7 +208,7 @@ async function performRefresh(): Promise<string> {
   if (!tokenPair.accessToken || !tokenPair.refreshToken) {
     throw new ApiError(
       401,
-      "Tu sesion expiro. Inicia sesion nuevamente.",
+      "Tu sesión expiró. Inicia sesión nuevamente.",
       undefined,
       "invalid refresh response",
     );
@@ -296,7 +296,7 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
     if (error instanceof DOMException && error.name === "AbortError" && timeoutMs > 0) {
       throw new ApiError(
         408,
-        timeoutMessage ?? "La sincronizacion inicial esta tardando demasiado. Intentalo de nuevo.",
+        timeoutMessage ?? "La sincronización inicial está tardando demasiado. Inténtalo de nuevo.",
         undefined,
         "request timeout",
       );
@@ -342,7 +342,7 @@ function friendlyMessageFromStatus(
   backendMessage?: string,
 ): string {
   if (status >= 500) {
-    return "Ocurrio un error inesperado en el servidor.";
+    return "Ocurrió un error inesperado en el servidor.";
   }
 
   const normalizedMessage = normalizeBackendMessage(backendMessage);
@@ -352,11 +352,11 @@ function friendlyMessageFromStatus(
   }
 
   if (status === 401) {
-    return "Tu sesion expiro. Inicia sesion nuevamente.";
+    return "Tu sesión expiró. Inicia sesión nuevamente.";
   }
 
   if (status === 403) {
-    return "No tienes permiso para realizar esta accion.";
+    return "No tienes permiso para realizar esta acción.";
   }
 
   if (status === 404) {
@@ -364,11 +364,11 @@ function friendlyMessageFromStatus(
   }
 
   if (status === 409) {
-    return "La informacion entra en conflicto con un registro existente.";
+    return "La información entra en conflicto con un registro existente.";
   }
 
   if (status >= 400) {
-    return "No pudimos completar la solicitud. Revisa la informacion e intentalo de nuevo.";
+    return "No pudimos completar la solicitud. Revisa la información e inténtalo de nuevo.";
   }
 
   return "No pudimos completar la solicitud. Intentalo de nuevo.";
@@ -406,42 +406,42 @@ function isNetworkError(error: unknown): boolean {
 
 const translatedBackendMessages: Record<string, string> = {
   "invalid credentials":
-    "Credenciales invalidas. Revisa tu correo y contrasena.",
-  unauthorized: "Tu sesion expiro. Inicia sesion nuevamente.",
-  "invalid refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
-  "missing refresh token": "Tu sesion expiro. Inicia sesion nuevamente.",
-  "invalid refresh response": "Tu sesion expiro. Inicia sesion nuevamente.",
+    "Credenciales inválidas. Revisa tu correo y contraseña.",
+  unauthorized: "Tu sesión expiró. Inicia sesión nuevamente.",
+  "invalid refresh token": "Tu sesión expiró. Inicia sesión nuevamente.",
+  "missing refresh token": "Tu sesión expiró. Inicia sesión nuevamente.",
+  "invalid refresh response": "Tu sesión expiró. Inicia sesión nuevamente.",
   "invalid request body":
-    "La informacion enviada no es valida. Revisa los campos e intentalo de nuevo.",
-  "invalid birth date": "La fecha de nacimiento no es valida.",
-  "invalid due date": "La fecha de entrega no es valida.",
-  "invalid user data": "Revisa tu informacion personal e intentalo de nuevo.",
+    "La información enviada no es válida. Revisa los campos e inténtalo de nuevo.",
+  "invalid birth date": "La fecha de nacimiento no es válida.",
+  "invalid due date": "La fecha de entrega no es válida.",
+  "invalid user data": "Revisa tu información personal e inténtalo de nuevo.",
   "name is required": "El nombre es obligatorio.",
   "cloud sync is not configured":
-    "La sincronizacion en la nube no esta configurada.",
-  "sync failed": "No pudimos completar la sincronizacion.",
+    "La sincronización en la nube no está configurada.",
+  "sync failed": "No pudimos completar la sincronización.",
   "sqlite checkpoint failed":
     "No pudimos preparar la base de datos para el respaldo.",
   "user already exists": "Ya existe una cuenta con ese correo.",
-  "invalid board data": "Revisa los datos del tablero e intentalo de nuevo.",
+  "invalid board data": "Revisa los datos del tablero e inténtalo de nuevo.",
   "board not found": "No encontramos ese tablero.",
   "column not found": "No encontramos esa columna.",
-  "invalid column data": "Revisa los datos de la columna e intentalo de nuevo.",
-  "invalid task data": "Revisa los datos de la tarea e intentalo de nuevo.",
+  "invalid column data": "Revisa los datos de la columna e inténtalo de nuevo.",
+  "invalid task data": "Revisa los datos de la tarea e inténtalo de nuevo.",
   "task not found": "No encontramos esa tarea.",
   "invalid transaction data":
-    "Revisa los datos de la transaccion e intentalo de nuevo.",
-  "transaction not found": "No encontramos esa transaccion.",
-  "financial account not found": "No encontramos ese metodo de pago.",
+    "Revisa los datos de la transacción e inténtalo de nuevo.",
+  "transaction not found": "No encontramos esa transacción.",
+  "financial account not found": "No encontramos ese método de pago.",
   "invalid financial account data":
-    "Revisa los datos de la cuenta financiera e intentalo de nuevo.",
+    "Revisa los datos de la cuenta financiera e inténtalo de nuevo.",
   "insufficient funds": "El saldo disponible no alcanza para este egreso.",
   "credit limit exceeded":
-    "La compra supera el limite disponible de la tarjeta.",
+    "La compra supera el límite disponible de la tarjeta.",
   "invalid credit card data":
-    "Revisa los datos de la tarjeta e intentalo de nuevo.",
+    "Revisa los datos de la tarjeta e inténtalo de nuevo.",
   "credit card not found": "No encontramos esa tarjeta.",
-  "internal server error": "Ocurrio un error inesperado en el servidor.",
+  "internal server error": "Ocurrió un error inesperado en el servidor.",
 };
 
 export function resolveApiBaseUrl() {

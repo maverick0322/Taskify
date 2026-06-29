@@ -32,7 +32,7 @@ export async function login(
     body: JSON.stringify(credentials),
     timeoutMs: isTauriRuntime() ? 60000 : undefined,
     timeoutMessage:
-      "La sincronizacion inicial esta tardando demasiado. Intenta iniciar sesion de nuevo.",
+      "La sincronización inicial está tardando demasiado. Intenta iniciar sesión de nuevo.",
   });
 }
 

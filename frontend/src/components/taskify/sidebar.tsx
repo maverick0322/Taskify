@@ -287,7 +287,7 @@ export function Sidebar({
         title="Eliminar tablero"
         description={
           boardToDelete
-            ? `Se eliminara "${boardToDelete.name}" junto con sus columnas y tareas. Esta accion no se puede deshacer.`
+            ? `Se eliminará "${boardToDelete.name}" junto con sus columnas y tareas. Esta acción no se puede deshacer.`
             : ""
         }
         confirmLabel="Eliminar tablero"
@@ -369,7 +369,7 @@ export function Sidebar({
 
             {!boardsLoading && !boardsError && boards.length === 0 ? (
               <p className="px-3 py-2 text-xs font-medium text-sidebar-foreground/50">
-                Aun no tienes tableros.
+                Aún no tienes tableros.
               </p>
             ) : null}
 
@@ -481,7 +481,7 @@ export function Sidebar({
               variant="ghost"
               className="size-8 shrink-0 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               onClick={() => logout()}
-              aria-label="Cerrar sesion"
+              aria-label="Cerrar sesión"
             >
               <LogOut className="size-4" />
             </Button>

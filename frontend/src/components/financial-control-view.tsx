@@ -355,7 +355,7 @@ function nextRecurrenceDate(
 
 function paymentAccountLabel(account?: FinancialAccount) {
   if (!account) {
-    return "Sin metodo"
+    return "Sin método"
   }
   const suffix = account.last4 ? ` ....${account.last4}` : ""
   const prefix =
@@ -676,7 +676,7 @@ function NewMovementDialog({
 
   const handleSubmit = () => {
     if (!concepto.trim() || !tipo || !categoria || !fecha || !paymentAccountId || amountToCents(monto) <= 0) {
-      setErrorMessage("Completa concepto, tipo, categoria, metodo de pago, fecha y un monto valido.")
+      setErrorMessage("Completa concepto, tipo, categoría, método de pago, fecha y un monto válido.")
       return
     }
     const msiValue =
@@ -684,7 +684,7 @@ function NewMovementDialog({
         ? Number(msi)
         : null
     if (msiValue !== null && (!Number.isInteger(msiValue) || msiValue < 1)) {
-      setErrorMessage("Los MSI deben ser un numero entero mayor a cero.")
+      setErrorMessage("Los MSI deben ser un número entero mayor a cero.")
       return
     }
     const paidInstallmentsValue =
@@ -898,14 +898,14 @@ function NewPaymentDialog({
         ? null
         : Number(limiteRecurrencia)
     if (!servicio.trim() || !categoria || !fechaVence || amountToCents(monto) <= 0) {
-      setErrorMessage("Completa servicio, categoria, fecha y un monto valido.")
+      setErrorMessage("Completa servicio, categoría, fecha y un monto válido.")
       return
     }
     if (
       recurrenceLimit !== null &&
       (!Number.isInteger(recurrenceLimit) || recurrenceLimit <= 0)
     ) {
-      setErrorMessage("El limite de pagos debe ser un numero entero mayor a cero.")
+      setErrorMessage("El límite de pagos debe ser un número entero mayor a cero.")
       return
     }
 
@@ -966,10 +966,10 @@ function NewPaymentDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Categoria</Label>
+            <Label>Categoría</Label>
             <Select value={categoria} onValueChange={setCategoria}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecciona categoria" />
+                <SelectValue placeholder="Selecciona categoría" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -1012,7 +1012,7 @@ function NewPaymentDialog({
           </div>
           {recurrencia !== "once" ? (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="limite-recurrencia">Limite de pagos</Label>
+              <Label htmlFor="limite-recurrencia">Límite de pagos</Label>
               <Input
                 id="limite-recurrencia"
                 type="number"
@@ -1139,7 +1139,7 @@ function AddCardDialog({
       parsedPaymentDay < 1 ||
       parsedPaymentDay > 31
     ) {
-      setErrorMessage("Completa limite, dia de corte y dia limite de pago validos.")
+      setErrorMessage("Completa límite, día de corte y día límite de pago válidos.")
       return
     }
     onSubmit({
@@ -1301,7 +1301,7 @@ function AddCardDialog({
           {cardType === "CREDIT_CARD" ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="payment-day">Dia limite de pago</Label>
+              <Label htmlFor="payment-day">Día límite de pago</Label>
               <Input
                 id="payment-day"
                 type="number"
@@ -1452,7 +1452,7 @@ function AccountDetailModal({
           <DialogTitle>{account.name}</DialogTitle>
           <DialogDescription>
             {isCreditAccount ? "Detalle de tarjeta de credito" : "Detalle de debito"}
-            {account.last4 ? ` - terminacion ${account.last4}` : ""}
+            {account.last4 ? ` - terminación ${account.last4}` : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -3040,7 +3040,7 @@ export function FinancialControlView() {
           }
         }}
         title="Eliminar movimiento"
-        description={`Se eliminara "${transactionToDeleteLabel}" del control financiero. Esta accion no se puede deshacer.`}
+        description={`Se eliminará "${transactionToDeleteLabel}" del control financiero. Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar movimiento"
         isPending={deleteTransactionMutation.isPending}
         onConfirm={handleConfirmDeleteTransaction}
@@ -3055,7 +3055,7 @@ export function FinancialControlView() {
         title="Eliminar tarjeta"
         description={
           creditCardToDelete
-            ? `Se eliminara la tarjeta "${creditCardToDelete.name}" terminacion ${creditCardToDelete.last4}. Esta accion no se puede deshacer.`
+            ? `Se eliminará la tarjeta "${creditCardToDelete.name}" terminación ${creditCardToDelete.last4}. Esta acción no se puede deshacer.`
             : ""
         }
         confirmLabel="Eliminar tarjeta"
@@ -3072,7 +3072,7 @@ export function FinancialControlView() {
         title="Eliminar tarjeta"
         description={
           debitCardToDelete
-            ? `Se eliminara la tarjeta "${debitCardToDelete.name}" terminacion ${debitCardToDelete.last4 ?? "0000"}. Esta accion no se puede deshacer.`
+            ? `Se eliminará la tarjeta "${debitCardToDelete.name}" terminación ${debitCardToDelete.last4 ?? "0000"}. Esta acción no se puede deshacer.`
             : ""
         }
         confirmLabel="Eliminar tarjeta"

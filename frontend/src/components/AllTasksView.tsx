@@ -558,7 +558,7 @@ export function AllTasksView() {
         title="Eliminar tarea"
         description={
           taskToDelete
-            ? `Se eliminara "${taskToDelete.title}". Esta accion no se puede deshacer.`
+            ? `Se eliminará "${taskToDelete.title}". Esta acción no se puede deshacer.`
             : ""
         }
         confirmLabel="Eliminar tarea"

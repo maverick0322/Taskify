@@ -31,7 +31,7 @@ export async function connectDesktopSyncSession(credentials: {
     body: JSON.stringify(credentials),
     timeoutMs: 60000,
     timeoutMessage:
-      "La sincronizacion inicial esta tardando demasiado. Intenta de nuevo.",
+      "La sincronización inicial está tardando demasiado. Intenta de nuevo.",
   });
 }
 
@@ -49,7 +49,7 @@ export async function restoreDesktopSyncSession(): Promise<{
       method: "POST",
       timeoutMs: 60000,
       timeoutMessage:
-        "La restauracion de la sincronizacion esta tardando demasiado. Intenta de nuevo.",
+        "La restauración de la sincronización está tardando demasiado. Intenta de nuevo.",
     },
   );
 }

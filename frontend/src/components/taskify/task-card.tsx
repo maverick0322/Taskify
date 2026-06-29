@@ -272,7 +272,7 @@ export function TaskCard({
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         title="Eliminar tarea"
-        description={`Se eliminara "${title}". Esta accion no se puede deshacer.`}
+        description={`Se eliminará "${title}". Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar tarea"
         isPending={deleteMutation.isPending}
         onConfirm={handleConfirmDelete}

@@ -44,11 +44,11 @@ export function AuthScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const title = isLogin ? "Iniciar sesion" : "Crear cuenta";
+  const title = isLogin ? "Iniciar sesión" : "Crear cuenta";
   const description = isLogin
     ? "Accede a tu tablero de trabajo."
     : "Crea tu usuario para empezar a organizar tareas.";
-  const submitLabel = isLogin ? "Iniciar sesion" : "Crear cuenta";
+  const submitLabel = isLogin ? "Iniciar sesión" : "Crear cuenta";
   const loadingLabel = isLogin ? "Ingresando..." : "Creando cuenta...";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -88,7 +88,7 @@ export function AuthScreen() {
     } catch (error) {
       const normalizedError = normalizeApiError(
         error,
-        "No pudimos completar la autenticacion.",
+        "No pudimos completar la autenticación.",
       );
       console.error("[AUTH][UI] Authentication flow failed", {
         isLogin,
@@ -102,7 +102,7 @@ export function AuthScreen() {
       setErrorMessage(
         getFriendlyErrorMessage(
           error,
-          "No pudimos completar la autenticacion.",
+          "No pudimos completar la autenticación.",
         ),
       );
     } finally {
@@ -197,7 +197,7 @@ export function AuthScreen() {
                           disabled={isLoading}
                           id="lastName"
                           onChange={(event) => setLastName(event.target.value)}
-                          placeholder="Garcia"
+                          placeholder="García"
                           required={!isLogin}
                           value={lastName}
                         />
@@ -228,7 +228,7 @@ export function AuthScreen() {
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email" className="text-sm font-medium">
-                Correo electronico
+                Correo electrónico
               </Label>
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -248,7 +248,7 @@ export function AuthScreen() {
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password" className="text-sm font-medium">
-                Contrasena
+                Contraseña
               </Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -266,7 +266,7 @@ export function AuthScreen() {
                 <button
                   type="button"
                   aria-label={
-                    showPassword ? "Ocultar contrasena" : "Mostrar contrasena"
+                    showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() =>
@@ -320,8 +320,8 @@ export function AuthScreen() {
             variant="outline"
           >
             {isLogin
-              ? "No tienes cuenta? Registrate"
-              : "Ya tienes cuenta? Inicia sesion"}
+              ? "¿No tienes cuenta? Regístrate"
+              : "¿Ya tienes cuenta? Inicia sesión"}
           </Button>
         </CardContent>
       </Card>
