@@ -253,6 +253,33 @@ func TestSystemHandler_PushSyncRejectsInvalidBody(t *testing.T) {
 	}
 }
 
+func TestSystemHandler_PushSyncReturnsDetailedFailure(t *testing.T) {
+	database := openHandlerSyncDatabase(t)
+	insertHandlerSyncUser(t, database, "user-1", "user1@example.com")
+
+	service := services.NewRemoteSyncService(database, services.SyncDialectSQLite, &mockHandlerLogger{})
+	handler := NewSystemHandler(nil, nil, service, nil, &mockSystemTokenValidator{}, &mockHandlerLogger{})
+	request := httptest.NewRequest(http.MethodPost, "/sync/push", strings.NewReader(`{"changes":[{"table":"boards","values":["board-1","user-2","Invalid","2025-06-26T12:00:00Z","2025-06-26T12:00:00Z",null]}]}`))
+	request = request.WithContext(handlerMiddleware.ContextWithUserID(request.Context(), "user-1"))
+	response := httptest.NewRecorder()
+
+	handler.PushSync(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"error":"sync push rejected"`) {
+		t.Fatalf("expected sync push rejection body, got %s", body)
+	}
+	if !strings.Contains(body, `"detail":"sync push change[0] boards(board-1): sync: boards row does not belong to authenticated user"`) {
+		t.Fatalf("expected detailed sync push error body, got %s", body)
+	}
+	if !strings.Contains(body, `"applied":0`) {
+		t.Fatalf("expected applied count in error body, got %s", body)
+	}
+}
+
 func TestSystemHandler_PurgeSQLiteClearsLocalData(t *testing.T) {
 	database := openHandlerSyncDatabase(t)
 	insertHandlerSyncUser(t, database, "user-1", "user1@example.com")

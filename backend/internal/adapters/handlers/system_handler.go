@@ -331,8 +331,12 @@ func (handler *SystemHandler) PushSync(response http.ResponseWriter, request *ht
 
 	applied, err := handler.remoteSync.PushChanges(request.Context(), userID, payload.Changes)
 	if err != nil {
-		handler.logger.Error("sync push failed", "userID", userID, "error", err)
-		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "sync failed"})
+		handler.logger.Error("sync push failed", "userID", userID, "changesCount", len(payload.Changes), "applied", applied, "error", err)
+		writeJSON(response, http.StatusBadRequest, syncPushErrorResponse{
+			Error:   "sync push rejected",
+			Detail:  err.Error(),
+			Applied: applied,
+		})
 		return
 	}
 
@@ -375,6 +379,12 @@ type syncPushRequest struct {
 
 type syncPushResponse struct {
 	Applied int `json:"applied"`
+}
+
+type syncPushErrorResponse struct {
+	Error   string `json:"error"`
+	Detail  string `json:"detail"`
+	Applied int    `json:"applied"`
 }
 
 type restoreRemoteSessionRequest struct {

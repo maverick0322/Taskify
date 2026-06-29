@@ -94,6 +94,16 @@ func (service *RemoteSyncService) PushChanges(ctx context.Context, userID string
 	if len(changes) == 0 {
 		return 0, nil
 	}
+	for index, change := range changes {
+		if _, ok := syncTableSpecByName(change.Table); !ok {
+			return 0, fmt.Errorf("sync push %s: unknown table %q", describeRemoteSyncChange(index, change), change.Table)
+		}
+	}
+
+	orderedChanges, err := orderedRemoteSyncChanges(changes)
+	if err != nil {
+		return 0, err
+	}
 
 	tx, err := service.database.BeginTx(ctx, nil)
 	if err != nil {
@@ -102,30 +112,31 @@ func (service *RemoteSyncService) PushChanges(ctx context.Context, userID string
 	defer tx.Rollback()
 
 	applied := 0
-	for _, change := range changes {
+	for index, change := range orderedChanges {
 		table, ok := syncTableSpecByName(change.Table)
 		if !ok {
-			return applied, fmt.Errorf("sync: unknown table %q", change.Table)
+			return applied, fmt.Errorf("sync push %s: unknown table %q", describeRemoteSyncChange(index, change), change.Table)
 		}
+		changeLabel := describeRemoteSyncChange(index, change)
 		if len(change.Values) != len(table.columns) {
-			return applied, fmt.Errorf("sync: invalid value count for table %s", change.Table)
+			return applied, fmt.Errorf("sync push %s: invalid value count for table %s", changeLabel, change.Table)
 		}
 
 		normalizedValues := make([]interface{}, 0, len(change.Values))
 		for index, rawValue := range change.Values {
 			value, err := normalizeRemoteSyncValue(table.columns[index], rawValue)
 			if err != nil {
-				return applied, fmt.Errorf("sync: invalid value for %s.%s: %w", change.Table, table.columns[index], err)
+				return applied, fmt.Errorf("sync push %s: invalid value for %s.%s: %w", changeLabel, change.Table, table.columns[index], err)
 			}
 			normalizedValues = append(normalizedValues, value)
 		}
 
 		if err := ensureRemoteSyncOwnership(ctx, tx, service.dialect, table, userID, normalizedValues); err != nil {
-			return applied, err
+			return applied, fmt.Errorf("sync push %s: %w", changeLabel, err)
 		}
 
 		if _, err := tx.ExecContext(ctx, lwwUpsertSQL(table, service.dialect), normalizedValues...); err != nil {
-			return applied, fmt.Errorf("sync push %s: %w", change.Table, err)
+			return applied, fmt.Errorf("sync push %s: %w", changeLabel, err)
 		}
 		applied++
 	}
@@ -135,6 +146,17 @@ func (service *RemoteSyncService) PushChanges(ctx context.Context, userID string
 	}
 
 	return applied, nil
+}
+
+func describeRemoteSyncChange(index int, change RemoteSyncChange) string {
+	entityID := ""
+	if len(change.Values) > 0 {
+		entityID = strings.TrimSpace(syncStringValue(change.Values[0]))
+	}
+	if entityID != "" {
+		return fmt.Sprintf("change[%d] %s(%s)", index, change.Table, entityID)
+	}
+	return fmt.Sprintf("change[%d] %s", index, change.Table)
 }
 
 func remoteScopedIncrementalSelect(table syncTableSpec, dialect SyncDialect, userID string, from, to time.Time) (string, []interface{}, error) {
