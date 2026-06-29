@@ -39,5 +39,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": [
+        "https://github.com/maverick0322/taskify/releases/latest/download/latest.json"
+      ],
+      "pubkey": "__TAURI_UPDATER_PUBKEY__"
+    }
   }
 }

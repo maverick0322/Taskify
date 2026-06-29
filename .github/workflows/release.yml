@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-tauri:
+    name: Build and Release Tauri App
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_CONFIG: >-
+        {"plugins":{"updater":{"pubkey":"${{ vars.TAURI_UPDATER_PUBKEY }}"}}}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Go sidecar
+        run: npm run build:go
+
+      - name: Build and publish GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: frontend
+          tagName: ${{ github.ref_name }}
+          releaseName: Taskify ${{ github.ref_name }}
+          releaseBody: |
+            Actualización automática de Taskify.
+          releaseDraft: false
+          prerelease: false

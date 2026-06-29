@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Zap } from "lucide-react"
+import { RefreshCw, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useDesktopUpdater } from "@/hooks/useDesktopUpdater"
+import { APP_VERSION } from "@/lib/app-version"
 import { useUIStore } from "@/store/useUIStore"
 
 const shortcuts = [
@@ -25,6 +27,8 @@ const shortcuts = [
 export function HelpDialog() {
   const open = useUIStore((state) => state.isHelpModalOpen)
   const setOpen = useUIStore((state) => state.setHelpModalOpen)
+  const { canUseUpdater, checkForUpdates, stage } = useDesktopUpdater()
+  const isCheckingForUpdates = stage === "checking"
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -45,7 +49,7 @@ export function HelpDialog() {
               <p className="text-2xl font-bold tracking-tight text-foreground">
                 Taskify
               </p>
-              <p className="text-sm text-muted-foreground">Versión 1.0.0</p>
+              <p className="text-sm text-muted-foreground">Versión {APP_VERSION}</p>
             </div>
           </div>
 
@@ -66,6 +70,20 @@ export function HelpDialog() {
         </div>
 
         <DialogFooter>
+          {canUseUpdater ? (
+            <Button
+              variant="outline"
+              onClick={() => void checkForUpdates()}
+              disabled={isCheckingForUpdates}
+            >
+              <RefreshCw
+                className={isCheckingForUpdates ? "animate-spin" : undefined}
+              />
+              {isCheckingForUpdates
+                ? "Buscando actualizaciones..."
+                : "Buscar actualizaciones"}
+            </Button>
+          ) : null}
           <Button variant="ghost" asChild>
             <a href="mailto:support@taskify.local">Contactar Soporte</a>
           </Button>

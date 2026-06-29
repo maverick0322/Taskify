@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 
 import { TaskifyDashboard } from "@/components/TaskifyDashboard";
 import { AuthScreen } from "@/components/auth/AuthScreen";
+import { UpdateDialog } from "@/components/taskify/update-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WindowTitlebar } from "@/components/taskify/window-titlebar";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useDesktopUpdater } from "@/hooks/useDesktopUpdater";
 import { restoreOrRefreshSession } from "@/services/api";
 import { restoreDesktopSyncSession } from "@/services/systemService";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -54,8 +56,10 @@ function App() {
       <ThemeProvider defaultTheme="system" storageKey="taskify-theme">
         <ToastProvider>
           <TooltipProvider>
+            <DesktopUpdaterBridge isReady={!isBootstrappingSession} />
             <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background">
               <WindowTitlebar />
+              <UpdateDialog />
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {isBootstrappingSession ? null : accessToken ? (
                   <TaskifyDashboard />
@@ -72,3 +76,12 @@ function App() {
 }
 
 export default App;
+
+function DesktopUpdaterBridge({ isReady }: { isReady: boolean }) {
+  useDesktopUpdater({
+    enableStartupCheck: true,
+    isReady,
+  });
+
+  return null;
+}
