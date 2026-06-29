@@ -243,6 +243,83 @@ func TestRemoteSyncService_PushChangesRejectsInvalidValueCountWithDetailedContex
 	}
 }
 
+func TestRemoteSyncService_PushChangesPublishesRealtimeUpdateAfterCommit(t *testing.T) {
+	database := openSyncTestDatabase(t)
+	insertSyncUser(t, database, "user-1", "user1@example.com", time.Date(2025, 6, 26, 10, 0, 0, 0, time.UTC), nil)
+
+	hub := NewUserRealtimeHub()
+	events, unsubscribe := hub.Subscribe("user-1")
+	defer unsubscribe()
+
+	service := NewRemoteSyncService(database, SyncDialectSQLite, &mockLogger{})
+	service.SetRealtimeHub(hub)
+	updatedAt := time.Date(2025, 6, 26, 15, 0, 0, 0, time.UTC)
+
+	applied, err := service.PushChanges(context.Background(), "user-1", []RemoteSyncChange{
+		{
+			Table: "boards",
+			Values: []interface{}{
+				"board-1",
+				"user-1",
+				"Owned Board",
+				timeValue(updatedAt),
+				timeValue(updatedAt),
+				nil,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected push success, got %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected 1 applied change, got %d", applied)
+	}
+
+	select {
+	case event := <-events:
+		if event.Type != RealtimeSyncUpdateEvent || event.Source != RealtimeSourceSyncPush {
+			t.Fatalf("expected sync_push realtime event, got %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected realtime event after successful push")
+	}
+}
+
+func TestRemoteSyncService_PushChangesDoesNotPublishRealtimeUpdateOnFailure(t *testing.T) {
+	database := openSyncTestDatabase(t)
+	insertSyncUser(t, database, "user-1", "user1@example.com", time.Date(2025, 6, 26, 10, 0, 0, 0, time.UTC), nil)
+
+	hub := NewUserRealtimeHub()
+	events, unsubscribe := hub.Subscribe("user-1")
+	defer unsubscribe()
+
+	service := NewRemoteSyncService(database, SyncDialectSQLite, &mockLogger{})
+	service.SetRealtimeHub(hub)
+
+	_, err := service.PushChanges(context.Background(), "user-1", []RemoteSyncChange{
+		{
+			Table: "boards",
+			Values: []interface{}{
+				"board-1",
+				"user-2",
+				"Invalid",
+				timeValue(time.Now().UTC()),
+				timeValue(time.Now().UTC()),
+				nil,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected push failure, got nil")
+	}
+
+	select {
+	case event := <-events:
+		t.Fatalf("expected no realtime event on failed push, got %+v", event)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
 func openRemotePushFKTestDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 

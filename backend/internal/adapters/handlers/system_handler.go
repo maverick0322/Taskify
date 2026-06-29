@@ -12,12 +12,25 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
 	"github.com/maverick0322/taskify/backend/internal/core/ports"
 	"github.com/maverick0322/taskify/backend/internal/core/services"
 )
 
-const syncEventsHeartbeatInterval = 25 * time.Second
+const (
+	syncEventsHeartbeatInterval = 25 * time.Second
+	realtimePingInterval        = 25 * time.Second
+	realtimeWriteTimeout        = 10 * time.Second
+	realtimeReadLimit           = 1024
+	realtimePongWait            = 60 * time.Second
+)
+
+var realtimeUpgrader = websocket.Upgrader{
+	CheckOrigin: func(request *http.Request) bool {
+		return true
+	},
+}
 
 type localSyncService interface {
 	SyncOnce(ctx context.Context) error
@@ -41,6 +54,7 @@ type SystemHandler struct {
 	sessionSync    remoteSessionService
 	tokenValidator ports.TokenValidator
 	logger         ports.Logger
+	realtimeHub    *services.UserRealtimeHub
 }
 
 func NewSystemHandler(sqliteDatabase *sql.DB, syncService localSyncService, remoteSync *services.RemoteSyncService, sessionSync remoteSessionService, tokenValidator ports.TokenValidator, logger ports.Logger) *SystemHandler {
@@ -56,6 +70,7 @@ func NewSystemHandler(sqliteDatabase *sql.DB, syncService localSyncService, remo
 
 func (handler *SystemHandler) RegisterEventRoutes(router chi.Router) {
 	router.Get("/sync/events", handler.SyncEvents)
+	router.Get("/realtime/ws", handler.RealtimeWS)
 }
 
 func (handler *SystemHandler) RegisterPublicRoutes(router chi.Router) {
@@ -70,6 +85,10 @@ func (handler *SystemHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/sync/force", handler.ForceSync)
 	router.Post("/system/sqlite/checkpoint", handler.CheckpointSQLite)
 	router.Post("/system/sqlite/purge", handler.PurgeSQLite)
+}
+
+func (handler *SystemHandler) SetRealtimeHub(hub *services.UserRealtimeHub) {
+	handler.realtimeHub = hub
 }
 
 func (handler *SystemHandler) SyncEvents(response http.ResponseWriter, request *http.Request) {
@@ -130,6 +149,82 @@ func (handler *SystemHandler) SyncEvents(response http.ResponseWriter, request *
 				return
 			}
 			flusher.Flush()
+		}
+	}
+}
+
+func (handler *SystemHandler) RealtimeWS(response http.ResponseWriter, request *http.Request) {
+	if handler.realtimeHub == nil {
+		writeJSON(response, http.StatusServiceUnavailable, errorResponse{Error: "cloud sync is not configured"})
+		return
+	}
+	if handler.tokenValidator == nil {
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	token := strings.TrimSpace(request.URL.Query().Get("token"))
+	if token == "" {
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	userID, err := handler.tokenValidator.ValidateToken(token)
+	if err != nil {
+		handler.logger.Warn("realtime websocket request rejected because access token is invalid")
+		writeJSON(response, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	connection, err := realtimeUpgrader.Upgrade(response, request, nil)
+	if err != nil {
+		handler.logger.Warn("realtime websocket upgrade failed", "userID", userID, "error", err)
+		return
+	}
+	defer connection.Close()
+
+	connection.SetReadLimit(realtimeReadLimit)
+	_ = connection.SetReadDeadline(time.Now().Add(realtimePongWait))
+	connection.SetPongHandler(func(string) error {
+		return connection.SetReadDeadline(time.Now().Add(realtimePongWait))
+	})
+
+	events, unsubscribe := handler.realtimeHub.Subscribe(userID)
+	defer unsubscribe()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := connection.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	pingTicker := time.NewTicker(realtimePingInterval)
+	defer pingTicker.Stop()
+
+	for {
+		select {
+		case <-request.Context().Done():
+			return
+		case <-done:
+			return
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			_ = connection.SetWriteDeadline(time.Now().Add(realtimeWriteTimeout))
+			if err := connection.WriteJSON(event); err != nil {
+				handler.logger.Warn("realtime websocket write failed", "userID", userID, "error", err)
+				return
+			}
+		case <-pingTicker.C:
+			_ = connection.SetWriteDeadline(time.Now().Add(realtimeWriteTimeout))
+			if err := connection.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

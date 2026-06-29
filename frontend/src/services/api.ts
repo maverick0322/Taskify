@@ -5,6 +5,7 @@ import {
   loadStoredSession,
   persistSession,
 } from "@/services/secureSession";
+import { jwtDecode } from "jwt-decode";
 
 type ApiErrorResponse = {
   error?: string;
@@ -18,6 +19,10 @@ type TokenPairResponse = {
 type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
   timeoutMessage?: string;
+};
+
+type AccessTokenClaims = {
+  exp?: number;
 };
 
 export class ApiError extends Error {
@@ -131,6 +136,42 @@ async function refreshAccessToken(): Promise<string> {
   }
 
   return refreshTokenPromise;
+}
+
+export async function ensureValidAccessToken(): Promise<string> {
+  const storeAccessToken = useAuthStore.getState().accessToken;
+  if (storeAccessToken && !isTokenExpired(storeAccessToken)) {
+    return storeAccessToken;
+  }
+
+  const storedSession = await loadStoredSession();
+  if (storedSession?.accessToken && !isTokenExpired(storedSession.accessToken)) {
+    return storedSession.accessToken;
+  }
+
+  if (!storedSession?.refreshToken) {
+    throw new ApiError(
+      401,
+      "Tu sesion expiro. Inicia sesion nuevamente.",
+      undefined,
+      "missing refresh token",
+    );
+  }
+
+  return refreshAccessToken();
+}
+
+export async function restoreOrRefreshSession(): Promise<string | null> {
+  const storedSession = await loadStoredSession().catch(() => null);
+  if (!storedSession?.accessToken || !storedSession.refreshToken) {
+    return null;
+  }
+
+  if (!isTokenExpired(storedSession.accessToken)) {
+    return storedSession.accessToken;
+  }
+
+  return ensureValidAccessToken();
 }
 
 async function performRefresh(): Promise<string> {
@@ -335,6 +376,18 @@ function friendlyMessageFromStatus(
 
 function normalizeBackendMessage(message?: string): string {
   return message?.trim().toLowerCase() ?? "";
+}
+
+function isTokenExpired(token: string) {
+  try {
+    const claims = jwtDecode<AccessTokenClaims>(token);
+    if (!claims.exp) {
+      return false;
+    }
+    return claims.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
 }
 
 function isNetworkError(error: unknown): boolean {

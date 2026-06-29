@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	_ "modernc.org/sqlite"
 
 	handlerMiddleware "github.com/maverick0322/taskify/backend/internal/adapters/handlers/middleware"
@@ -277,6 +279,56 @@ func TestSystemHandler_PushSyncReturnsDetailedFailure(t *testing.T) {
 	}
 	if !strings.Contains(body, `"applied":0`) {
 		t.Fatalf("expected applied count in error body, got %s", body)
+	}
+}
+
+func TestSystemHandler_RealtimeWSRejectsInvalidToken(t *testing.T) {
+	handler := NewSystemHandler(nil, nil, nil, nil, &mockSystemTokenValidator{errToReturn: errors.New("bad token")}, &mockHandlerLogger{})
+	handler.SetRealtimeHub(services.NewUserRealtimeHub())
+	router := chi.NewRouter()
+	handler.RegisterEventRoutes(router)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/realtime/ws?token=invalid-token")
+	if err != nil {
+		t.Fatalf("expected http response, got %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", response.StatusCode)
+	}
+}
+
+func TestSystemHandler_RealtimeWSStreamsUserScopedEvents(t *testing.T) {
+	realtimeHub := services.NewUserRealtimeHub()
+	handler := NewSystemHandler(nil, nil, nil, nil, &mockSystemTokenValidator{userIDToReturn: "user-1"}, &mockHandlerLogger{})
+	handler.SetRealtimeHub(realtimeHub)
+	router := chi.NewRouter()
+	handler.RegisterEventRoutes(router)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	websocketURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/realtime/ws?token=valid-token"
+	connection, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
+	if err != nil {
+		t.Fatalf("expected websocket dial success, got %v", err)
+	}
+	defer connection.Close()
+
+	realtimeHub.Publish("user-1", services.RealtimeEvent{
+		Type:   services.RealtimeSyncUpdateEvent,
+		UserID: "user-1",
+		Source: services.RealtimeSourceSyncPush,
+	})
+
+	var event services.RealtimeEvent
+	if err := connection.ReadJSON(&event); err != nil {
+		t.Fatalf("expected websocket event, got %v", err)
+	}
+	if event.Type != services.RealtimeSyncUpdateEvent || event.UserID != "user-1" {
+		t.Fatalf("unexpected realtime event %+v", event)
 	}
 }
 

@@ -3,7 +3,10 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -257,6 +260,67 @@ func TestHTTPRemoteSyncService_ApplyPulledChanges_FailsOnUnknownTable(t *testing
 	}
 }
 
+func TestHTTPRemoteSyncService_EnsureRemoteSessionRefreshesPersistedTokens(t *testing.T) {
+	database := openHTTPSyncTestDatabase(t)
+	service := NewHTTPRemoteSyncService(database, "", &mockLogger{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/users/refresh" {
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+		writeHTTPJSON(t, response, map[string]string{
+			"accessToken":  "remote-access-new",
+			"refreshToken": "remote-refresh-new",
+		})
+	}))
+	defer server.Close()
+
+	service.remoteAPIURL = server.URL
+	service.RestoreRemoteSession("remote-access-old", "remote-refresh-old")
+
+	tokenPair, err := service.EnsureRemoteSession(context.Background())
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if tokenPair.AccessToken != "remote-access-new" || tokenPair.RefreshToken != "remote-refresh-new" {
+		t.Fatalf("expected refreshed token pair, got %+v", tokenPair)
+	}
+}
+
+func TestHTTPRemoteSyncService_EnsureRemoteSessionFallsBackToCurrentTokensWhenRefreshFailsTransiently(t *testing.T) {
+	database := openHTTPSyncTestDatabase(t)
+	service := NewHTTPRemoteSyncService(database, "", &mockLogger{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		http.Error(response, "boom", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	service.remoteAPIURL = server.URL
+	service.RestoreRemoteSession("remote-access-current", "remote-refresh-current")
+
+	tokenPair, err := service.EnsureRemoteSession(context.Background())
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if tokenPair.AccessToken != "remote-access-current" || tokenPair.RefreshToken != "remote-refresh-current" {
+		t.Fatalf("expected current token pair fallback, got %+v", tokenPair)
+	}
+}
+
+func TestHTTPRemoteSyncService_EnsureRemoteSessionFailsWhenNoSessionExists(t *testing.T) {
+	database := openHTTPSyncTestDatabase(t)
+	service := NewHTTPRemoteSyncService(database, "https://taskify-7n1b.onrender.com", &mockLogger{})
+
+	_, err := service.EnsureRemoteSession(context.Background())
+
+	if err == nil || !strings.Contains(err.Error(), ErrRemoteSyncSessionUnavailable.Error()) {
+		t.Fatalf("expected remote session unavailable error, got %v", err)
+	}
+}
+
 func openHTTPSyncTestDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -282,6 +346,15 @@ func assertHTTPSyncRowCount(t *testing.T, database *sql.DB, table string, expect
 	}
 	if count != expected {
 		t.Fatalf("expected %s row count %d, got %d", table, expected, count)
+	}
+}
+
+func writeHTTPJSON(t *testing.T, response http.ResponseWriter, payload interface{}) {
+	t.Helper()
+
+	response.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(response).Encode(payload); err != nil {
+		t.Fatalf("failed to encode json response: %v", err)
 	}
 }
 

@@ -166,7 +166,9 @@ func run() error {
 		EventHub() *services.SyncEventHub
 	}
 	var remoteSyncService *services.RemoteSyncService
+	var realtimeHub *services.UserRealtimeHub
 	var syncSignalBus *services.SyncSignalBus
+	var httpSyncService *services.HTTPRemoteSyncService
 	var sessionSyncService interface {
 		LoginRemoteSession(ctx context.Context, email, password string) error
 		AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
@@ -176,9 +178,11 @@ func run() error {
 	}
 	if isProduction {
 		remoteSyncService = services.NewRemoteSyncService(remoteDatabase, services.SyncDialectPostgres, applicationLogger)
+		realtimeHub = services.NewUserRealtimeHub()
+		remoteSyncService.SetRealtimeHub(realtimeHub)
 	}
 	if !isProduction && config.remoteAPIURL != "" {
-		httpSyncService := services.NewHTTPRemoteSyncService(sqliteDatabase, config.remoteAPIURL, applicationLogger)
+		httpSyncService = services.NewHTTPRemoteSyncService(sqliteDatabase, config.remoteAPIURL, applicationLogger)
 		syncService = httpSyncService
 		sessionSyncService = httpSyncService
 		httpSyncService.SetEventHub(services.NewSyncEventHub())
@@ -202,6 +206,9 @@ func run() error {
 	financialAccountHandler := handlers.NewFinancialAccountHandler(financialAccountUseCase, applicationLogger)
 	notificationHandler := handlers.NewNotificationHandler(notificationUseCase, applicationLogger)
 	systemHandler := handlers.NewSystemHandler(sqliteDatabase, syncService, remoteSyncService, sessionSyncService, tokenValidator, applicationLogger)
+	if realtimeHub != nil {
+		systemHandler.SetRealtimeHub(realtimeHub)
+	}
 	authMiddleware := middleware.NewAuthMiddleware(tokenValidator, applicationLogger)
 
 	router := chi.NewRouter()
@@ -212,6 +219,9 @@ func run() error {
 	systemHandler.RegisterEventRoutes(router)
 	router.Group(func(protectedRouter chi.Router) {
 		protectedRouter.Use(authMiddleware.RequireAuthentication)
+		if isProduction && realtimeHub != nil {
+			protectedRouter.Use(middleware.NotifyRealtimeOnSuccessfulMutation(realtimeHub))
+		}
 		if !isProduction && syncSignalBus != nil {
 			protectedRouter.Use(middleware.NotifySyncOnSuccessfulMutation(syncSignalBus))
 		}
@@ -236,6 +246,9 @@ func run() error {
 
 	if !isProduction && syncSignalBus != nil && syncService != nil {
 		go startSyncWorker(shutdownContext, syncService, syncSignalBus, applicationLogger)
+		if httpSyncService != nil {
+			go startRemoteRealtimeClient(shutdownContext, config.remoteAPIURL, httpSyncService, syncSignalBus, applicationLogger)
+		}
 	}
 	if !isProduction && config.remoteAPIURL == "" {
 		go startAvatarStorageWorker(shutdownContext, sqliteDatabase, config.supabaseURL, config.supabaseServiceKey, applicationLogger)

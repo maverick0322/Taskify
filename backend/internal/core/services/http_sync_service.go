@@ -243,6 +243,37 @@ func (service *HTTPRemoteSyncService) CurrentRemoteSession() (ports.TokenPair, b
 	}, true
 }
 
+func (service *HTTPRemoteSyncService) EnsureRemoteSession(ctx context.Context) (ports.TokenPair, error) {
+	if _, _, ok := service.sessionSnapshot(); !ok {
+		restored, err := service.RestorePersistedRemoteSession(ctx)
+		if err != nil {
+			return ports.TokenPair{}, err
+		}
+		if !restored {
+			return ports.TokenPair{}, ErrRemoteSyncSessionUnavailable
+		}
+	}
+
+	currentTokenPair, ok := service.CurrentRemoteSession()
+	if !ok {
+		return ports.TokenPair{}, ErrRemoteSyncSessionUnavailable
+	}
+
+	if err := service.refreshRemoteTokens(ctx); err != nil {
+		if errors.Is(err, ErrRemoteSyncSessionUnavailable) {
+			return ports.TokenPair{}, err
+		}
+		service.logger.Warn("[SYNC][AUTH] Refresh preventivo remoto falló; se usará la sesión remota actual", "error", err)
+		return currentTokenPair, nil
+	}
+
+	refreshedTokenPair, ok := service.CurrentRemoteSession()
+	if !ok {
+		return ports.TokenPair{}, ErrRemoteSyncSessionUnavailable
+	}
+	return refreshedTokenPair, nil
+}
+
 func (service *HTTPRemoteSyncService) HasRemoteSession() bool {
 	_, _, ok := service.sessionSnapshot()
 	return ok

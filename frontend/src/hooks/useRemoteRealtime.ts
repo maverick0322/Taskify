@@ -2,7 +2,12 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { isTauriRuntime } from "@/lib/runtime";
-import { resolveApiBaseUrl } from "@/services/api";
+import {
+  ensureValidAccessToken,
+  normalizeApiError,
+  resolveApiBaseUrl,
+} from "@/services/api";
+import { invalidateRealtimeQueries } from "@/services/realtime";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type RemoteRealtimeEvent = {
@@ -31,6 +36,7 @@ export function useRemoteRealtime() {
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectAttempts = 0;
+    let connectInFlight = false;
 
     const scheduleReconnect = () => {
       if (disposed) {
@@ -41,34 +47,51 @@ export function useRemoteRealtime() {
       reconnectTimer = setTimeout(connect, delay);
     };
 
-    const connect = () => {
-      if (disposed) {
+    const connect = async () => {
+      if (disposed || connectInFlight) {
         return;
       }
+      connectInFlight = true;
 
-      socket = new WebSocket(resolveRemoteRealtimeUrl(accessToken));
-      socket.onopen = () => {
-        reconnectAttempts = 0;
-      };
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data) as RemoteRealtimeEvent;
-          if (payload.type === "sync_update") {
-            void queryClient.invalidateQueries();
-          }
-        } catch (error) {
-          console.warn("remote realtime event parse error", error);
+      try {
+        const currentAccessToken = await ensureValidAccessToken();
+        if (disposed) {
+          return;
         }
-      };
-      socket.onerror = () => {
-        socket?.close();
-      };
-      socket.onclose = () => {
+
+        socket = new WebSocket(resolveRemoteRealtimeUrl(currentAccessToken));
+        socket.onopen = () => {
+          reconnectAttempts = 0;
+        };
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data) as RemoteRealtimeEvent;
+            if (payload.type === "sync_update") {
+              void invalidateRealtimeQueries(queryClient);
+            }
+          } catch (error) {
+            console.warn("remote realtime event parse error", error);
+          }
+        };
+        socket.onerror = () => {
+          socket?.close();
+        };
+        socket.onclose = () => {
+          scheduleReconnect();
+        };
+      } catch (error) {
+        const normalizedError = normalizeApiError(error);
+        if (normalizedError.status === 401) {
+          await useAuthStore.getState().logout();
+          return;
+        }
         scheduleReconnect();
-      };
+      } finally {
+        connectInFlight = false;
+      }
     };
 
-    connect();
+    void connect();
 
     return () => {
       disposed = true;

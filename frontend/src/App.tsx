@@ -7,11 +7,19 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { WindowTitlebar } from "@/components/taskify/window-titlebar";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { loadStoredSession } from "@/services/secureSession";
+import { restoreOrRefreshSession } from "@/services/api";
 import { restoreDesktopSyncSession } from "@/services/systemService";
 import { useAuthStore } from "@/store/useAuthStore";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
 
 function App() {
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -22,14 +30,16 @@ function App() {
     let isMounted = true;
 
     void (async () => {
-      const storedSession = await loadStoredSession().catch(() => null);
+      const restoredAccessToken = await restoreOrRefreshSession().catch(
+        () => null,
+      );
       if (!isMounted) {
         return;
       }
 
-      if (storedSession?.accessToken) {
+      if (restoredAccessToken) {
         await restoreDesktopSyncSession().catch(() => undefined);
-        login(storedSession.accessToken);
+        login(restoredAccessToken);
       }
       setIsBootstrappingSession(false);
     })();

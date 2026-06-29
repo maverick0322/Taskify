@@ -28,6 +28,7 @@ type RemoteSyncService struct {
 	dialect  SyncDialect
 	logger   ports.Logger
 	now      func() time.Time
+	realtime *UserRealtimeHub
 }
 
 func NewRemoteSyncService(database *sql.DB, dialect SyncDialect, logger ports.Logger) *RemoteSyncService {
@@ -37,6 +38,10 @@ func NewRemoteSyncService(database *sql.DB, dialect SyncDialect, logger ports.Lo
 		logger:   logger,
 		now:      time.Now,
 	}
+}
+
+func (service *RemoteSyncService) SetRealtimeHub(hub *UserRealtimeHub) {
+	service.realtime = hub
 }
 
 func (service *RemoteSyncService) PullChanges(ctx context.Context, userID string, cursor time.Time) (RemoteSyncPullResult, error) {
@@ -143,6 +148,13 @@ func (service *RemoteSyncService) PushChanges(ctx context.Context, userID string
 
 	if err := tx.Commit(); err != nil {
 		return applied, err
+	}
+	if service.realtime != nil {
+		service.realtime.Publish(userID, RealtimeEvent{
+			Type:   RealtimeSyncUpdateEvent,
+			UserID: userID,
+			Source: RealtimeSourceSyncPush,
+		})
 	}
 
 	return applied, nil
