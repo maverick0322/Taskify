@@ -30,7 +30,7 @@ import {
 import { notifyCriticalAlerts } from "@/lib/notifications";
 import { parseTaskDueDate } from "@/lib/task-dates";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { useRemoteRealtime } from "@/hooks/useRemoteRealtime";
 import { useSyncEvents } from "@/hooks/useSyncEvents";
 import { getFriendlyErrorMessage } from "@/services/api";
 import { getBoards } from "@/services/boardService";
@@ -340,7 +340,7 @@ export function TaskifyDashboard() {
 
   useKeyboardShortcuts({ setCurrentView: handleShortcutViewChange });
   useSyncEvents();
-  useSupabaseRealtime();
+  useRemoteRealtime();
 
   return (
     <div className="pwa-safe-shell flex min-h-0 flex-1 overflow-hidden bg-canvas">
