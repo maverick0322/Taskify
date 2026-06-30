@@ -18,12 +18,31 @@ type CheckForUpdatesOptions = {
   silentIfNoUpdate?: boolean;
 };
 
+const UPDATER_UP_TO_DATE_MESSAGE =
+  "¡Todo al día! Estás usando la versión más reciente de Taskify.";
+
 function normalizeUpdaterError(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
 
   return "No pudimos completar la actualización en este momento.";
+}
+
+function isBenignMetadataError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("latest.json") ||
+    message.includes("404") ||
+    message.includes("not found") ||
+    message.includes("failed to deserialize") ||
+    message.includes("could not parse") ||
+    message.includes("unable to parse")
+  );
 }
 
 export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
@@ -66,7 +85,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           if (!update) {
             setStage("idle");
             if (!silentIfNoUpdate) {
-              toast.success("Taskify ya está actualizado.");
+              toast.success(UPDATER_UP_TO_DATE_MESSAGE);
             }
             return false;
           }
@@ -82,6 +101,12 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           return true;
         } catch (error) {
           setStage("idle");
+          if (isBenignMetadataError(error)) {
+            if (!silentIfNoUpdate) {
+              toast.success(UPDATER_UP_TO_DATE_MESSAGE);
+            }
+            return false;
+          }
           toast.error(normalizeUpdaterError(error));
           return false;
         } finally {
