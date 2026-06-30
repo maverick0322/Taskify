@@ -74,14 +74,13 @@ func initializeSQLiteSchema(ctx context.Context, database *sql.DB) error {
 	if err := ensureSQLiteSyncMetadata(ctx, database); err != nil {
 		return err
 	}
+	if err := ensureSQLiteTransactionsCompletedStatus(ctx, database); err != nil {
+		return err
+	}
 	if err := ensureSQLiteOutbox(ctx, database); err != nil {
 		return err
 	}
 	if err := ensureSQLiteAvatarStorage(ctx, database); err != nil {
-		return err
-	}
-
-	if err := ensureSQLiteTransactionsCompletedStatus(ctx, database); err != nil {
 		return err
 	}
 	if err := backfillSQLiteCreditCardFinancialAccounts(ctx, database); err != nil {
@@ -291,6 +290,9 @@ func ensureSQLiteOutbox(ctx context.Context, database *sql.DB) error {
 
 func ensureSQLiteOutboxTriggers(ctx context.Context, database *sql.DB, table string) error {
 	_, err := database.ExecContext(ctx, fmt.Sprintf(`
+		DROP TRIGGER IF EXISTS trg_%[1]s_sync_outbox_insert;
+		DROP TRIGGER IF EXISTS trg_%[1]s_sync_outbox_update;
+
 		CREATE TRIGGER IF NOT EXISTS trg_%[1]s_sync_outbox_insert
 		AFTER INSERT ON %[1]s
 		WHEN (SELECT value FROM sync_runtime_flags WHERE key = 'suppress_outbox') != '1'

@@ -389,6 +389,7 @@ func (service *HTTPRemoteSyncService) pushPendingOutbox(ctx context.Context) (in
 	if len(entries) == 0 {
 		return 0, 0, nil
 	}
+	service.logIncompleteFinancialOutbox(entries)
 
 	changes := make([]RemoteSyncChange, 0, len(entries))
 	for _, entry := range entries {
@@ -432,6 +433,30 @@ func (service *HTTPRemoteSyncService) pushPendingOutbox(ctx context.Context) (in
 	}
 
 	return len(entries), response.Applied, nil
+}
+
+func (service *HTTPRemoteSyncService) logIncompleteFinancialOutbox(entries []syncOutboxEntry) {
+	hasTransaction := false
+	financialTables := make([]string, 0, 3)
+
+	for _, entry := range entries {
+		switch entry.tableName {
+		case "transactions":
+			hasTransaction = true
+		case "financial_accounts", "ledger_entries", "account_payable_payments":
+			financialTables = append(financialTables, entry.tableName)
+		}
+	}
+
+	if hasTransaction || len(financialTables) == 0 {
+		return
+	}
+
+	service.logger.Warn(
+		"[SYNC] Outbox financiero inconsistente: hay entidades hijas sin la fila padre de transactions",
+		"tables", strings.Join(financialTables, ","),
+		"entries", len(entries),
+	)
 }
 
 func (service *HTTPRemoteSyncService) pullRemoteChanges(ctx context.Context, cursor time.Time) ([]RemoteSyncChange, time.Time, error) {
