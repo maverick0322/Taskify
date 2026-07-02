@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { getFriendlyErrorMessage } from "@/services/api"
 import { useUIStore } from "@/store/useUIStore"
 import {
@@ -234,19 +235,17 @@ function centsToAmount(value: number) {
   return value / 100
 }
 
-function currentMonthRange() {
-  const currentDate = new Date()
-  const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
-  const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+function formatMonthYearLabel(date: Date) {
+  const label = new Intl.DateTimeFormat("es-MX", {
+    month: "long",
+    year: "numeric",
+  }).format(date)
 
-  return {
-    startDate: formatDateInput(startDate),
-    endDate: formatDateInput(endDate),
-    label: new Intl.DateTimeFormat("es-MX", {
-      month: "long",
-      year: "numeric",
-    }).format(startDate),
-  }
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+function shiftMonth(date: Date, delta: number) {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1)
 }
 
 function monthRangeFromDate(date: Date) {
@@ -256,10 +255,7 @@ function monthRangeFromDate(date: Date) {
   return {
     startDate: formatDateInput(startDate),
     endDate: formatDateInput(endDate),
-    label: new Intl.DateTimeFormat("es-MX", {
-      month: "long",
-      year: "numeric",
-    }).format(startDate),
+    label: formatMonthYearLabel(startDate),
   }
 }
 
@@ -506,13 +502,20 @@ function pendingPaymentFromTransaction(
   }
 }
 
-function mapCreditCardPayable(card: CreditCardSummary): PendingPayment | null {
+function mapCreditCardPayable(
+  card: CreditCardSummary,
+  anchorMonth: Date,
+  monthRange: { startDate: string; endDate: string },
+): PendingPayment | null {
   if (card.currentDebtCents <= 0) {
     return null
   }
-  const dueDate = creditCardPaymentDueDate(card)
+  const dueDate = creditCardPaymentDueDate(card, anchorMonth)
   const dueDateRaw = formatDateInput(dueDate)
   const currentDate = todayDate()
+  if (dueDateRaw < monthRange.startDate || dueDateRaw > monthRange.endDate) {
+    return null
+  }
 
   return {
     id: `credit-card-${card.id}`,
@@ -528,8 +531,9 @@ function mapCreditCardPayable(card: CreditCardSummary): PendingPayment | null {
   }
 }
 
-function creditCardPaymentDueDate(card: CreditCardSummary) {
-  const currentDate = todayDate()
+function creditCardPaymentDueDate(card: CreditCardSummary, anchorMonth: Date) {
+  const currentDate = new Date(anchorMonth)
+  currentDate.setHours(0, 0, 0, 0)
   const cutoffDate = billingCycleDate(
     currentDate.getFullYear(),
     currentDate.getMonth(),
@@ -565,7 +569,7 @@ function iconForCategory(category: string): ElementType {
 function financialQueryKeys(startDate: string, endDate: string) {
   return {
     transactions: ["financial", "transactions", startDate, endDate] as const,
-    payables: ["financial", "accounts-payable"] as const,
+    payables: ["financial", "accounts-payable", startDate, endDate] as const,
     summary: ["financial", "summary", startDate, endDate] as const,
     creditCards: ["financial", "credit-cards"] as const,
     accounts: ["financial", "accounts"] as const,
@@ -1811,8 +1815,12 @@ export function FinancialControlView() {
   const [creditCardToPay, setCreditCardToPay] =
     useState<CreditCardSummary | null>(null)
   const [transactionDialogError, setTransactionDialogError] = useState("")
+  const [currentViewMonth, setCurrentViewMonth] = useState(() => todayDate())
   const queryClient = useQueryClient()
-  const monthRange = useMemo(() => currentMonthRange(), [])
+  const monthRange = useMemo(
+    () => monthRangeFromDate(currentViewMonth),
+    [currentViewMonth],
+  )
   const queryKeys = useMemo(
     () => financialQueryKeys(monthRange.startDate, monthRange.endDate),
     [monthRange.endDate, monthRange.startDate],
@@ -1834,7 +1842,11 @@ export function FinancialControlView() {
     isLoading: isPayablesLoading,
   } = useQuery({
     queryKey: queryKeys.payables,
-    queryFn: () => getTransactions(),
+    queryFn: () =>
+      getTransactions({
+        startDate: monthRange.startDate,
+        endDate: monthRange.endDate,
+      }),
   })
   const {
     data: financialSummary,
@@ -2099,9 +2111,9 @@ export function FinancialControlView() {
   const creditCardPendingPayments = useMemo(
     () =>
       creditCards
-        .map(mapCreditCardPayable)
+        .map((card) => mapCreditCardPayable(card, currentViewMonth, monthRange))
         .filter((payment): payment is PendingPayment => Boolean(payment)),
-    [creditCards],
+    [creditCards, currentViewMonth, monthRange],
   )
   const pendingPayments = useMemo(
     () => [...manualPendingPayments, ...creditCardPendingPayments],
@@ -2284,9 +2296,52 @@ export function FinancialControlView() {
                       Libro de Registro
                     </CardTitle>
                   </div>
-                  <CardDescription>
-                    {monthRange.label} - todas las cuentas
-                  </CardDescription>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 rounded-full"
+                          aria-label="Ver mes anterior"
+                          title="Mes anterior"
+                          onClick={() =>
+                            setCurrentViewMonth((currentMonth) =>
+                              shiftMonth(currentMonth, -1),
+                            )
+                          }
+                        >
+                          <ChevronLeft className="size-4" aria-hidden="true" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Mes anterior</TooltipContent>
+                    </Tooltip>
+                    <CardDescription className="text-sm">
+                      {monthRange.label}
+                    </CardDescription>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 rounded-full"
+                          aria-label="Ver mes siguiente"
+                          title="Mes siguiente"
+                          onClick={() =>
+                            setCurrentViewMonth((currentMonth) =>
+                              shiftMonth(currentMonth, 1),
+                            )
+                          }
+                        >
+                          <ChevronRight className="size-4" aria-hidden="true" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Mes siguiente</TooltipContent>
+                    </Tooltip>
+                    <span>- todas las cuentas</span>
+                  </div>
                 </div>
                 <Button
                   size="sm"
