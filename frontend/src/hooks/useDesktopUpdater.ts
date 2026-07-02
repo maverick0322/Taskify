@@ -20,6 +20,59 @@ type CheckForUpdatesOptions = {
 
 const UPDATER_UP_TO_DATE_MESSAGE =
   "¡Todo al día! Estás usando la versión más reciente de Taskify.";
+const UPDATER_DEBUG_LOG_FILE = "updater-debug.log";
+
+function serializeUpdaterError(error: unknown) {
+  if (error instanceof Error) {
+    const errorWithCause = error as Error & { cause?: unknown };
+
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack ?? null,
+      cause:
+        errorWithCause.cause instanceof Error
+          ? {
+              name: errorWithCause.cause.name,
+              message: errorWithCause.cause.message,
+              stack: errorWithCause.cause.stack ?? null,
+            }
+          : errorWithCause.cause ?? null,
+    };
+  }
+
+  return {
+    message: typeof error === "string" ? error : JSON.stringify(error, null, 2),
+    stack: null,
+    cause: null,
+  };
+}
+
+async function appendUpdaterDebugLog(context: string, payload: Record<string, unknown>) {
+  const timestamp = new Date().toISOString();
+  const logEntry = `${JSON.stringify({ timestamp, context, ...payload })}\n`;
+
+  console.error(`[updater][${context}]`, payload);
+
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  try {
+    const [{ appDataDir, join }, { writeTextFile }] = await Promise.all([
+      import("@tauri-apps/api/path"),
+      import("@tauri-apps/plugin-fs"),
+    ]);
+
+    const logPath = await join(await appDataDir(), UPDATER_DEBUG_LOG_FILE);
+    await writeTextFile(logPath, logEntry, {
+      append: true,
+      create: true,
+    });
+  } catch (loggingError) {
+    console.error("[updater][logger_failed]", loggingError);
+  }
+}
 
 function normalizeUpdaterError(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
@@ -101,6 +154,11 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           return true;
         } catch (error) {
           setStage("idle");
+          await appendUpdaterDebugLog("check_failed", {
+            canUseUpdater,
+            production: import.meta.env.PROD,
+            ...serializeUpdaterError(error),
+          });
           if (isBenignMetadataError(error)) {
             if (!silentIfNoUpdate) {
               toast.success(UPDATER_UP_TO_DATE_MESSAGE);
@@ -131,6 +189,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
     installPromise = (async () => {
       try {
         let nextContentLength: number | null = null;
+        const progressEvents: Array<Record<string, unknown>> = [];
 
         setStage("downloading");
         resetProgress();
@@ -138,11 +197,20 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         await availableUpdate.handle.downloadAndInstall((event) => {
           if (event.event === "Started") {
             nextContentLength = event.data.contentLength ?? null;
+            progressEvents.push({
+              event: event.event,
+              contentLength: event.data.contentLength ?? null,
+            });
             setDownloadProgress(0, nextContentLength);
             return;
           }
 
           if (event.event === "Progress") {
+            progressEvents.push({
+              event: event.event,
+              chunkLength: event.data.chunkLength,
+              downloadedBytes: useUpdaterStore.getState().downloadedBytes + event.data.chunkLength,
+            });
             setDownloadProgress(
               useUpdaterStore.getState().downloadedBytes + event.data.chunkLength,
               nextContentLength,
@@ -151,10 +219,22 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           }
 
           if (event.event === "Finished") {
+            progressEvents.push({
+              event: event.event,
+              downloadedBytes: useUpdaterStore.getState().downloadedBytes,
+              contentLength: nextContentLength,
+            });
             setStage("installing");
           }
         });
 
+        await appendUpdaterDebugLog("install_succeeded", {
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+          contentLength: nextContentLength,
+          downloadedBytes: useUpdaterStore.getState().downloadedBytes,
+          progressEvents,
+        });
         toast.success("Actualización instalada. Reiniciando Taskify...");
         setDialogOpen(false);
         setAvailableUpdate(null);
@@ -162,6 +242,14 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         await relaunch();
       } catch (error) {
         setStage("available");
+        await appendUpdaterDebugLog("install_failed", {
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+          downloadedBytes: useUpdaterStore.getState().downloadedBytes,
+          contentLength: useUpdaterStore.getState().contentLength,
+          stage: useUpdaterStore.getState().stage,
+          ...serializeUpdaterError(error),
+        });
         toast.error(normalizeUpdaterError(error));
       } finally {
         installPromise = null;
