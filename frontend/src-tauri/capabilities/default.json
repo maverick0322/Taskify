@@ -22,8 +22,6 @@
     "notification:default",
     "opener:default",
     "process:allow-restart",
-    "updater:allow-check",
-    "updater:allow-download",
-    "updater:allow-install"
+    "updater:default"
   ]
 }

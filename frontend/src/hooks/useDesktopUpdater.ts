@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -20,6 +21,7 @@ type CheckForUpdatesOptions = {
 
 const UPDATER_UP_TO_DATE_MESSAGE =
   "¡Todo al día! Estás usando la versión más reciente de Taskify.";
+const SIDECAR_SHUTDOWN_DELAY_MS = 250;
 
 function normalizeUpdaterError(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
@@ -43,6 +45,10 @@ function isBenignMetadataError(error: unknown) {
     message.includes("could not parse") ||
     message.includes("unable to parse")
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
@@ -135,6 +141,16 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         setStage("downloading");
         resetProgress();
 
+        try {
+          await invoke<boolean>("shutdown_backend_sidecar");
+        } catch (error) {
+          setStage("available");
+          toast.error("No pudimos cerrar el motor local antes de actualizar.");
+          return;
+        }
+
+        await delay(SIDECAR_SHUTDOWN_DELAY_MS);
+
         await availableUpdate.handle.downloadAndInstall((event) => {
           if (event.event === "Started") {
             nextContentLength = event.data.contentLength ?? null;
@@ -154,7 +170,6 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
             setStage("installing");
           }
         });
-
         toast.success("Actualización instalada. Reiniciando Taskify...");
         setDialogOpen(false);
         setAvailableUpdate(null);
