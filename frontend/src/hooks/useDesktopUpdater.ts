@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -21,6 +22,7 @@ type CheckForUpdatesOptions = {
 const UPDATER_UP_TO_DATE_MESSAGE =
   "¡Todo al día! Estás usando la versión más reciente de Taskify.";
 const UPDATER_DEBUG_LOG_FILE = "updater-debug.log";
+const SIDECAR_SHUTDOWN_DELAY_MS = 250;
 
 function serializeUpdaterError(error: unknown) {
   if (error instanceof Error) {
@@ -96,6 +98,10 @@ function isBenignMetadataError(error: unknown) {
     message.includes("could not parse") ||
     message.includes("unable to parse")
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
@@ -193,6 +199,34 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
 
         setStage("downloading");
         resetProgress();
+
+        await appendUpdaterDebugLog("sidecar_shutdown_started", {
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+        });
+
+        let sidecarKilled = false;
+        try {
+          sidecarKilled = await invoke<boolean>("shutdown_backend_sidecar");
+        } catch (error) {
+          setStage("available");
+          await appendUpdaterDebugLog("sidecar_shutdown_failed", {
+            currentVersion: availableUpdate.currentVersion,
+            targetVersion: availableUpdate.version,
+            ...serializeUpdaterError(error),
+          });
+          toast.error("No pudimos cerrar el motor local antes de actualizar.");
+          return;
+        }
+
+        await appendUpdaterDebugLog("sidecar_shutdown_completed", {
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+          result: sidecarKilled ? "killed" : "already_stopped",
+          delayMs: SIDECAR_SHUTDOWN_DELAY_MS,
+        });
+
+        await delay(SIDECAR_SHUTDOWN_DELAY_MS);
 
         await availableUpdate.handle.downloadAndInstall((event) => {
           if (event.event === "Started") {

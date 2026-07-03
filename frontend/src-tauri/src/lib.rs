@@ -74,6 +74,11 @@ fn clear_secure_session() -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn shutdown_backend_sidecar(app: tauri::AppHandle) -> Result<bool, String> {
+    terminate_backend_sidecar(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -109,21 +114,37 @@ pub fn run() {
             greet,
             set_secure_session,
             get_secure_session,
-            clear_secure_session
+            clear_secure_session,
+            shutdown_backend_sidecar
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::ExitRequested { .. } = event {
-                if let Some(sidecar) = app_handle.try_state::<TaskifyBackendSidecar>() {
-                    if let Ok(mut child) = sidecar.0.lock() {
-                        if let Some(process) = child.take() {
-                            let _ = process.kill();
-                        }
-                    }
-                }
+                let _ = terminate_backend_sidecar(app_handle);
             }
         });
+}
+
+fn terminate_backend_sidecar<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> Result<bool, String> {
+    let Some(sidecar) = manager.try_state::<TaskifyBackendSidecar>() else {
+        return Ok(false);
+    };
+
+    let mut child = sidecar
+        .0
+        .lock()
+        .map_err(|error| format!("lock backend sidecar state: {error}"))?;
+
+    let Some(process) = child.take() else {
+        return Ok(false);
+    };
+
+    process
+        .kill()
+        .map_err(|error| format!("kill backend sidecar: {error}"))?;
+
+    Ok(true)
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
