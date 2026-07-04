@@ -504,18 +504,13 @@ function pendingPaymentFromTransaction(
 
 function mapCreditCardPayable(
   card: CreditCardSummary,
-  anchorMonth: Date,
-  monthRange: { startDate: string; endDate: string },
 ): PendingPayment | null {
   if (card.currentDebtCents <= 0) {
     return null
   }
-  const dueDate = creditCardPaymentDueDate(card, anchorMonth)
+  const dueDate = creditCardPaymentDueDate(card)
   const dueDateRaw = formatDateInput(dueDate)
   const currentDate = todayDate()
-  if (dueDateRaw < monthRange.startDate || dueDateRaw > monthRange.endDate) {
-    return null
-  }
 
   return {
     id: `credit-card-${card.id}`,
@@ -531,9 +526,8 @@ function mapCreditCardPayable(
   }
 }
 
-function creditCardPaymentDueDate(card: CreditCardSummary, anchorMonth: Date) {
-  const currentDate = new Date(anchorMonth)
-  currentDate.setHours(0, 0, 0, 0)
+function creditCardPaymentDueDate(card: CreditCardSummary) {
+  const currentDate = todayDate()
   const cutoffDate = billingCycleDate(
     currentDate.getFullYear(),
     currentDate.getMonth(),
@@ -569,7 +563,7 @@ function iconForCategory(category: string): ElementType {
 function financialQueryKeys(startDate: string, endDate: string) {
   return {
     transactions: ["financial", "transactions", startDate, endDate] as const,
-    payables: ["financial", "accounts-payable", startDate, endDate] as const,
+    payables: ["financial", "accounts-payable"] as const,
     summary: ["financial", "summary", startDate, endDate] as const,
     creditCards: ["financial", "credit-cards"] as const,
     accounts: ["financial", "accounts"] as const,
@@ -1842,11 +1836,7 @@ export function FinancialControlView() {
     isLoading: isPayablesLoading,
   } = useQuery({
     queryKey: queryKeys.payables,
-    queryFn: () =>
-      getTransactions({
-        startDate: monthRange.startDate,
-        endDate: monthRange.endDate,
-      }),
+    queryFn: () => getTransactions(),
   })
   const {
     data: financialSummary,
@@ -2111,9 +2101,9 @@ export function FinancialControlView() {
   const creditCardPendingPayments = useMemo(
     () =>
       creditCards
-        .map((card) => mapCreditCardPayable(card, currentViewMonth, monthRange))
+        .map(mapCreditCardPayable)
         .filter((payment): payment is PendingPayment => Boolean(payment)),
-    [creditCards, currentViewMonth, monthRange],
+    [creditCards],
   )
   const pendingPayments = useMemo(
     () => [...manualPendingPayments, ...creditCardPendingPayments],
