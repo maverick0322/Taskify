@@ -5,7 +5,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 
 import { useToast } from "@/components/ui/toast-provider";
 import {
-  appendDesktopDiagnostic,
+  appendUpdaterDiagnostic,
   diagnosticErrorDetails,
 } from "@/services/desktopDiagnostics";
 import { isTauriRuntime } from "@/lib/runtime";
@@ -89,7 +89,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
       checkPromise = (async () => {
         setStage("checking");
         resetProgress();
-        void appendDesktopDiagnostic({
+        void appendUpdaterDiagnostic({
           context: "updater_check_started",
           area: "updater",
           stage: "checking",
@@ -98,7 +98,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         try {
           const update = await check();
           if (!update) {
-            void appendDesktopDiagnostic({
+            void appendUpdaterDiagnostic({
               context: "updater_no_update",
               area: "updater",
               stage: "idle",
@@ -118,7 +118,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
             rawJson: update.rawJson,
             handle: update,
           });
-          void appendDesktopDiagnostic({
+          void appendUpdaterDiagnostic({
             context: "updater_update_available",
             area: "updater",
             stage: "available",
@@ -128,7 +128,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           return true;
         } catch (error) {
           setStage("idle");
-          void appendDesktopDiagnostic({
+          void appendUpdaterDiagnostic({
             context: "updater_check_failed",
             area: "updater",
             stage: "idle",
@@ -167,7 +167,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
 
         setStage("downloading");
         resetProgress();
-        void appendDesktopDiagnostic({
+        void appendUpdaterDiagnostic({
           context: "sidecar_shutdown_started",
           area: "updater",
           stage: "downloading",
@@ -178,7 +178,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         try {
           const sidecarShutdownResult =
             await invoke<boolean>("shutdown_backend_sidecar");
-          void appendDesktopDiagnostic({
+          void appendUpdaterDiagnostic({
             context: "sidecar_shutdown_completed",
             area: "updater",
             stage: "downloading",
@@ -187,7 +187,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
             sidecarShutdownResult,
           });
         } catch (error) {
-          void appendDesktopDiagnostic({
+          void appendUpdaterDiagnostic({
             context: "sidecar_shutdown_failed",
             area: "updater",
             stage: "available",
@@ -201,7 +201,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         }
 
         await delay(SIDECAR_SHUTDOWN_DELAY_MS);
-        void appendDesktopDiagnostic({
+        void appendUpdaterDiagnostic({
           context: "updater_download_started",
           area: "updater",
           stage: "downloading",
@@ -213,7 +213,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
           if (event.event === "Started") {
             nextContentLength = event.data.contentLength ?? null;
             setDownloadProgress(0, nextContentLength);
-            void appendDesktopDiagnostic({
+            void appendUpdaterDiagnostic({
               context: "updater_download_progress",
               area: "updater",
               stage: "downloading",
@@ -230,7 +230,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
             const downloadedBytes =
               useUpdaterStore.getState().downloadedBytes + event.data.chunkLength;
             setDownloadProgress(downloadedBytes, nextContentLength);
-            void appendDesktopDiagnostic({
+            void appendUpdaterDiagnostic({
               context: "updater_download_progress",
               area: "updater",
               stage: "downloading",
@@ -246,7 +246,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
 
           if (event.event === "Finished") {
             setStage("installing");
-            void appendDesktopDiagnostic({
+            void appendUpdaterDiagnostic({
               context: "updater_installing",
               area: "updater",
               stage: "installing",
@@ -264,7 +264,7 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         resetProgress();
         await relaunch();
       } catch (error) {
-        void appendDesktopDiagnostic({
+        void appendUpdaterDiagnostic({
           context: "updater_download_install_failed",
           area: "updater",
           stage: useUpdaterStore.getState().stage,
