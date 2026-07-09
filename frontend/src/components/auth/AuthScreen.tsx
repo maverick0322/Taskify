@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { useTheme } from "@/components/theme-provider";
 import { isTauriRuntime } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
+import { appendDesktopDiagnostic } from "@/services/desktopDiagnostics";
 import { getFriendlyErrorMessage, normalizeApiError, resolveApiBaseUrl } from "@/services/api";
 import { login, register } from "@/services/authService";
 import { persistSession } from "@/services/secureSession";
@@ -90,6 +91,21 @@ export function AuthScreen() {
         error,
         "No pudimos completar la autenticación.",
       );
+      const friendlyMessage = getFriendlyErrorMessage(
+        error,
+        "No pudimos completar la autenticación.",
+      );
+      void appendDesktopDiagnostic({
+        context: "auth_login_failed",
+        area: "auth-ui",
+        isLogin,
+        email,
+        apiBaseUrl: resolveApiBaseUrl(),
+        status: normalizedError.status,
+        backendMessage: normalizedError.backendMessage,
+        technicalMessage: normalizedError.technicalMessage,
+        friendlyMessage,
+      });
       console.error("[AUTH][UI] Authentication flow failed", {
         isLogin,
         isTauriRuntime: isTauriRuntime(),
@@ -100,10 +116,7 @@ export function AuthScreen() {
         technicalMessage: normalizedError.technicalMessage,
       });
       setErrorMessage(
-        getFriendlyErrorMessage(
-          error,
-          "No pudimos completar la autenticación.",
-        ),
+        friendlyMessage,
       );
     } finally {
       setIsLoading(false);

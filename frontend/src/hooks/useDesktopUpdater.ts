@@ -4,6 +4,10 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 import { useToast } from "@/components/ui/toast-provider";
+import {
+  appendUpdaterDiagnostic,
+  diagnosticErrorDetails,
+} from "@/services/desktopDiagnostics";
 import { isTauriRuntime } from "@/lib/runtime";
 import { useUpdaterStore } from "@/store/useUpdaterStore";
 
@@ -85,10 +89,20 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
       checkPromise = (async () => {
         setStage("checking");
         resetProgress();
+        void appendUpdaterDiagnostic({
+          context: "updater_check_started",
+          area: "updater",
+          stage: "checking",
+        });
 
         try {
           const update = await check();
           if (!update) {
+            void appendUpdaterDiagnostic({
+              context: "updater_no_update",
+              area: "updater",
+              stage: "idle",
+            });
             setStage("idle");
             if (!silentIfNoUpdate) {
               toast.success(UPDATER_UP_TO_DATE_MESSAGE);
@@ -104,9 +118,22 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
             rawJson: update.rawJson,
             handle: update,
           });
+          void appendUpdaterDiagnostic({
+            context: "updater_update_available",
+            area: "updater",
+            stage: "available",
+            currentVersion: update.currentVersion,
+            targetVersion: update.version,
+          });
           return true;
         } catch (error) {
           setStage("idle");
+          void appendUpdaterDiagnostic({
+            context: "updater_check_failed",
+            area: "updater",
+            stage: "idle",
+            ...diagnosticErrorDetails(error),
+          });
           if (isBenignMetadataError(error)) {
             if (!silentIfNoUpdate) {
               toast.success(UPDATER_UP_TO_DATE_MESSAGE);
@@ -140,34 +167,95 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
 
         setStage("downloading");
         resetProgress();
+        void appendUpdaterDiagnostic({
+          context: "sidecar_shutdown_started",
+          area: "updater",
+          stage: "downloading",
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+        });
 
         try {
-          await invoke<boolean>("shutdown_backend_sidecar");
+          const sidecarShutdownResult =
+            await invoke<boolean>("shutdown_backend_sidecar");
+          void appendUpdaterDiagnostic({
+            context: "sidecar_shutdown_completed",
+            area: "updater",
+            stage: "downloading",
+            currentVersion: availableUpdate.currentVersion,
+            targetVersion: availableUpdate.version,
+            sidecarShutdownResult,
+          });
         } catch (error) {
+          void appendUpdaterDiagnostic({
+            context: "sidecar_shutdown_failed",
+            area: "updater",
+            stage: "available",
+            currentVersion: availableUpdate.currentVersion,
+            targetVersion: availableUpdate.version,
+            ...diagnosticErrorDetails(error),
+          });
           setStage("available");
           toast.error("No pudimos cerrar el motor local antes de actualizar.");
           return;
         }
 
         await delay(SIDECAR_SHUTDOWN_DELAY_MS);
+        void appendUpdaterDiagnostic({
+          context: "updater_download_started",
+          area: "updater",
+          stage: "downloading",
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+        });
 
         await availableUpdate.handle.downloadAndInstall((event) => {
           if (event.event === "Started") {
             nextContentLength = event.data.contentLength ?? null;
             setDownloadProgress(0, nextContentLength);
+            void appendUpdaterDiagnostic({
+              context: "updater_download_progress",
+              area: "updater",
+              stage: "downloading",
+              currentVersion: availableUpdate.currentVersion,
+              targetVersion: availableUpdate.version,
+              downloadedBytes: 0,
+              contentLength: nextContentLength,
+              progressEvent: "Started",
+            });
             return;
           }
 
           if (event.event === "Progress") {
-            setDownloadProgress(
-              useUpdaterStore.getState().downloadedBytes + event.data.chunkLength,
-              nextContentLength,
-            );
+            const downloadedBytes =
+              useUpdaterStore.getState().downloadedBytes + event.data.chunkLength;
+            setDownloadProgress(downloadedBytes, nextContentLength);
+            void appendUpdaterDiagnostic({
+              context: "updater_download_progress",
+              area: "updater",
+              stage: "downloading",
+              currentVersion: availableUpdate.currentVersion,
+              targetVersion: availableUpdate.version,
+              downloadedBytes,
+              contentLength: nextContentLength,
+              progressEvent: "Progress",
+              chunkLength: event.data.chunkLength,
+            });
             return;
           }
 
           if (event.event === "Finished") {
             setStage("installing");
+            void appendUpdaterDiagnostic({
+              context: "updater_installing",
+              area: "updater",
+              stage: "installing",
+              currentVersion: availableUpdate.currentVersion,
+              targetVersion: availableUpdate.version,
+              downloadedBytes: useUpdaterStore.getState().downloadedBytes,
+              contentLength: nextContentLength,
+              progressEvent: "Finished",
+            });
           }
         });
         toast.success("Actualización instalada. Reiniciando Taskify...");
@@ -176,6 +264,16 @@ export function useDesktopUpdater(options?: UseDesktopUpdaterOptions) {
         resetProgress();
         await relaunch();
       } catch (error) {
+        void appendUpdaterDiagnostic({
+          context: "updater_download_install_failed",
+          area: "updater",
+          stage: useUpdaterStore.getState().stage,
+          currentVersion: availableUpdate.currentVersion,
+          targetVersion: availableUpdate.version,
+          downloadedBytes: useUpdaterStore.getState().downloadedBytes,
+          contentLength: useUpdaterStore.getState().contentLength,
+          ...diagnosticErrorDetails(error),
+        });
         setStage("available");
         toast.error(normalizeUpdaterError(error));
       } finally {

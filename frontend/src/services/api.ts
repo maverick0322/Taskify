@@ -1,6 +1,10 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { isTauriRuntime } from "@/lib/runtime";
 import {
+  appendDesktopDiagnostic,
+  diagnosticErrorDetails,
+} from "@/services/desktopDiagnostics";
+import {
   clearStoredSession,
   loadStoredSession,
   persistSession,
@@ -19,6 +23,11 @@ type TokenPairResponse = {
 type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
   timeoutMessage?: string;
+};
+
+type RequestDiagnosticMetadata = {
+  apiBaseUrl: string;
+  path: string;
 };
 
 type AccessTokenClaims = {
@@ -75,6 +84,9 @@ async function requestWithAuth<T>(
   const response = await safeFetch(requestUrl, {
     ...options,
     headers,
+  }, {
+    apiBaseUrl,
+    path,
   });
 
   if (response.status === 401 && canRefresh && shouldAttemptRefresh(path)) {
@@ -98,6 +110,21 @@ async function requestWithAuth<T>(
   }
 
   if (!response.ok) {
+    void appendDesktopDiagnostic({
+      context: "api_request_http_failed",
+      area: "api",
+      apiBaseUrl,
+      path,
+      requestUrl,
+      method: options.method ?? "GET",
+      port: safeUrlPort(requestUrl),
+      timeoutMs: options.timeoutMs ?? null,
+      hasAuthorization: headers.has("Authorization"),
+      responseStatus: response.status,
+      responseStatusText: response.statusText,
+      navigatorOnline:
+        typeof navigator !== "undefined" ? navigator.onLine : undefined,
+    });
     if (typeof window !== "undefined") {
       console.error("[API] Request failed", {
         path,
@@ -267,7 +294,11 @@ async function errorMessageFromResponse(response: Response): Promise<string> {
   }
 }
 
-async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+async function safeFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  diagnosticMetadata?: RequestDiagnosticMetadata,
+) {
   const timeoutOptions = init as ApiRequestOptions | undefined;
   const timeoutMs = timeoutOptions?.timeoutMs ?? 0;
   const timeoutMessage = timeoutOptions?.timeoutMessage;
@@ -288,12 +319,40 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   try {
+    void appendDesktopDiagnostic({
+      context: "api_request_started",
+      area: "api",
+      apiBaseUrl: diagnosticMetadata?.apiBaseUrl,
+      path: diagnosticMetadata?.path,
+      requestUrl: String(input),
+      method: init?.method ?? "GET",
+      port: safeUrlPort(input),
+      timeoutMs: timeoutMs || null,
+      hasAuthorization: new Headers(init?.headers).has("Authorization"),
+      navigatorOnline:
+        typeof navigator !== "undefined" ? navigator.onLine : undefined,
+    });
     return await fetch(input, {
       ...init,
       signal: controller.signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError" && timeoutMs > 0) {
+      void appendDesktopDiagnostic({
+        context: "api_request_network_failed",
+        area: "api",
+        apiBaseUrl: diagnosticMetadata?.apiBaseUrl,
+        path: diagnosticMetadata?.path,
+        requestUrl: String(input),
+        method: init?.method ?? "GET",
+        port: safeUrlPort(input),
+        timeoutMs,
+        hasAuthorization: new Headers(init?.headers).has("Authorization"),
+        navigatorOnline:
+          typeof navigator !== "undefined" ? navigator.onLine : undefined,
+        technicalMessage: "request timeout",
+        ...diagnosticErrorDetails(error),
+      });
       throw new ApiError(
         408,
         timeoutMessage ?? "La sincronización inicial está tardando demasiado. Inténtalo de nuevo.",
@@ -308,12 +367,47 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
         error,
       });
     }
+    void appendDesktopDiagnostic({
+      context: "api_request_network_failed",
+      area: "api",
+      apiBaseUrl: diagnosticMetadata?.apiBaseUrl,
+      path: diagnosticMetadata?.path,
+      requestUrl: String(input),
+      method: init?.method ?? "GET",
+      port: safeUrlPort(input),
+      timeoutMs: timeoutMs || null,
+      hasAuthorization: new Headers(init?.headers).has("Authorization"),
+      navigatorOnline:
+        typeof navigator !== "undefined" ? navigator.onLine : undefined,
+      ...diagnosticErrorDetails(error),
+    });
     throw networkApiError(error);
   } finally {
     if (timeoutID) {
       clearTimeout(timeoutID);
     }
     signal?.removeEventListener("abort", abortListener);
+  }
+}
+
+function safeUrlPort(input: RequestInfo | URL) {
+  try {
+    const url = typeof input === "string" ? new URL(input) : input instanceof URL ? input : new URL(input.url);
+    if (url.port) {
+      return url.port;
+    }
+
+    if (url.protocol === "https:") {
+      return "443";
+    }
+
+    if (url.protocol === "http:") {
+      return "80";
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 }
 
