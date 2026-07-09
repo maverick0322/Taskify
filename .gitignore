@@ -1,2 +1,4 @@
 .env
 backend/.env
+# Ignorar binarios locales compilados del sidecar
+frontend/src-tauri/bin/backend-*.exe
