@@ -1,40 +1,45 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   Popover,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-} from "@/components/ui/popover"
-import { Sidebar } from "@/components/taskify/sidebar"
-import { NewTaskDialog } from "@/components/taskify/new-task-dialog"
-import { useTheme } from "@/components/theme-provider"
-import { ProfileAvatar } from "@/components/profile-avatar"
-import type { CurrentView } from "@/components/taskify/navigation"
-import { buildCriticalAlerts, getCurrentMonthRange } from "@/lib/critical-alerts"
-import { useUIStore } from "@/store/useUIStore"
-import { updateBoardName, type Board } from "@/services/boardService"
-import { getTransactions } from "@/services/financial_api"
-import { getTasks } from "@/services/taskService"
-import { Plus, Bell, Menu, Moon, Pencil, Sun } from "lucide-react"
+} from "@/components/ui/popover";
+import { Sidebar } from "@/components/taskify/sidebar";
+import { NewTaskDialog } from "@/components/taskify/new-task-dialog";
+import { useTheme } from "@/components/theme-provider";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import type { CurrentView } from "@/components/taskify/navigation";
+import {
+  buildCriticalAlerts,
+  getCurrentMonthRange,
+} from "@/lib/critical-alerts";
+import { isTauriRuntime } from "@/lib/runtime";
+import { useUIStore } from "@/store/useUIStore";
+import { useDesktopSyncStore } from "@/store/useDesktopSyncStore";
+import { updateBoardName, type Board } from "@/services/boardService";
+import { getTransactions } from "@/services/financial_api";
+import { getTasks } from "@/services/taskService";
+import { Plus, Bell, Menu, Moon, Pencil, Sun } from "lucide-react";
 
 interface HeaderProps {
-  activeView?: CurrentView
-  boards?: Board[]
-  boardsError?: string
-  boardsLoading?: boolean
-  onViewChange?: (view: CurrentView) => void
-  selectedBoardId?: string | null
-  selectedBoardName?: string
-  subtitle?: string
-  onBoardSelect?: (board: Board) => void
+  activeView?: CurrentView;
+  boards?: Board[];
+  boardsError?: string;
+  boardsLoading?: boolean;
+  onViewChange?: (view: CurrentView) => void;
+  selectedBoardId?: string | null;
+  selectedBoardName?: string;
+  subtitle?: string;
+  onBoardSelect?: (board: Board) => void;
 }
 
 const viewTitle: Record<CurrentView, string> = {
@@ -42,14 +47,14 @@ const viewTitle: Record<CurrentView, string> = {
   tasks: "Mis Tareas",
   agenda: "Agenda",
   financial: "Control financiero",
-}
+};
 
 const fallbackViewSubtitle: Record<CurrentView, string> = {
   dashboard: "Resumen general de tu espacio de trabajo",
   tasks: "0 tareas",
   agenda: "0 tareas",
   financial: "Seguimiento financiero de tus proyectos",
-}
+};
 
 export function Header({
   activeView = "tasks",
@@ -62,26 +67,31 @@ export function Header({
   subtitle,
   onBoardSelect,
 }: HeaderProps) {
-  const queryClient = useQueryClient()
-  const { resolvedTheme, setTheme } = useTheme()
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [isEditingBoardName, setIsEditingBoardName] = useState(false)
-  const [boardNameDraft, setBoardNameDraft] = useState(selectedBoardName ?? "")
-  const [boardNameError, setBoardNameError] = useState("")
-  const newTaskOpen = useUIStore((state) => state.isNewTaskModalOpen)
-  const setNewTaskOpen = useUIStore((state) => state.setNewTaskModalOpen)
-  const notificationsOpen = useUIStore((state) => state.isNotificationsOpen)
-  const setNotificationsOpen = useUIStore((state) => state.setNotificationsOpen)
-  const boardNameInputRef = useRef<HTMLInputElement>(null)
-  const skipNextBoardNameBlur = useRef(false)
-  const canEditBoardName = activeView === "tasks" && Boolean(selectedBoardId && selectedBoardName)
-  const currentMonthRange = useMemo(() => getCurrentMonthRange(), [])
+  const queryClient = useQueryClient();
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isEditingBoardName, setIsEditingBoardName] = useState(false);
+  const [boardNameDraft, setBoardNameDraft] = useState(selectedBoardName ?? "");
+  const [boardNameError, setBoardNameError] = useState("");
+  const newTaskOpen = useUIStore((state) => state.isNewTaskModalOpen);
+  const setNewTaskOpen = useUIStore((state) => state.setNewTaskModalOpen);
+  const notificationsOpen = useUIStore((state) => state.isNotificationsOpen);
+  const setNotificationsOpen = useUIStore(
+    (state) => state.setNotificationsOpen,
+  );
+  const desktopSyncStatus = useDesktopSyncStore((state) => state.status);
+  const desktopSyncMessage = useDesktopSyncStore((state) => state.message);
+  const boardNameInputRef = useRef<HTMLInputElement>(null);
+  const skipNextBoardNameBlur = useRef(false);
+  const canEditBoardName =
+    activeView === "tasks" && Boolean(selectedBoardId && selectedBoardName);
+  const currentMonthRange = useMemo(() => getCurrentMonthRange(), []);
   const criticalTasksQuery = useQuery({
     queryKey: ["tasks", "global"],
     queryFn: () => getTasks(),
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-  })
+  });
   const criticalTransactionsQuery = useQuery({
     queryKey: [
       "financial",
@@ -96,7 +106,7 @@ export function Header({
       }),
     refetchOnMount: true,
     refetchOnWindowFocus: true,
-  })
+  });
   const alerts = useMemo(
     () =>
       buildCriticalAlerts({
@@ -104,15 +114,16 @@ export function Header({
         transactions: criticalTransactionsQuery.data ?? [],
       }),
     [criticalTasksQuery.data, criticalTransactionsQuery.data],
-  )
-  const alertsLoading = criticalTasksQuery.isLoading || criticalTransactionsQuery.isLoading
+  );
+  const alertsLoading =
+    criticalTasksQuery.isLoading || criticalTransactionsQuery.isLoading;
   const updateBoardNameMutation = useMutation({
     mutationFn: ({ boardId, name }: { boardId: string; name: string }) =>
       updateBoardName(boardId, name),
     onMutate: async ({ boardId, name }) => {
-      setBoardNameError("")
-      await queryClient.cancelQueries({ queryKey: ["boards"] })
-      const previousBoards = queryClient.getQueryData<Board[]>(["boards"])
+      setBoardNameError("");
+      await queryClient.cancelQueries({ queryKey: ["boards"] });
+      const previousBoards = queryClient.getQueryData<Board[]>(["boards"]);
 
       queryClient.setQueryData<Board[]>(["boards"], (current = []) =>
         current.map((board) =>
@@ -120,80 +131,127 @@ export function Header({
             ? { ...board, name, updatedAt: new Date().toISOString() }
             : board,
         ),
-      )
+      );
 
-      return { previousBoards }
+      return { previousBoards };
     },
     onError: (_error, _variables, context) => {
       if (context?.previousBoards) {
-        queryClient.setQueryData(["boards"], context.previousBoards)
+        queryClient.setQueryData(["boards"], context.previousBoards);
       }
-      setBoardNameDraft(selectedBoardName ?? "")
-      setBoardNameError("No se pudo renombrar el tablero")
-      setIsEditingBoardName(true)
+      setBoardNameDraft(selectedBoardName ?? "");
+      setBoardNameError("No se pudo renombrar el tablero");
+      setIsEditingBoardName(true);
     },
     onSuccess: async (_data, variables) => {
-      setBoardNameDraft(variables.name)
-      setIsEditingBoardName(false)
-      await queryClient.invalidateQueries({ queryKey: ["boards"] })
-      await queryClient.invalidateQueries({ queryKey: ["boards", variables.boardId] })
+      setBoardNameDraft(variables.name);
+      setIsEditingBoardName(false);
+      await queryClient.invalidateQueries({ queryKey: ["boards"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["boards", variables.boardId],
+      });
     },
-  })
+  });
+
+  const desktopSyncBadge = useMemo(() => {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+
+    switch (desktopSyncStatus) {
+      case "connected":
+        return {
+          label: "Sync activa",
+          className:
+            "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+          title: "La sincronización remota está activa.",
+        };
+      case "offline":
+        return {
+          label: "Solo local",
+          className:
+            "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+          title:
+            desktopSyncMessage ??
+            "La sesión remota no está disponible. Seguimos trabajando con tus datos locales.",
+        };
+      case "error":
+        return {
+          label: "Sync pendiente",
+          className: "border-destructive/30 bg-destructive/10 text-destructive",
+          title:
+            desktopSyncMessage ??
+            "No pudimos sincronizar con la nube por ahora. Tus datos locales siguen disponibles.",
+        };
+      default:
+        return {
+          label: "Reconectando",
+          className:
+            "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          title:
+            desktopSyncMessage ??
+            "La sincronización remota sigue pendiente. Seguimos trabajando con tus datos locales.",
+        };
+    }
+  }, [desktopSyncMessage, desktopSyncStatus]);
 
   useEffect(() => {
     if (!isEditingBoardName) {
-      setBoardNameDraft(selectedBoardName ?? "")
-      setBoardNameError("")
+      setBoardNameDraft(selectedBoardName ?? "");
+      setBoardNameError("");
     }
-  }, [isEditingBoardName, selectedBoardName])
+  }, [isEditingBoardName, selectedBoardName]);
 
   useEffect(() => {
     if (!isEditingBoardName) {
-      return
+      return;
     }
-    boardNameInputRef.current?.focus()
-    boardNameInputRef.current?.select()
-  }, [isEditingBoardName])
+    boardNameInputRef.current?.focus();
+    boardNameInputRef.current?.select();
+  }, [isEditingBoardName]);
 
   function startBoardNameEdit() {
     if (!canEditBoardName) {
-      return
+      return;
     }
-    setBoardNameDraft(selectedBoardName ?? "")
-    setBoardNameError("")
-    setIsEditingBoardName(true)
+    setBoardNameDraft(selectedBoardName ?? "");
+    setBoardNameError("");
+    setIsEditingBoardName(true);
   }
 
   function cancelBoardNameEdit() {
-    skipNextBoardNameBlur.current = true
-    setBoardNameDraft(selectedBoardName ?? "")
-    setBoardNameError("")
-    setIsEditingBoardName(false)
+    skipNextBoardNameBlur.current = true;
+    setBoardNameDraft(selectedBoardName ?? "");
+    setBoardNameError("");
+    setIsEditingBoardName(false);
   }
 
   function commitBoardNameEdit() {
     if (!selectedBoardId || !selectedBoardName) {
-      setIsEditingBoardName(false)
-      return
+      setIsEditingBoardName(false);
+      return;
     }
 
-    const nextName = boardNameDraft.trim()
-    const currentName = selectedBoardName.trim()
+    const nextName = boardNameDraft.trim();
+    const currentName = selectedBoardName.trim();
 
     if (nextName === currentName) {
-      setBoardNameDraft(selectedBoardName)
-      setBoardNameError("")
-      setIsEditingBoardName(false)
-      return
+      setBoardNameDraft(selectedBoardName);
+      setBoardNameError("");
+      setIsEditingBoardName(false);
+      return;
     }
 
     if (nextName.length < 3) {
-      setBoardNameError("Usa al menos 3 caracteres")
-      setIsEditingBoardName(true)
-      return
+      setBoardNameError("Usa al menos 3 caracteres");
+      setIsEditingBoardName(true);
+      return;
     }
 
-    updateBoardNameMutation.mutate({ boardId: selectedBoardId, name: nextName })
+    updateBoardNameMutation.mutate({
+      boardId: selectedBoardId,
+      name: nextName,
+    });
   }
 
   return (
@@ -216,12 +274,12 @@ export function Header({
             boardsError={boardsError}
             boardsLoading={boardsLoading}
             onViewChange={(view) => {
-              onViewChange?.(view)
-              setMobileOpen(false)
+              onViewChange?.(view);
+              setMobileOpen(false);
             }}
             onBoardSelect={(board) => {
-              onBoardSelect?.(board)
-              setMobileOpen(false)
+              onBoardSelect?.(board);
+              setMobileOpen(false);
             }}
             selectedBoardId={selectedBoardId}
           />
@@ -240,6 +298,16 @@ export function Header({
           <Menu className="size-5" />
         </Button>
 
+        {desktopSyncBadge ? (
+          <Badge
+            variant="outline"
+            className={desktopSyncBadge.className}
+            title={desktopSyncBadge.title}
+          >
+            {desktopSyncBadge.label}
+          </Badge>
+        ) : null}
+
         {/* Board Title */}
         <div className="flex-1 min-w-0">
           {isEditingBoardName && canEditBoardName ? (
@@ -251,31 +319,34 @@ export function Header({
                 className="h-9 max-w-sm rounded-md border-border bg-background px-2 text-xl font-bold tracking-tight"
                 aria-label="Nombre del tablero"
                 onChange={(event) => {
-                  setBoardNameDraft(event.target.value)
+                  setBoardNameDraft(event.target.value);
                   if (boardNameError) {
-                    setBoardNameError("")
+                    setBoardNameError("");
                   }
                 }}
                 onBlur={() => {
                   if (skipNextBoardNameBlur.current) {
-                    skipNextBoardNameBlur.current = false
-                    return
+                    skipNextBoardNameBlur.current = false;
+                    return;
                   }
-                  commitBoardNameEdit()
+                  commitBoardNameEdit();
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
-                    event.preventDefault()
-                    commitBoardNameEdit()
+                    event.preventDefault();
+                    commitBoardNameEdit();
                   }
                   if (event.key === "Escape") {
-                    event.preventDefault()
-                    cancelBoardNameEdit()
+                    event.preventDefault();
+                    cancelBoardNameEdit();
                   }
                 }}
               />
               {boardNameError ? (
-                <p className="text-xs font-medium text-red-600 dark:text-red-400" role="alert">
+                <p
+                  className="text-xs font-medium text-red-600 dark:text-red-400"
+                  role="alert"
+                >
                   {boardNameError}
                 </p>
               ) : null}
@@ -323,7 +394,9 @@ export function Header({
             size="icon"
             className="relative size-9 text-muted-foreground"
             aria-label="Cambiar tema"
-            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+            onClick={() =>
+              setTheme(resolvedTheme === "dark" ? "light" : "dark")
+            }
           >
             <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -340,11 +413,17 @@ export function Header({
               >
                 <Bell className="size-4" />
                 {alerts.length > 0 ? (
-                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary" aria-hidden="true" />
+                  <span
+                    className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
                 ) : null}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0">
+            <PopoverContent
+              align="end"
+              className="w-96 max-w-[calc(100vw-2rem)] p-0"
+            >
               <PopoverHeader className="px-4 py-3">
                 <PopoverTitle>Notificaciones</PopoverTitle>
                 <p className="text-xs text-muted-foreground">
@@ -424,5 +503,5 @@ export function Header({
         </div>
       </header>
     </>
-  )
+  );
 }

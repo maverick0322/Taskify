@@ -2,7 +2,12 @@ package services
 
 import "sync"
 
-const SyncUpdatedEvent = "sync_updated"
+const (
+	SyncUpdatedEvent         = "sync_updated"
+	SyncStatusConnectedEvent = "sync_status_connected"
+	SyncStatusPendingEvent   = "sync_status_pending"
+	SyncStatusErrorEvent     = "sync_status_error"
+)
 
 type SyncEventHub struct {
 	mutex       sync.RWMutex

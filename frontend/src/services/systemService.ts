@@ -38,6 +38,7 @@ export async function connectDesktopSyncSession(credentials: {
 export async function restoreDesktopSyncSession(): Promise<{
   restored?: boolean;
   initialSyncCompleted?: boolean;
+  syncState?: "connected" | "pending" | "offline" | "error";
 }> {
   if (!isTauriRuntime()) {
     return {};

@@ -25,6 +25,8 @@ var (
 	ErrInvalidRemoteUserData = errors.New("service: remote user data is invalid")
 )
 
+const desktopRemoteRefreshTimeout = 45 * time.Second
+
 type remoteAuthClient interface {
 	AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error)
 	RegisterRemoteUser(ctx context.Context, email, password, firstName, lastName, birthDate string) error
@@ -32,6 +34,7 @@ type remoteAuthClient interface {
 	SyncOnce(ctx context.Context) error
 	ForceFullPull(ctx context.Context) error
 	NeedsBootstrapPull(ctx context.Context) (bool, error)
+	EventHub() *SyncEventHub
 }
 
 // userService implements ports.UserUseCase.
@@ -160,16 +163,29 @@ func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassw
 		return "", "", ErrInternalProcessing
 	}
 	if localErr == nil && localUser != nil {
-		s.logger.Info("[AUTH][DESKTOP] Usuario local encontrado; se intentará validar contra remoto primero", "email", email, "userID", localUser.ID())
+		s.logger.Info("[AUTH][DESKTOP] Usuario local encontrado; se validará localmente primero", "email", email, "userID", localUser.ID())
 	} else {
 		s.logger.Info("[AUTH][DESKTOP] Usuario local no encontrado; se intentará hidratación remota", "email", email)
+	}
+
+	if localErr == nil && localUser != nil {
+		if compareErr := s.hasher.Compare(plainPassword, localUser.PasswordHash()); compareErr == nil {
+			s.logger.Info("[AUTH][DESKTOP] Credenciales locales válidas; se emitirá sesión local inmediata", "email", email, "userID", localUser.ID())
+			accessToken, refreshToken, err := s.issueLocalSession(ctx, localUser)
+			if err != nil {
+				return "", "", err
+			}
+			s.startDesktopRemoteRefresh(email, plainPassword)
+			return accessToken, refreshToken, nil
+		}
+		s.logger.Warn("[AUTH][DESKTOP] Hash local inválido; se intentará validación remota bloqueante", "email", email, "userID", localUser.ID())
 	}
 
 	remoteUser, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
 	if err == nil {
 		if err := s.runInitialDesktopSync(ctx, email); err != nil {
-			s.logger.Error("[AUTH][DESKTOP] El bootstrap inicial falló después del login remoto", "email", email, "error", err)
-			return "", "", ErrInternalProcessing
+			s.logger.Warn("[AUTH][DESKTOP] El bootstrap inicial falló, pero se conservará la sesión local", "email", email, "error", err)
+			s.publishDesktopSyncEvent(SyncStatusPendingEvent)
 		}
 		s.logger.Info("[AUTH][DESKTOP] Autenticación remota e hidratación local completadas", "email", email, "userID", remoteUser.ID())
 		return s.issueLocalSession(ctx, remoteUser)
@@ -184,6 +200,7 @@ func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassw
 			s.logger.Warn("[AUTH][DESKTOP] Fallback local rechazado por hash local inválido", "email", email, "userID", localUser.ID())
 			return "", "", ErrInvalidCredentials
 		}
+		s.publishDesktopSyncEvent(SyncStatusPendingEvent)
 		s.logger.Info("[AUTH][DESKTOP] Fallback local exitoso", "email", email, "userID", localUser.ID())
 		return s.issueLocalSession(ctx, localUser)
 	}
@@ -193,6 +210,46 @@ func (s *userService) authenticateDesktop(ctx context.Context, email, plainPassw
 	}
 	s.logger.Error("[AUTH][DESKTOP] Login desktop falló en hidratación o sesión local", "email", email, "error", err)
 	return "", "", ErrInternalProcessing
+}
+
+func (s *userService) startDesktopRemoteRefresh(email, plainPassword string) {
+	if s.remoteAuth == nil {
+		return
+	}
+
+	s.publishDesktopSyncEvent(SyncStatusPendingEvent)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), desktopRemoteRefreshTimeout)
+		defer cancel()
+
+		s.logger.Info("[AUTH][DESKTOP] Iniciando revalidación remota en background", "email", email)
+
+		remoteUser, err := s.authenticateAndHydrateRemoteUser(ctx, email, plainPassword)
+		if err != nil {
+			if errors.Is(err, ErrRemoteAuthUnavailable) {
+				s.logger.Warn("[AUTH][DESKTOP] Revalidación remota en background pendiente", "email", email, "error", err)
+				s.publishDesktopSyncEvent(SyncStatusPendingEvent)
+				return
+			}
+			if errors.Is(err, ErrInvalidCredentials) {
+				s.logger.Warn("[AUTH][DESKTOP] Revalidación remota en background rechazada por credenciales", "email", email)
+				s.publishDesktopSyncEvent(SyncStatusErrorEvent)
+				return
+			}
+			s.logger.Error("[AUTH][DESKTOP] Revalidación remota en background falló", "email", email, "error", err)
+			s.publishDesktopSyncEvent(SyncStatusErrorEvent)
+			return
+		}
+
+		if err := s.runInitialDesktopSync(ctx, email); err != nil {
+			s.logger.Warn("[AUTH][DESKTOP] Sync inicial en background falló", "email", email, "userID", remoteUser.ID(), "error", err)
+			s.publishDesktopSyncEvent(SyncStatusPendingEvent)
+			return
+		}
+
+		s.logger.Info("[AUTH][DESKTOP] Revalidación remota y sync inicial completados en background", "email", email, "userID", remoteUser.ID())
+	}()
 }
 
 func (s *userService) registerRemote(ctx context.Context, email, plainPassword, firstName, lastName string, birthDate time.Time) (*domain.User, error) {
@@ -221,18 +278,33 @@ func (s *userService) runInitialDesktopSync(ctx context.Context, email string) e
 	if needsBootstrap {
 		s.logger.Info("[AUTH][DESKTOP] Ejecutando ForceFullPull inicial desde el login principal", "email", email)
 		if err := s.remoteAuth.ForceFullPull(ctx); err != nil {
+			s.publishDesktopSyncEvent(SyncStatusErrorEvent)
 			return err
 		}
+		s.publishDesktopSyncEvent(SyncStatusConnectedEvent)
 		s.logger.Info("[AUTH][DESKTOP] ForceFullPull inicial completado desde el login principal", "email", email)
 		return nil
 	}
 
 	s.logger.Info("[AUTH][DESKTOP] Ejecutando SyncOnce inicial desde el login principal", "email", email)
 	if err := s.remoteAuth.SyncOnce(ctx); err != nil {
+		s.publishDesktopSyncEvent(SyncStatusErrorEvent)
 		return err
 	}
+	s.publishDesktopSyncEvent(SyncStatusConnectedEvent)
 	s.logger.Info("[AUTH][DESKTOP] SyncOnce inicial completado desde el login principal", "email", email)
 	return nil
+}
+
+func (s *userService) publishDesktopSyncEvent(eventName string) {
+	if s.remoteAuth == nil {
+		return
+	}
+	eventHub := s.remoteAuth.EventHub()
+	if eventHub == nil {
+		return
+	}
+	eventHub.Publish(eventName)
 }
 
 func (s *userService) authenticateAndHydrateRemoteUser(ctx context.Context, email, plainPassword string) (*domain.User, error) {

@@ -273,8 +273,15 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 	handler.logger.Info("[SYNC][SESSION] Login remoto del sidecar exitoso; iniciando sync inicial", "email", strings.TrimSpace(payload.Email))
 
 	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
-		handler.logger.Error("[SYNC][SESSION] Sync inicial falló después del login remoto", "email", strings.TrimSpace(payload.Email), "error", err)
-		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
+		handler.logger.Warn("[SYNC][SESSION] Sync inicial falló después del login remoto, pero la sesión remota queda activa", "email", strings.TrimSpace(payload.Email), "error", err)
+		if handler.syncService != nil && handler.syncService.EventHub() != nil {
+			handler.syncService.EventHub().Publish(services.SyncStatusPendingEvent)
+		}
+		writeJSON(response, http.StatusOK, map[string]interface{}{
+			"connected":            true,
+			"initialSyncCompleted": false,
+			"syncState":            "pending",
+		})
 		return
 	}
 	handler.logger.Info("[SYNC][SESSION] Login remoto completo con sync inicial aplicado", "email", strings.TrimSpace(payload.Email))
@@ -282,6 +289,7 @@ func (handler *SystemHandler) LoginRemoteSyncSession(response http.ResponseWrite
 	writeJSON(response, http.StatusOK, map[string]interface{}{
 		"connected":            true,
 		"initialSyncCompleted": true,
+		"syncState":            "connected",
 	})
 }
 
@@ -305,22 +313,40 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 		handler.logger.Info("[SYNC][SESSION] Restaurando sesión remota persistida en el sidecar")
 		restored, err := handler.sessionSync.RestorePersistedRemoteSession(request.Context())
 		if err != nil {
-			handler.logger.Error("[SYNC][SESSION] No se pudo restaurar la sesión remota persistida", "error", err)
-			writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
-			return
-		}
-		if !restored {
+			handler.logger.Warn("[SYNC][SESSION] No se pudo restaurar la sesión remota persistida", "error", err)
+			if handler.syncService != nil && handler.syncService.EventHub() != nil {
+				handler.syncService.EventHub().Publish(services.SyncStatusErrorEvent)
+			}
 			writeJSON(response, http.StatusOK, map[string]interface{}{
 				"restored":             false,
 				"initialSyncCompleted": false,
+				"syncState":            "error",
+			})
+			return
+		}
+		if !restored {
+			if handler.syncService != nil && handler.syncService.EventHub() != nil {
+				handler.syncService.EventHub().Publish(services.SyncStatusPendingEvent)
+			}
+			writeJSON(response, http.StatusOK, map[string]interface{}{
+				"restored":             false,
+				"initialSyncCompleted": false,
+				"syncState":            "pending",
 			})
 			return
 		}
 	}
 
 	if err := handler.runInitialDesktopSync(request.Context()); err != nil {
-		handler.logger.Error("[SYNC][SESSION] Sync inicial falló después de restaurar la sesión remota", "error", err)
-		writeJSON(response, http.StatusInternalServerError, errorResponse{Error: "initial sync failed"})
+		handler.logger.Warn("[SYNC][SESSION] Sync inicial falló después de restaurar la sesión remota", "error", err)
+		if handler.syncService != nil && handler.syncService.EventHub() != nil {
+			handler.syncService.EventHub().Publish(services.SyncStatusPendingEvent)
+		}
+		writeJSON(response, http.StatusOK, map[string]interface{}{
+			"restored":             true,
+			"initialSyncCompleted": false,
+			"syncState":            "pending",
+		})
 		return
 	}
 	handler.logger.Info("[SYNC][SESSION] Sesión remota restaurada con sync inicial aplicado")
@@ -328,6 +354,7 @@ func (handler *SystemHandler) RestoreRemoteSyncSession(response http.ResponseWri
 	writeJSON(response, http.StatusOK, map[string]interface{}{
 		"restored":             true,
 		"initialSyncCompleted": true,
+		"syncState":            "connected",
 	})
 }
 
@@ -504,6 +531,8 @@ func purgeSQLiteData(ctx context.Context, database *sql.DB) error {
 		 VALUES ('suppress_outbox', '1')
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		"DELETE FROM account_payable_payments",
+		"DELETE FROM credit_card_payment_allocations",
+		"DELETE FROM credit_card_statement_items",
 		"DELETE FROM credit_card_statements",
 		"DELETE FROM ledger_entries",
 		"DELETE FROM transactions",

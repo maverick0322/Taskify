@@ -326,21 +326,33 @@ func (service *HTTPRemoteSyncService) syncOnce(ctx context.Context, fullPull boo
 	pendingOutbox, pushedOutbox, err := service.pushPendingOutbox(ctx)
 	if err != nil {
 		service.logger.Warn("[SYNC] Push HTTP falló", "pending", pendingOutbox, "pushed", pushedOutbox, "error", err)
+		if service.eventHub != nil {
+			service.eventHub.Publish(SyncStatusErrorEvent)
+		}
 		return err
 	}
 
 	changes, cursor, err := service.pullRemoteChanges(ctx, lastSyncAt)
 	if err != nil {
 		service.logger.Warn("[SYNC] Pull HTTP falló", "cursor", lastSyncAt, "error", err)
+		if service.eventHub != nil {
+			service.eventHub.Publish(SyncStatusErrorEvent)
+		}
 		return err
 	}
 
 	pulledRows, err := service.applyPulledChanges(ctx, changes)
 	if err != nil {
+		if service.eventHub != nil {
+			service.eventHub.Publish(SyncStatusErrorEvent)
+		}
 		return err
 	}
 
 	if err := service.saveSyncState(ctx, remotePullSyncStateKey, cursor); err != nil {
+		if service.eventHub != nil {
+			service.eventHub.Publish(SyncStatusErrorEvent)
+		}
 		return err
 	}
 
@@ -352,6 +364,9 @@ func (service *HTTPRemoteSyncService) syncOnce(ctx context.Context, fullPull boo
 		"pulledRows", pulledRows,
 		"cursor", cursor,
 	)
+	if service.eventHub != nil {
+		service.eventHub.Publish(SyncStatusConnectedEvent)
+	}
 	if pulledRows > 0 && service.eventHub != nil {
 		service.eventHub.Publish(SyncUpdatedEvent)
 	}

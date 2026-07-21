@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,23 +47,23 @@ type syncEventRecorder struct {
 }
 
 type mockRemoteSessionService struct {
-	tokenPair       ports.TokenPair
-	loginErr        error
-	restoredAccess  string
-	restoredRefresh string
+	tokenPair        ports.TokenPair
+	loginErr         error
+	restoredAccess   string
+	restoredRefresh  string
 	restorePersisted bool
 	restoreErr       error
-	cleared         bool
+	cleared          bool
 }
 
 type mockLocalSyncService struct {
-	needsBootstrap     bool
-	needsBootstrapErr  error
-	syncErr            error
-	forceErr           error
-	syncCalls          int
-	forceCalls         int
-	eventHub           *services.SyncEventHub
+	needsBootstrap    bool
+	needsBootstrapErr error
+	syncErr           error
+	forceErr          error
+	syncCalls         int
+	forceCalls        int
+	eventHub          *services.SyncEventHub
 }
 
 func (service *mockLocalSyncService) SyncOnce(ctx context.Context) error {
@@ -464,11 +464,12 @@ func TestSystemHandler_LoginRemoteSyncSessionReturnsErrorWhenInitialSyncFails(t 
 
 	handler.LoginRemoteSyncSession(response, request)
 
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status 500, got %d", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.Code)
 	}
-	if !strings.Contains(response.Body.String(), "initial sync failed") {
-		t.Fatalf("expected initial sync failure body, got %s", response.Body.String())
+	body := response.Body.String()
+	if !strings.Contains(body, `"initialSyncCompleted":false`) || !strings.Contains(body, `"syncState":"pending"`) {
+		t.Fatalf("expected degraded sync response body, got %s", body)
 	}
 }
 
@@ -653,6 +654,14 @@ CREATE TABLE credit_card_statements (
 	created_at DATETIME NOT NULL,
 	updated_at DATETIME NOT NULL,
 	deleted_at DATETIME
+);
+CREATE TABLE credit_card_statement_items (
+	id TEXT PRIMARY KEY, user_id TEXT, statement_id TEXT, transaction_id TEXT,
+	amount_cents INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+);
+CREATE TABLE credit_card_payment_allocations (
+	id TEXT PRIMARY KEY, user_id TEXT, statement_id TEXT, payment_transaction_id TEXT,
+	amount_cents INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 );
 CREATE TABLE account_payable_payments (
 	id TEXT PRIMARY KEY,

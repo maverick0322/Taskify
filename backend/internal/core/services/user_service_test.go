@@ -135,11 +135,28 @@ type mockRemoteAuthClient struct {
 	forceCalls      int
 	email           string
 	password        string
+	eventHub        *SyncEventHub
+	authStarted     chan struct{}
+	unblockAuth     chan struct{}
 }
 
 func (client *mockRemoteAuthClient) AuthenticateRemoteSession(ctx context.Context, email, password string) (ports.TokenPair, error) {
 	client.email = email
 	client.password = password
+	if client.authStarted != nil {
+		select {
+		case <-client.authStarted:
+		default:
+			close(client.authStarted)
+		}
+	}
+	if client.unblockAuth != nil {
+		select {
+		case <-client.unblockAuth:
+		case <-ctx.Done():
+			return ports.TokenPair{}, ErrRemoteAuthUnavailable
+		}
+	}
 	return client.tokenPair, client.authErr
 }
 
@@ -165,6 +182,10 @@ func (client *mockRemoteAuthClient) ForceFullPull(ctx context.Context) error {
 
 func (client *mockRemoteAuthClient) NeedsBootstrapPull(ctx context.Context) (bool, error) {
 	return client.needsBootstrap, nil
+}
+
+func (client *mockRemoteAuthClient) EventHub() *SyncEventHub {
+	return client.eventHub
 }
 
 func TestRegister_NewUser_ReturnsUserAndSaves(t *testing.T) {
@@ -615,6 +636,49 @@ func TestAuthenticate_DesktopRemoteUnavailableFallsBackToLocalUser(t *testing.T)
 	}
 }
 
+func TestAuthenticate_DesktopLocalUserReturnsBeforeRemoteRefreshCompletes(t *testing.T) {
+	localUser := createServiceTestUser(t)
+	mockRepo := &mockUserRepository{userToReturn: localUser}
+	mockSessions := &mockSessionRepository{}
+	mockTokens := &mockTokenGen{tokenPair: validServiceTokenPair()}
+	remoteAuth := &mockRemoteAuthClient{
+		authStarted: make(chan struct{}),
+		unblockAuth: make(chan struct{}),
+		authErr:     ErrRemoteAuthUnavailable,
+	}
+	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, &mockHasher{}, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
+
+	done := make(chan struct{})
+	var accessToken string
+	var refreshToken string
+	var err error
+	go func() {
+		accessToken, refreshToken, err = svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected local desktop authentication to return before remote refresh completes")
+	}
+
+	if err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+	if accessToken != "access-token" || refreshToken != "refresh-token" {
+		t.Fatalf("expected local token pair, got %q %q", accessToken, refreshToken)
+	}
+
+	select {
+	case <-remoteAuth.authStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected background remote refresh to start")
+	}
+
+	close(remoteAuth.unblockAuth)
+}
+
 func TestAuthenticate_DesktopCleanInstallOfflineReturnsErrRemoteAuthUnavailable(t *testing.T) {
 	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
 	remoteAuth := &mockRemoteAuthClient{authErr: ErrRemoteAuthUnavailable}
@@ -739,7 +803,7 @@ func TestAuthenticate_DesktopBootstrapForceFullPullWhenWatermarkIsMissing(t *tes
 	}
 }
 
-func TestAuthenticate_DesktopReturnsInternalProcessingWhenBootstrapSyncFails(t *testing.T) {
+func TestAuthenticate_DesktopKeepsLocalSessionWhenBootstrapSyncFails(t *testing.T) {
 	mockRepo := &mockUserRepository{getByEmailError: ports.ErrUserNotFound}
 	mockSessions := &mockSessionRepository{}
 	mockHasher := &mockHasher{hashToReturn: "hashed-local-password"}
@@ -757,9 +821,12 @@ func TestAuthenticate_DesktopReturnsInternalProcessingWhenBootstrapSyncFails(t *
 	}
 	svc := NewUserServiceWithRemoteAuth(mockRepo, mockSessions, mockHasher, mockTokens, &mockIDGen{id: "session-123"}, &mockLogger{}, remoteAuth)
 
-	_, _, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
-	if !errors.Is(err, ErrInternalProcessing) {
-		t.Fatalf("expected %v, got %v", ErrInternalProcessing, err)
+	accessToken, refreshToken, err := svc.Authenticate(context.Background(), "test@domain.com", "securePass123")
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	if accessToken != "access-token" || refreshToken != "refresh-token" {
+		t.Fatalf("expected local token pair, got %q %q", accessToken, refreshToken)
 	}
 }
 
