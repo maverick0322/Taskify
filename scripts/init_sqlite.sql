@@ -215,13 +215,43 @@ CREATE TABLE IF NOT EXISTS credit_card_statements (
     payment_due_date DATETIME NOT NULL,
     statement_amount_cents INTEGER NOT NULL DEFAULT 0,
     paid_amount_cents INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'OPEN',
+    status TEXT NOT NULL DEFAULT 'DUE',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
     CONSTRAINT uq_credit_card_statements_cycle UNIQUE (credit_account_id, cycle_start, cycle_end)
 );
 CREATE INDEX IF NOT EXISTS idx_credit_card_statements_user_id ON credit_card_statements(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_card_statements_account_due ON credit_card_statements(credit_account_id, payment_due_date);
+
+CREATE TABLE IF NOT EXISTS credit_card_statement_items (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    statement_id TEXT NOT NULL REFERENCES credit_card_statements(id) ON DELETE CASCADE,
+    transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    CONSTRAINT chk_credit_card_statement_items_amount_positive CHECK (amount_cents > 0),
+    CONSTRAINT uq_credit_card_statement_items_transaction UNIQUE (statement_id, transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_credit_card_statement_items_statement ON credit_card_statement_items(statement_id);
+
+CREATE TABLE IF NOT EXISTS credit_card_payment_allocations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    statement_id TEXT NOT NULL REFERENCES credit_card_statements(id) ON DELETE CASCADE,
+    payment_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    CONSTRAINT chk_credit_card_payment_allocations_amount_positive CHECK (amount_cents > 0),
+    CONSTRAINT uq_credit_card_payment_allocations_statement_payment UNIQUE (statement_id, payment_transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_credit_card_payment_allocations_statement ON credit_card_payment_allocations(statement_id);
+CREATE INDEX IF NOT EXISTS idx_credit_card_payment_allocations_payment ON credit_card_payment_allocations(payment_transaction_id);
 
 CREATE TABLE IF NOT EXISTS account_payable_payments (
     id TEXT PRIMARY KEY,

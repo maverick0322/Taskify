@@ -530,6 +530,18 @@ const translatedBackendMessages: Record<string, string> = {
   "invalid financial account data":
     "Revisa los datos de la cuenta financiera e inténtalo de nuevo.",
   "insufficient funds": "El saldo disponible no alcanza para este egreso.",
+  "invalid transaction amount":
+    "El monto del pago no es válido para la deuda actual de la tarjeta.",
+  "invalid credit card payment data":
+    "Los datos del pago de la tarjeta no son válidos.",
+  "credit card has no payable debt":
+    "La tarjeta ya no tiene deuda exigible pendiente.",
+  "payment exceeds payable debt":
+    "El abono no puede superar la deuda exigible de la tarjeta.",
+  "credit card statement is unavailable":
+    "No pudimos conciliar el estado de cuenta. Sincroniza tus datos e inténtalo de nuevo.",
+  "credit card payment changed concurrently; try again":
+    "La deuda cambió mientras se procesaba el pago. Revisa el saldo e inténtalo de nuevo.",
   "credit limit exceeded":
     "La compra supera el límite disponible de la tarjeta.",
   "invalid credit card data":

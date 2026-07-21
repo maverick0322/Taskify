@@ -485,6 +485,14 @@ CREATE TABLE credit_card_statements (
 	updated_at DATETIME NOT NULL,
 	deleted_at DATETIME
 );
+CREATE TABLE credit_card_statement_items (
+	id TEXT PRIMARY KEY, user_id TEXT, statement_id TEXT, transaction_id TEXT,
+	amount_cents INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+);
+CREATE TABLE credit_card_payment_allocations (
+	id TEXT PRIMARY KEY, user_id TEXT, statement_id TEXT, payment_transaction_id TEXT,
+	amount_cents INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+);
 CREATE TABLE account_payable_payments (
 	id TEXT PRIMARY KEY,
 	account_payable_id TEXT NOT NULL REFERENCES transactions(id),

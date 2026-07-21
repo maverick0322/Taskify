@@ -6,20 +6,16 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
-  Building2,
   Calendar,
   ChevronLeft,
   ChevronRight,
   CreditCard,
   Eye,
   Pencil,
-  Phone,
   Plus,
   PlusCircle,
   Trash2,
   Wallet,
-  Wifi,
-  Zap,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -76,6 +72,7 @@ import {
   getFinancialAccountSummary,
   getFinancialAccountTransactions,
   getCreditCards,
+  getFinancialPayables,
   getFinancialAccounts,
   getFinancialSummary,
   getTransactions,
@@ -94,6 +91,7 @@ import {
   type FinancialAccountType,
   type FinancialTransaction,
   type FinancialTransactionRecurrence,
+  type FinancialPayable,
   type PayCreditCardDebtInput,
 } from "@/services/financial_api"
 
@@ -311,42 +309,10 @@ function formatDisplayDate(rawDate: string) {
   }).format(new Date(year, month - 1, day))
 }
 
-function parseDateInput(rawDate: string) {
-  const [year, month, day] = rawDate.split("-").map(Number)
-  if (!year || !month || !day) {
-    return null
-  }
-
-  return new Date(year, month - 1, day)
-}
-
 function todayDate() {
   const currentDate = new Date()
   currentDate.setHours(0, 0, 0, 0)
   return currentDate
-}
-
-function nextRecurrenceDate(
-  date: Date,
-  recurrence: FinancialTransactionRecurrence,
-) {
-  const nextDate = new Date(date)
-  switch (recurrence) {
-    case "monthly":
-      nextDate.setMonth(nextDate.getMonth() + 1)
-      return nextDate
-    case "quarterly":
-      nextDate.setMonth(nextDate.getMonth() + 3)
-      return nextDate
-    case "biannual":
-      nextDate.setMonth(nextDate.getMonth() + 6)
-      return nextDate
-    case "annual":
-      nextDate.setFullYear(nextDate.getFullYear() + 1)
-      return nextDate
-    default:
-      return nextDate
-  }
 }
 
 function paymentAccountLabel(account?: FinancialAccount) {
@@ -408,156 +374,36 @@ function mapTransaction(
   }
 }
 
-function mapPendingPayments(transaction: FinancialTransaction): PendingPayment[] {
-  const dueDate = parseDateInput(transaction.date)
-  const currentDate = todayDate()
-  if (!dueDate) {
-    return [
-      pendingPaymentFromTransaction(transaction, transaction.id, transaction.date, "normal"),
-    ]
-  }
-  const paidCycleDates = paidCycleDateSet(transaction)
-  const activePaidCycle = activePaidCycleDate(transaction, currentDate)
-
-  if (activePaidCycle && activePaidCycle.getTime() < dueDate.getTime()) {
-    return [
-      pendingPaymentFromTransaction(
-        transaction,
-        `${transaction.id}-paid-active`,
-        formatDateInput(activePaidCycle),
-        "paid",
-      ),
-    ]
-  }
-
-  const overduePayments: PendingPayment[] = []
-  let overdueDate = dueDate
-  let overdueIndex = 0
-  while (overdueDate.getTime() < currentDate.getTime()) {
-    const overdueDateRaw = formatDateInput(overdueDate)
-    if (!paidCycleDates.has(overdueDateRaw)) {
-      overduePayments.push(
-        pendingPaymentFromTransaction(
-          transaction,
-          `${transaction.id}-overdue-${overdueIndex}`,
-          overdueDateRaw,
-          "overdue",
-        ),
-      )
-    }
-
-    if (transaction.recurrence === "once") {
-      return overduePayments
-    }
-
-    overdueDate = nextRecurrenceDate(overdueDate, transaction.recurrence)
-    overdueIndex += 1
-  }
-
-  const currentDueDateRaw = formatDateInput(overdueDate)
-  const visualState = paidCycleDates.has(currentDueDateRaw) ? "paid" : "normal"
-
-  return [
-    ...overduePayments,
-    pendingPaymentFromTransaction(
-      transaction,
-      `${transaction.id}-current`,
-      currentDueDateRaw,
-      visualState,
-    ),
-  ]
-}
-
-function paidCycleDateSet(transaction: FinancialTransaction) {
-  return new Set((transaction.paidCycles ?? []).map((paidCycle) => paidCycle.dueDate))
-}
-
-function activePaidCycleDate(
-  transaction: FinancialTransaction,
-  currentDate: Date,
-) {
-  return (transaction.paidCycles ?? [])
-    .map((paidCycle) => parseDateInput(paidCycle.dueDate))
-    .filter((paidCycleDate): paidCycleDate is Date => Boolean(paidCycleDate))
-    .filter((paidCycleDate) => paidCycleDate.getTime() >= currentDate.getTime())
-    .sort((leftDate, rightDate) => leftDate.getTime() - rightDate.getTime())[0]
-}
-
-function pendingPaymentFromTransaction(
-  transaction: FinancialTransaction,
-  id: string,
-  dueDateRaw: string,
-  visualState: PendingPayment["visualState"],
-): PendingPayment {
+function mapFinancialPayable(payable: FinancialPayable): PendingPayment {
+  const dueDateRaw = payable.dueDate.slice(0, 10)
   return {
-    id,
-    type: "manual",
-    transactionId: transaction.id,
-    service: transaction.concept,
-    icon: iconForCategory(transaction.category),
+    id: payable.id,
+    type: payable.type,
+    transactionId: payable.transactionId ?? payable.sourceId,
+    creditCardId: payable.creditCardId,
+    service: payable.name,
+    icon: payable.type === "credit_card" ? CreditCard : AlertCircle,
     dueDate: formatDisplayDate(dueDateRaw),
     dueDateRaw,
-    visualState,
-    amount: centsToAmount(transaction.amountCents),
+    visualState: payable.status === "overdue" ? "overdue" : "normal",
+    amount: centsToAmount(payable.amountCents),
   }
 }
 
-function mapCreditCardPayable(
-  card: CreditCardSummary,
-): PendingPayment | null {
-  if (card.currentDebtCents <= 0) {
-    return null
-  }
-  const dueDate = creditCardPaymentDueDate(card)
-  const dueDateRaw = formatDateInput(dueDate)
-  const currentDate = todayDate()
-
+function transactionFromManualPayable(payable: FinancialPayable): FinancialTransaction {
   return {
-    id: `credit-card-${card.id}`,
-    type: "credit_card",
-    transactionId: "",
-    creditCardId: card.id,
-    service: card.name,
-    icon: CreditCard,
-    dueDate: formatDisplayDate(dueDateRaw),
-    dueDateRaw,
-    visualState: dueDate.getTime() < currentDate.getTime() ? "overdue" : "normal",
-    amount: centsToAmount(card.currentDebtCents),
+    id: payable.transactionId ?? payable.sourceId,
+    type: "EXPENSE",
+    concept: payable.name,
+    category: payable.category ?? "Otros",
+    amountCents: payable.amountCents,
+    date: payable.sourceDate ?? payable.dueDate,
+    status: "PENDING",
+    recurrence: payable.recurrence ?? "once",
+    recurrenceLimit: payable.recurrenceLimit,
+    createdAt: payable.sourceDate ?? payable.dueDate,
+    updatedAt: payable.sourceDate ?? payable.dueDate,
   }
-}
-
-function creditCardPaymentDueDate(card: CreditCardSummary) {
-  const currentDate = todayDate()
-  const cutoffDate = billingCycleDate(
-    currentDate.getFullYear(),
-    currentDate.getMonth(),
-    card.cutoffDay,
-  )
-  const dueMonthOffset = currentDate.getTime() > cutoffDate.getTime() ? 2 : 1
-
-  return billingCycleDate(
-    currentDate.getFullYear(),
-    currentDate.getMonth() + dueMonthOffset,
-    card.paymentDay,
-  )
-}
-
-function iconForCategory(category: string): ElementType {
-  const normalizedCategory = category.toLowerCase()
-  if (normalizedCategory.includes("electric") || normalizedCategory.includes("luz")) {
-    return Zap
-  }
-  if (normalizedCategory.includes("internet")) {
-    return Wifi
-  }
-  if (normalizedCategory.includes("telefon") || normalizedCategory.includes("celular")) {
-    return Phone
-  }
-  if (normalizedCategory.includes("vivienda") || normalizedCategory.includes("predial")) {
-    return Building2
-  }
-
-  return Wallet
 }
 
 function financialQueryKeys(startDate: string, endDate: string) {
@@ -1678,6 +1524,7 @@ function PayCreditCardDialog({
   sourceAccounts,
   onSubmit,
   isSaving,
+  submitError,
 }: {
   open: boolean
   onClose: () => void
@@ -1685,8 +1532,10 @@ function PayCreditCardDialog({
   sourceAccounts: FinancialAccount[]
   onSubmit: (cardId: string, data: PayCreditCardDebtInput) => void
   isSaving: boolean
+  submitError?: string
 }) {
   const [sourceAccountId, setSourceAccountId] = useState("")
+  const [amount, setAmount] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
 
   useEffect(() => {
@@ -1694,8 +1543,17 @@ function PayCreditCardDialog({
       return
     }
     setSourceAccountId(sourceAccounts[0]?.id ?? "")
+    setAmount(card ? centsToAmount(card.currentDebtCents).toFixed(2) : "")
     setErrorMessage("")
-  }, [open, sourceAccounts])
+  }, [card, open, sourceAccounts])
+
+  useEffect(() => {
+    if (!open || !submitError) {
+      return
+    }
+
+    setErrorMessage(submitError)
+  }, [open, submitError])
 
   if (!card) {
     return null
@@ -1707,21 +1565,30 @@ function PayCreditCardDialog({
   )
 
   function handleSubmit() {
+    const amountCents = amountToCents(amount)
     if (!sourceAccountId) {
       setErrorMessage("Selecciona la cuenta de origen del pago.")
       return
     }
+    if (amountCents <= 0) {
+      setErrorMessage("Ingresa un monto válido para el abono.")
+      return
+    }
+    if (amountCents > activeCard.currentDebtCents) {
+      setErrorMessage("El abono no puede superar la deuda exigible.")
+      return
+    }
     if (
       selectedSource &&
-      selectedSource.type !== "CASH" &&
-      selectedSource.currentBalanceCents < activeCard.currentDebtCents
+      selectedSource.currentBalanceCents < amountCents
     ) {
       setErrorMessage("La cuenta seleccionada no tiene saldo suficiente.")
       return
     }
     onSubmit(activeCard.id, {
       sourceAccountId,
-      amountCents: activeCard.currentDebtCents,
+      amountCents,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Mexico_City",
     })
   }
 
@@ -1738,11 +1605,18 @@ function PayCreditCardDialog({
         <div className="flex flex-col gap-4 py-2">
           <div className="rounded-lg border bg-muted/30 p-4">
             <span className="text-xs font-medium uppercase text-muted-foreground">
-              Monto a pagar
+              Deuda exigible
             </span>
-            <p className="mt-1 text-2xl font-bold">
-              {fmt(centsToAmount(card.currentDebtCents))}
-            </p>
+            <p className="mt-1 text-2xl font-bold">{fmt(centsToAmount(card.currentDebtCents))}</p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="credit-card-payment-amount">Monto del abono</Label>
+            <CurrencyInput
+              id="credit-card-payment-amount"
+              value={amount}
+              onValueChange={setAmount}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -1809,6 +1683,8 @@ export function FinancialControlView() {
   const [creditCardToPay, setCreditCardToPay] =
     useState<CreditCardSummary | null>(null)
   const [transactionDialogError, setTransactionDialogError] = useState("")
+  const [creditCardPaymentError, setCreditCardPaymentError] = useState("")
+  const [payableActionError, setPayableActionError] = useState("")
   const [currentViewMonth, setCurrentViewMonth] = useState(() => todayDate())
   const queryClient = useQueryClient()
   const monthRange = useMemo(
@@ -1836,7 +1712,7 @@ export function FinancialControlView() {
     isLoading: isPayablesLoading,
   } = useQuery({
     queryKey: queryKeys.payables,
-    queryFn: () => getTransactions(),
+    queryFn: getFinancialPayables,
   })
   const {
     data: financialSummary,
@@ -1936,7 +1812,11 @@ export function FinancialControlView() {
       id: string
       dueDate: string
     }) => payAccountPayable(id, dueDate),
+    onError: (error) => {
+      setPayableActionError(getFriendlyErrorMessage(error))
+    },
     onSuccess: async () => {
+	  setPayableActionError("")
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
@@ -1955,7 +1835,26 @@ export function FinancialControlView() {
       cardId: string
       data: PayCreditCardDebtInput
     }) => payCreditCardDebt(cardId, data),
-    onSuccess: async () => {
+    onError: (error) => {
+      setCreditCardPaymentError(getFriendlyErrorMessage(error))
+    },
+    onSuccess: async (result, variables) => {
+      queryClient.setQueryData<FinancialPayable[]>(queryKeys.payables, (current = []) =>
+        current
+          .map((payable) =>
+            payable.creditCardId === variables.cardId
+              ? { ...payable, amountCents: result.remainingDebtCents }
+              : payable,
+          )
+          .filter((payable) => payable.amountCents > 0),
+      )
+      queryClient.setQueryData<CreditCardSummary[]>(queryKeys.creditCards, (current = []) =>
+        current.map((card) =>
+          card.id === variables.cardId
+            ? { ...card, currentDebtCents: result.remainingDebtCents }
+            : card,
+        ),
+      )
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["financial", "transactions"] }),
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts-payable"] }),
@@ -1964,6 +1863,7 @@ export function FinancialControlView() {
         queryClient.invalidateQueries({ queryKey: ["financial", "accounts"] }),
         queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ])
+      setCreditCardPaymentError("")
       setCreditCardToPay(null)
     },
   })
@@ -2088,26 +1988,12 @@ export function FinancialControlView() {
         .map((transaction) => mapTransaction(transaction, financialAccounts)),
     [apiTransactions, financialAccounts],
   )
-  const manualPendingPayments = useMemo(
-    () =>
-      apiPayables
-        .filter(
-          (transaction) =>
-            transaction.type === "EXPENSE" && transaction.status === "PENDING",
-        )
-        .flatMap(mapPendingPayments),
-    [apiPayables],
-  )
-  const creditCardPendingPayments = useMemo(
-    () =>
-      creditCards
-        .map(mapCreditCardPayable)
-        .filter((payment): payment is PendingPayment => Boolean(payment)),
-    [creditCards],
-  )
   const pendingPayments = useMemo(
-    () => [...manualPendingPayments, ...creditCardPendingPayments],
-    [creditCardPendingPayments, manualPendingPayments],
+    () =>
+      apiPayables.map(mapFinancialPayable).filter(
+        (payment) => payment.amount > 0 && payment.visualState !== "paid",
+      ),
+    [apiPayables],
   )
   const cashAccount = useMemo(
     () => financialAccounts.find((account) => account.type === "CASH") ?? null,
@@ -2136,9 +2022,14 @@ export function FinancialControlView() {
       apiTransactions.find(
         (currentTransaction) => currentTransaction.id === transactionId,
       ) ??
-      apiPayables.find(
-        (currentTransaction) => currentTransaction.id === transactionId,
-      )
+      (() => {
+        const payable = apiPayables.find(
+          (currentPayable) =>
+            currentPayable.type === "manual" &&
+            (currentPayable.transactionId ?? currentPayable.sourceId) === transactionId,
+        )
+        return payable ? transactionFromManualPayable(payable) : undefined
+      })()
     if (transaction) {
       setTransactionToDelete(transaction)
     }
@@ -2156,11 +2047,13 @@ export function FinancialControlView() {
   }
 
   function handleEditAccountPayable(transactionId: string) {
-    const transaction = apiPayables.find(
-      (currentTransaction) => currentTransaction.id === transactionId,
+    const payable = apiPayables.find(
+      (currentPayable) =>
+        currentPayable.type === "manual" &&
+        (currentPayable.transactionId ?? currentPayable.sourceId) === transactionId,
     )
-    if (transaction) {
-      setAccountPayableToEdit(transaction)
+    if (payable) {
+      setAccountPayableToEdit(transactionFromManualPayable(payable))
       setPaymentDialogOpen(true)
     }
   }
@@ -2205,12 +2098,14 @@ export function FinancialControlView() {
   }
 
   function handlePayAccountPayable(transactionId: string, dueDate: string) {
+	setPayableActionError("")
     payAccountPayableMutation.mutate({ id: transactionId, dueDate })
   }
 
   function handleOpenCreditCardPayment(creditCardId?: string) {
     const card = creditCards.find((currentCard) => currentCard.id === creditCardId)
     if (card) {
+      setCreditCardPaymentError("")
       setCreditCardToPay(card)
     }
   }
@@ -2842,6 +2737,11 @@ export function FinancialControlView() {
               </div>
             </CardHeader>
             <CardContent className="p-6 pt-0">
+              {payableActionError ? (
+                <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
+                  {payableActionError}
+                </p>
+              ) : null}
               <div className="flex flex-col gap-4">
                 {isPayablesLoading
                   ? Array.from({ length: 3 }).map((_, index) => (
@@ -2858,8 +2758,22 @@ export function FinancialControlView() {
                           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                              <Icon className="size-4 text-muted-foreground" />
+                            <div
+                              className={cn(
+                                "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                                payment.visualState === "overdue"
+                                  ? "bg-red-500/10"
+                                  : "bg-muted",
+                              )}
+                            >
+                              <Icon
+                                className={cn(
+                                  "size-4",
+                                  payment.visualState === "overdue"
+                                    ? "text-red-600 dark:text-red-500"
+                                    : "text-muted-foreground",
+                                )}
+                              />
                             </div>
                             <div className="flex min-w-0 flex-col">
                               <span
@@ -3076,6 +2990,7 @@ export function FinancialControlView() {
         onClose={() => setCreditCardToPay(null)}
         onSubmit={handleSubmitCreditCardPayment}
         isSaving={payCreditCardDebtMutation.isPending}
+        submitError={creditCardPaymentError}
       />
       <ConfirmDialog
         open={Boolean(transactionToDelete)}

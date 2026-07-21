@@ -27,9 +27,25 @@ func NewCreditCardHandler(creditCardUseCase ports.CreditCardUseCase, logger port
 func (handler *CreditCardHandler) RegisterRoutes(router chi.Router) {
 	router.Post("/credit-cards", handler.CreateCreditCard)
 	router.Get("/credit-cards", handler.GetCreditCards)
+	router.Get("/financial/payables", handler.GetFinancialPayables)
 	router.Post("/credit-cards/{id}/pay", handler.PayCreditCardDebt)
 	router.Patch("/credit-cards/{id}", handler.UpdateCreditCard)
 	router.Delete("/credit-cards/{id}", handler.DeleteCreditCard)
+}
+
+func (handler *CreditCardHandler) GetFinancialPayables(response http.ResponseWriter, request *http.Request) {
+	userID, ok := handler.userIDFromRequest(response, request)
+	if !ok {
+		return
+	}
+
+	payables, err := handler.creditCardUseCase.GetPayables(request.Context(), userID, request.URL.Query().Get("timezone"))
+	if err != nil {
+		handler.handleCreditCardError(response, err)
+		return
+	}
+
+	writeJSON(response, http.StatusOK, payables)
 }
 
 func (handler *CreditCardHandler) CreateCreditCard(response http.ResponseWriter, request *http.Request) {
@@ -131,19 +147,28 @@ func (handler *CreditCardHandler) PayCreditCardDebt(response http.ResponseWriter
 		return
 	}
 
-	err := handler.creditCardUseCase.PayCreditCardDebt(
+	result, err := handler.creditCardUseCase.PayCreditCardDebt(
 		request.Context(),
 		userID,
 		chi.URLParam(request, "id"),
 		payRequest.SourceAccountID,
 		payRequest.AmountCents,
+		payRequest.Timezone,
 	)
 	if err != nil {
+		handler.logger.Warn(
+			"credit card payment failed",
+			"userID", userID,
+			"creditCardID", chi.URLParam(request, "id"),
+			"sourceAccountID", payRequest.SourceAccountID,
+			"amountCents", payRequest.AmountCents,
+			"error", err,
+		)
 		handler.handleCreditCardError(response, err)
 		return
 	}
 
-	response.WriteHeader(http.StatusNoContent)
+	writeJSON(response, http.StatusOK, result)
 }
 
 func (handler *CreditCardHandler) DeleteCreditCard(response http.ResponseWriter, request *http.Request) {
@@ -179,6 +204,16 @@ func (handler *CreditCardHandler) handleCreditCardError(response http.ResponseWr
 		writeJSON(response, http.StatusNotFound, errorResponse{Error: "financial account not found"})
 	case errors.Is(err, domain.ErrInsufficientFinancialAccountFunds):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "insufficient funds"})
+	case errors.Is(err, domain.ErrInvalidTransactionAmount):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid transaction amount"})
+	case errors.Is(err, ports.ErrCreditCardNoPayableDebt):
+		writeJSON(response, http.StatusConflict, errorResponse{Error: "credit card has no payable debt"})
+	case errors.Is(err, ports.ErrCreditCardPaymentExceedsDebt):
+		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "payment exceeds payable debt"})
+	case errors.Is(err, ports.ErrCreditCardStatementUnavailable):
+		writeJSON(response, http.StatusConflict, errorResponse{Error: "credit card statement is unavailable"})
+	case errors.Is(err, ports.ErrCreditCardPaymentConflict):
+		writeJSON(response, http.StatusConflict, errorResponse{Error: "credit card payment changed concurrently; try again"})
 	case isCreditCardDomainValidationError(err):
 		writeJSON(response, http.StatusBadRequest, errorResponse{Error: "invalid credit card data"})
 	default:
@@ -225,7 +260,13 @@ func creditCardSummaryListResponseFromDomain(creditCards []ports.CreditCardWithS
 		if creditCard.CreditCard == nil {
 			continue
 		}
-		responses = append(responses, creditCardResponseFromDomain(creditCard.CreditCard, creditCard.CurrentDebtCents))
+		item := creditCardResponseFromDomain(creditCard.CreditCard, creditCard.CurrentDebtCents)
+		item.TotalBalanceCents = creditCard.TotalBalanceCents
+		item.PaymentStatus = creditCard.Status
+		if creditCard.PaymentDueDate != nil {
+			item.PaymentDueDate = creditCard.PaymentDueDate.Format("2006-01-02")
+		}
+		responses = append(responses, item)
 	}
 
 	return responses
@@ -245,19 +286,23 @@ type creditCardRequest struct {
 type payCreditCardDebtRequest struct {
 	SourceAccountID string `json:"sourceAccountId"`
 	AmountCents     int64  `json:"amountCents"`
+	Timezone        string `json:"timezone"`
 }
 
 type creditCardResponse struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Bank             string `json:"bank"`
-	Last4            string `json:"last4"`
-	CutoffDay        int    `json:"cutoffDay"`
-	PaymentDay       int    `json:"paymentDay"`
-	LimitCents       int64  `json:"limitCents"`
-	Color            string `json:"color"`
-	Network          string `json:"network"`
-	CurrentDebtCents int64  `json:"currentDebtCents"`
-	CreatedAt        string `json:"createdAt"`
-	UpdatedAt        string `json:"updatedAt"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Bank              string `json:"bank"`
+	Last4             string `json:"last4"`
+	CutoffDay         int    `json:"cutoffDay"`
+	PaymentDay        int    `json:"paymentDay"`
+	LimitCents        int64  `json:"limitCents"`
+	Color             string `json:"color"`
+	Network           string `json:"network"`
+	CurrentDebtCents  int64  `json:"currentDebtCents"`
+	TotalBalanceCents int64  `json:"totalBalanceCents"`
+	PaymentDueDate    string `json:"paymentDueDate,omitempty"`
+	PaymentStatus     string `json:"paymentStatus,omitempty"`
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt"`
 }

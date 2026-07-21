@@ -66,6 +66,9 @@ export interface CreditCardSummary {
   color: string;
   network: FinancialCardNetwork;
   currentDebtCents: number;
+  totalBalanceCents: number;
+  paymentDueDate?: string;
+  paymentStatus?: "current" | "overdue" | "paid";
   createdAt: string;
   updatedAt: string;
 }
@@ -127,6 +130,30 @@ export interface CreateCreditCardInput {
 export interface PayCreditCardDebtInput {
   sourceAccountId: string;
   amountCents: number;
+  timezone?: string;
+}
+
+export interface FinancialPayable {
+  id: string;
+  type: "manual" | "credit_card";
+  sourceId: string;
+  name: string;
+  amountCents: number;
+  dueDate: string;
+  status: "current" | "overdue";
+  creditCardId?: string;
+  transactionId?: string;
+  category?: string;
+  sourceDate?: string;
+  recurrence?: FinancialTransactionRecurrence;
+  recurrenceLimit?: number | null;
+}
+
+export interface CreditCardPaymentResult {
+  paymentTransactionId: string;
+  appliedAmountCents: number;
+  remainingDebtCents: number;
+  affectedStatementIds: string[];
 }
 
 export async function getTransactions(
@@ -257,11 +284,18 @@ export async function updateCreditCard(
   });
 }
 
+export async function getFinancialPayables(): Promise<FinancialPayable[]> {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Mexico_City";
+  return apiRequest<FinancialPayable[]>(
+    `/financial/payables?timezone=${encodeURIComponent(timezone)}`,
+  );
+}
+
 export async function payCreditCardDebt(
   id: string,
   data: PayCreditCardDebtInput,
-): Promise<void> {
-  await apiRequest<void>(`/credit-cards/${id}/pay`, {
+): Promise<CreditCardPaymentResult> {
+  return apiRequest<CreditCardPaymentResult>(`/credit-cards/${id}/pay`, {
     method: "POST",
     body: JSON.stringify(data),
   });

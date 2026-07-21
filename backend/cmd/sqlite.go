@@ -190,7 +190,7 @@ func ensureSQLiteTransactionsCompletedStatus(ctx context.Context, database *sql.
 }
 
 func ensureSQLiteSyncMetadata(ctx context.Context, database *sql.DB) error {
-	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions", "financial_accounts", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
+	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "transactions", "financial_accounts", "ledger_entries", "credit_card_statements", "credit_card_statement_items", "credit_card_payment_allocations", "account_payable_payments", "notifications"} {
 		if err := ensureSQLiteColumn(ctx, database, table, "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
 			return err
 		}
@@ -279,7 +279,7 @@ func ensureSQLiteOutbox(ctx context.Context, database *sql.DB) error {
 		return fmt.Errorf("failed to initialize sqlite sync outbox: %w", err)
 	}
 
-	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "financial_accounts", "transactions", "ledger_entries", "credit_card_statements", "account_payable_payments", "notifications"} {
+	for _, table := range []string{"users", "boards", "columns", "tasks", "credit_cards", "financial_accounts", "transactions", "ledger_entries", "credit_card_statements", "credit_card_statement_items", "credit_card_payment_allocations", "account_payable_payments", "notifications"} {
 		if err := ensureSQLiteOutboxTriggers(ctx, database, table); err != nil {
 			return err
 		}

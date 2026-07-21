@@ -155,6 +155,83 @@ func TestSQLiteRepositories_PersistAndQueryLocalFirstData(t *testing.T) {
 	}
 }
 
+func TestSQLiteCreditCardStatementRepository_ApplyPaymentCommitsAccountingAndAllocation(t *testing.T) {
+	ctx := context.Background()
+	database := openTestSQLiteDatabase(t)
+	logger := &fakeRepositoryLogger{}
+	userRepository := NewSQLiteUserRepository(database, logger)
+	cardRepository := NewSQLiteCreditCardRepository(database, logger)
+	accountRepository := NewSQLiteFinancialAccountRepository(database, logger)
+	transactionRepository := NewSQLiteTransactionRepository(database, logger)
+	statementRepository := NewSQLiteCreditCardStatementRepository(database, logger)
+
+	profile, _ := domain.NewUserProfile("Erick", "Lara", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC))
+	user, _ := domain.NewUser("pay-user", "pay@example.com", "hashed-password-value", profile)
+	if err := userRepository.Save(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	card, _ := domain.NewCreditCard("pay-card", user.ID(), "Joy", "Joy", "1234", 5, 25, 500000, "#222222", domain.CreditCardNetworkVisa)
+	if err := cardRepository.Create(ctx, card); err != nil {
+		t.Fatal(err)
+	}
+	last4 := "7178"
+	source, _ := domain.NewFinancialAccount("pay-source", user.ID(), domain.FinancialAccountTypeDebitCard, "Débito", "BBVA", &last4, 100000, 100000, nil, nil, nil, "#111111", domain.CreditCardNetworkVisa)
+	if err := accountRepository.Create(ctx, source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`UPDATE financial_accounts SET current_balance_cents = 30000 WHERE id = ?`, card.ID()); err != nil {
+		t.Fatal(err)
+	}
+
+	cardID := card.ID()
+	purchaseDate := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+	purchase, _ := domain.NewTransaction("pay-purchase", user.ID(), domain.TransactionTypeExpense, "Compra", "Otros", 30000, purchaseDate, domain.TransactionStatusCompleted, nil, &cardID, domain.TransactionRecurrenceOnce, nil)
+	purchase.SetAccountingDetails(&cardID, nil, nil, nil)
+	purchase.SetCreditCardID(&cardID)
+	if err := transactionRepository.Create(ctx, purchase); err != nil {
+		t.Fatal(err)
+	}
+
+	statement := ports.CreditCardStatement{ID: "statement-1", UserID: user.ID(), CreditAccountID: card.ID(), CycleStart: time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC), CycleEnd: time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC), PaymentDueDate: time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC), StatementAmountCents: 30000, Status: "DUE", CreatedAt: purchaseDate, UpdatedAt: purchaseDate}
+	item := ports.CreditCardStatementItem{ID: "item-1", UserID: user.ID(), StatementID: statement.ID, TransactionID: purchase.ID(), AmountCents: 30000, CreatedAt: purchaseDate, UpdatedAt: purchaseDate}
+	if err := statementRepository.Reconcile(ctx, user.ID(), card.ID(), []ports.CreditCardStatement{statement}, []ports.CreditCardStatementItem{item}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	paymentDate := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	payment, _ := domain.NewTransaction("payment-1", user.ID(), domain.TransactionTypeDebtPayment, "Pago Joy", "Tarjeta de crédito", 30000, paymentDate, domain.TransactionStatusCompleted, nil, &cardID, domain.TransactionRecurrenceOnce, nil)
+	payment.SetAccountingDetails(ptrString(source.ID()), &cardID, nil, nil)
+	payment.SetCreditCardID(&cardID)
+	statement.PaidAmountCents = 30000
+	statement.Status = "PAID"
+	statement.UpdatedAt = paymentDate
+	allocation := ports.CreditCardPaymentAllocation{ID: "allocation-1", UserID: user.ID(), StatementID: statement.ID, PaymentTransactionID: payment.ID(), AmountCents: 30000, CreatedAt: paymentDate, UpdatedAt: paymentDate}
+	deltas := []ports.AccountBalanceDelta{{AccountID: source.ID(), DeltaCents: -30000}, {AccountID: card.ID(), DeltaCents: -30000}}
+	entries := []ports.LedgerEntry{{ID: "ledger-source", UserID: user.ID(), AccountID: source.ID(), TransactionID: payment.ID(), AmountCents: -30000, EntryType: string(domain.TransactionTypeDebtPayment), CreatedAt: paymentDate, UpdatedAt: paymentDate}, {ID: "ledger-card", UserID: user.ID(), AccountID: card.ID(), TransactionID: payment.ID(), AmountCents: -30000, EntryType: string(domain.TransactionTypeDebtPayment), CreatedAt: paymentDate, UpdatedAt: paymentDate}}
+
+	if err := statementRepository.ApplyPayment(ctx, payment, deltas, entries, []ports.CreditCardPaymentAllocation{allocation}, []ports.CreditCardStatement{statement}); err != nil {
+		t.Fatalf("expected atomic payment to succeed, got %v", err)
+	}
+	assertSQLiteInt64(t, database, `SELECT current_balance_cents FROM financial_accounts WHERE id = ?`, source.ID(), 70000)
+	assertSQLiteInt64(t, database, `SELECT current_balance_cents FROM financial_accounts WHERE id = ?`, card.ID(), 0)
+	assertSQLiteInt64(t, database, `SELECT COUNT(*) FROM ledger_entries WHERE transaction_id = ?`, payment.ID(), 2)
+	assertSQLiteInt64(t, database, `SELECT amount_cents FROM credit_card_payment_allocations WHERE id = ?`, allocation.ID, 30000)
+	assertSQLiteInt64(t, database, `SELECT paid_amount_cents FROM credit_card_statements WHERE id = ?`, statement.ID, 30000)
+}
+
+func ptrString(value string) *string { return &value }
+
+func assertSQLiteInt64(t *testing.T, database *sql.DB, query string, argument interface{}, expected int64) {
+	t.Helper()
+	var actual int64
+	if err := database.QueryRow(query, argument).Scan(&actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual != expected {
+		t.Fatalf("expected %d, got %d", expected, actual)
+	}
+}
+
 func TestSQLiteUserRepository_UpsertPreservesAvatarLocalPathAndRefreshesRemoteFields(t *testing.T) {
 	ctx := context.Background()
 	database := openTestSQLiteDatabase(t)

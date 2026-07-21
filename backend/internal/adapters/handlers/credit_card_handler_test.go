@@ -18,6 +18,8 @@ import (
 type mockCreditCardUseCase struct {
 	creditCardToReturn *domain.CreditCard
 	summariesToReturn  []ports.CreditCardWithSummary
+	payablesToReturn   []ports.FinancialPayable
+	paymentResult      ports.CreditCardPaymentResult
 	errToReturn        error
 	requestedUserID    string
 	requestedID        string
@@ -38,6 +40,11 @@ func (useCase *mockCreditCardUseCase) GetCardsWithSummary(ctx context.Context, u
 	return useCase.summariesToReturn, useCase.errToReturn
 }
 
+func (useCase *mockCreditCardUseCase) GetPayables(ctx context.Context, userID, timezone string) ([]ports.FinancialPayable, error) {
+	useCase.requestedUserID = userID
+	return useCase.payablesToReturn, useCase.errToReturn
+}
+
 func (useCase *mockCreditCardUseCase) UpdateCreditCard(ctx context.Context, userID, creditCardID, name, bank, last4 string, cutoffDay, paymentDay int, limitCents int64, color, network string) error {
 	useCase.requestedUserID = userID
 	useCase.requestedID = creditCardID
@@ -45,12 +52,12 @@ func (useCase *mockCreditCardUseCase) UpdateCreditCard(ctx context.Context, user
 	return useCase.errToReturn
 }
 
-func (useCase *mockCreditCardUseCase) PayCreditCardDebt(ctx context.Context, userID, creditCardID, sourceAccountID string, amountCents int64) error {
+func (useCase *mockCreditCardUseCase) PayCreditCardDebt(ctx context.Context, userID, creditCardID, sourceAccountID string, amountCents int64, timezone ...string) (ports.CreditCardPaymentResult, error) {
 	useCase.requestedUserID = userID
 	useCase.requestedID = creditCardID
 	useCase.requestedSourceID = sourceAccountID
 	useCase.paidAmountCents = amountCents
-	return useCase.errToReturn
+	return useCase.paymentResult, useCase.errToReturn
 }
 
 func (useCase *mockCreditCardUseCase) DeleteCreditCard(ctx context.Context, userID, creditCardID string) error {
@@ -102,6 +109,23 @@ func TestCreditCardHandler_GetCreditCards_ReturnsOKWithCurrentDebt(t *testing.T)
 	}
 }
 
+func TestCreditCardHandler_GetFinancialPayables_ReturnsGlobalProjection(t *testing.T) {
+	dueDate := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
+	useCase := &mockCreditCardUseCase{payablesToReturn: []ports.FinancialPayable{{ID: "payable-1", Type: "credit_card", SourceID: "card-1", Name: "Joy", AmountCents: 30000, DueDate: dueDate, Status: "overdue"}}}
+	router := createCreditCardTestRouter(useCase)
+	request := authenticatedCreditCardRequest(http.MethodGet, "/financial/payables?timezone=America%2FMexico_City", "")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"amountCents":30000`) || !strings.Contains(response.Body.String(), `"status":"overdue"`) {
+		t.Fatalf("expected normalized payable response, got %s", response.Body.String())
+	}
+}
+
 func TestCreditCardHandler_UpdateCreditCardValidRequest_ReturnsNoContent(t *testing.T) {
 	useCase := &mockCreditCardUseCase{}
 	router := createCreditCardTestRouter(useCase)
@@ -121,16 +145,19 @@ func TestCreditCardHandler_UpdateCreditCardValidRequest_ReturnsNoContent(t *test
 	}
 }
 
-func TestCreditCardHandler_PayCreditCardDebtValidRequest_ReturnsNoContent(t *testing.T) {
-	useCase := &mockCreditCardUseCase{}
+func TestCreditCardHandler_PayCreditCardDebtValidRequest_ReturnsResult(t *testing.T) {
+	useCase := &mockCreditCardUseCase{paymentResult: ports.CreditCardPaymentResult{PaymentTransactionID: "payment-123", AppliedAmountCents: 15334}}
 	router := createCreditCardTestRouter(useCase)
 	request := authenticatedCreditCardRequest(http.MethodPost, "/credit-cards/credit-card-123/pay", `{"sourceAccountId":"cash-123","amountCents":15334}`)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusNoContent {
-		t.Errorf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	if response.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"paymentTransactionId":"payment-123"`) {
+		t.Errorf("expected payment result, got %s", response.Body.String())
 	}
 	if useCase.requestedID != "credit-card-123" {
 		t.Errorf("expected requested credit card ID credit-card-123, got %s", useCase.requestedID)
@@ -140,6 +167,21 @@ func TestCreditCardHandler_PayCreditCardDebtValidRequest_ReturnsNoContent(t *tes
 	}
 	if useCase.paidAmountCents != 15334 {
 		t.Errorf("expected paid amount cents 15334, got %d", useCase.paidAmountCents)
+	}
+}
+
+func TestCreditCardHandler_PayCreditCardDebtInvalidAmount_ReturnsBadRequest(t *testing.T) {
+	router := createCreditCardTestRouter(&mockCreditCardUseCase{errToReturn: domain.ErrInvalidTransactionAmount})
+	request := authenticatedCreditCardRequest(http.MethodPost, "/credit-cards/credit-card-123/pay", `{"sourceAccountId":"cash-123","amountCents":15334}`)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"error":"invalid transaction amount"`) {
+		t.Errorf("expected invalid transaction amount error, got %s", response.Body.String())
 	}
 }
 

@@ -129,6 +129,7 @@ func run() error {
 	var columnRepository ports.ColumnRepository
 	var transactionRepository ports.TransactionRepository
 	var creditCardRepository ports.CreditCardRepository
+	var creditCardStatementRepository ports.CreditCardStatementRepository
 	var financialAccountRepository ports.FinancialAccountRepository
 	var notificationRepository ports.NotificationRepository
 
@@ -140,6 +141,7 @@ func run() error {
 		columnRepository = repositories.NewPostgresColumnRepository(remotePool, applicationLogger)
 		transactionRepository = repositories.NewPostgresTransactionRepository(remotePool, applicationLogger)
 		creditCardRepository = repositories.NewPostgresCreditCardRepository(remotePool, applicationLogger)
+		creditCardStatementRepository = repositories.NewPostgresCreditCardStatementRepository(remotePool, applicationLogger)
 		financialAccountRepository = repositories.NewPostgresFinancialAccountRepository(remotePool, applicationLogger)
 		notificationRepository = repositories.NewPostgresNotificationRepository(remoteDatabase, applicationLogger)
 	} else {
@@ -150,13 +152,14 @@ func run() error {
 		columnRepository = repositories.NewSQLiteColumnRepository(sqliteDatabase, applicationLogger)
 		transactionRepository = repositories.NewSQLiteTransactionRepository(sqliteDatabase, applicationLogger)
 		creditCardRepository = repositories.NewSQLiteCreditCardRepository(sqliteDatabase, applicationLogger)
+		creditCardStatementRepository = repositories.NewSQLiteCreditCardStatementRepository(sqliteDatabase, applicationLogger)
 		financialAccountRepository = repositories.NewSQLiteFinancialAccountRepository(sqliteDatabase, applicationLogger)
 		notificationRepository = repositories.NewSQLiteNotificationRepository(sqliteDatabase, applicationLogger)
 	}
 	taskUseCase := services.NewTaskService(taskRepository, boardRepository, columnRepository, idGenerator, applicationLogger)
 	boardUseCase := services.NewBoardService(boardRepository, columnRepository, idGenerator, applicationLogger)
 	transactionUseCase := services.NewTransactionService(transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
-	creditCardUseCase := services.NewCreditCardService(creditCardRepository, transactionRepository, idGenerator, applicationLogger, financialAccountRepository)
+	creditCardUseCase := services.NewCreditCardServiceWithStatements(creditCardRepository, transactionRepository, financialAccountRepository, creditCardStatementRepository, idGenerator, applicationLogger)
 	financialAccountUseCase := services.NewFinancialAccountService(financialAccountRepository, idGenerator, applicationLogger, transactionRepository)
 	notificationUseCase := services.NewNotificationService(notificationRepository, applicationLogger)
 	var syncService interface {
@@ -256,6 +259,11 @@ func run() error {
 		applicationLogger.Info("avatar storage sync disabled in desktop mode")
 	}
 	go startNotificationWorker(shutdownContext, notificationUseCase, applicationLogger)
+	statementDatabase := sqliteDatabase
+	if isProduction {
+		statementDatabase = remoteDatabase
+	}
+	go startCreditCardStatementWorker(shutdownContext, statementDatabase, creditCardUseCase, applicationLogger)
 
 	serverErrors := make(chan error, 1)
 	go startHTTPServer(server, serverErrors)
