@@ -17,12 +17,12 @@ type NotificationAccountPayableSource struct {
 }
 
 type NotificationCreditAccountSource struct {
-	ID                  string
-	UserID              string
-	Name                string
-	CurrentBalanceCents int64
-	CutoffDay           int
-	PaymentDay          int
+	ID              string
+	UserID          string
+	Name            string
+	AmountCents     int64
+	PaymentDueDate  time.Time
+	StatementStatus string
 }
 
 type NotificationRepository interface {
@@ -30,7 +30,7 @@ type NotificationRepository interface {
 	GetByUserID(ctx context.Context, userID string) ([]*domain.Notification, error)
 	MarkAsRead(ctx context.Context, userID, notificationID string) error
 	GetDueAccountPayables(ctx context.Context, dueBefore time.Time) ([]NotificationAccountPayableSource, error)
-	GetCreditAccountsWithDebt(ctx context.Context) ([]NotificationCreditAccountSource, error)
+	GetDueCreditCardStatements(ctx context.Context, dueBefore time.Time) ([]NotificationCreditAccountSource, error)
 }
 
 type NotificationUseCase interface {

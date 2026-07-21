@@ -117,16 +117,29 @@ func (repository *SQLiteNotificationRepository) GetDueAccountPayables(ctx contex
 	return sources, nil
 }
 
-func (repository *SQLiteNotificationRepository) GetCreditAccountsWithDebt(ctx context.Context) ([]ports.NotificationCreditAccountSource, error) {
+func (repository *SQLiteNotificationRepository) GetDueCreditCardStatements(ctx context.Context, dueBefore time.Time) ([]ports.NotificationCreditAccountSource, error) {
 	rows, err := repository.database.QueryContext(
 		ctx,
-		`SELECT id, user_id, name, current_balance_cents, cutoff_day, payment_day
-		 FROM financial_accounts
-		 WHERE type = 'CREDIT_CARD'
-		   AND current_balance_cents > 0
-		   AND cutoff_day IS NOT NULL
-		   AND payment_day IS NOT NULL
-		   AND deleted_at IS NULL`,
+		`SELECT
+		   statements.id,
+		   statements.user_id,
+		   COALESCE(accounts.name, cards.name),
+		   statements.statement_amount_cents - statements.paid_amount_cents,
+		   statements.payment_due_date,
+		   statements.status
+		 FROM credit_card_statements statements
+		 LEFT JOIN financial_accounts accounts
+		   ON accounts.id = statements.credit_account_id
+		  AND accounts.deleted_at IS NULL
+		 LEFT JOIN credit_cards cards
+		   ON cards.id = statements.credit_account_id
+		  AND cards.deleted_at IS NULL
+		 WHERE statements.payment_due_date < ?
+		   AND statements.statement_amount_cents > statements.paid_amount_cents
+		   AND statements.status IN ('DUE', 'OVERDUE')
+		   AND statements.deleted_at IS NULL
+		 ORDER BY statements.payment_due_date ASC`,
+		timeValue(dueBefore),
 	)
 	if err != nil {
 		return nil, ports.ErrNotificationRepositoryUnavailable
@@ -136,7 +149,7 @@ func (repository *SQLiteNotificationRepository) GetCreditAccountsWithDebt(ctx co
 	sources := make([]ports.NotificationCreditAccountSource, 0)
 	for rows.Next() {
 		var source ports.NotificationCreditAccountSource
-		if err := rows.Scan(&source.ID, &source.UserID, &source.Name, &source.CurrentBalanceCents, &source.CutoffDay, &source.PaymentDay); err != nil {
+		if err := rows.Scan(&source.ID, &source.UserID, &source.Name, &source.AmountCents, &source.PaymentDueDate, &source.StatementStatus); err != nil {
 			return nil, ports.ErrNotificationRepositoryUnavailable
 		}
 		sources = append(sources, source)
